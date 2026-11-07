@@ -26,6 +26,7 @@ import {
 import { useEffect, useState } from "react";
 import { formatMoney, type Strings } from "@/lib/i18n";
 import type { Block, Lang, LinkPreview, Offer, Step } from "@/lib/types";
+import { PiBagMark } from "./Logo";
 
 /* ---------- Image with graceful fallback ---------- */
 
@@ -197,10 +198,7 @@ function RadarMark() {
       <span className="radar-ring" style={{ animationDelay: "-1.2s" }} />
       <span className="radar-sweep" />
       <span className="relative flex size-6 items-center justify-center rounded-full bg-inv-bg text-inv-fg">
-        <svg viewBox="0 0 24 24" width={14} height={14} className="radar-needle">
-          <path d="M12 3.5 L15 12 L12 10.6 L9 12 Z" fill="currentColor" />
-          <path d="M12 20.5 L9 12 L12 13.4 L15 12 Z" fill="currentColor" opacity="0.45" />
-        </svg>
+        <PiBagMark size={15} className="logo-think" />
       </span>
     </span>
   );

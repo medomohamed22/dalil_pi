@@ -252,6 +252,20 @@ html[dir="rtl"] .shimmer {
   transform: rotate(0deg);
   transition: transform 0.4s ease-out;
 }
+/* Dalil Pi mark while working: the bag gently bobs, like it's being filled. */
+.logo-think {
+  transform-origin: 50% 90%;
+  animation: logo-think 1.6s ease-in-out infinite;
+  will-change: transform;
+}
+@keyframes logo-think {
+  0%, 100% { transform: translateY(0) rotate(0deg); }
+  25% { transform: translateY(-1.5px) rotate(-6deg); }
+  75% { transform: translateY(-1.5px) rotate(6deg); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .logo-think { animation: none; }
+}
 .radar-needle {
   transform-origin: 50% 50%;
   animation: radar-needle 3.2s ease-in-out infinite;
