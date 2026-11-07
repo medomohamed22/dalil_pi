@@ -6,6 +6,7 @@ import { streamChat, webSearch, type ChatMsg, type FunctionTool, type MetaConfig
 import { rankOffers, type RawOffer } from "./rank";
 import { prepareOffers } from "./sign";
 import { MIN_ORDER_TRUST, scoreTrust } from "./trust";
+import { detectWooPi } from "./woo";
 import { PriceEvidence } from "./evidence";
 import type { AgentEvent, Lang, Offer, Scope, Step, WireMessage } from "../types";
 
@@ -496,9 +497,28 @@ async function execTool(
         const q = src ? quotes.get(src) : undefined;
         if (q?.length) o.reviews = q;
       });
+      // Stores whose own checkout takes Pi (WooCommerce + Sallanet Pay …): Dalil Pi can place the order.
+      const probe = rankedRaw.filter((o) => o.url && o.currency === "PI" && o.trust !== "suspicious" && !/salla-shop\.com$|piketplace\.com$/.test(o.storeDomain ?? ""));
+      const seen = new Map<string, Promise<string | null>>();
+      await Promise.all(
+        probe.slice(0, 6).map(async (o) => {
+          const origin = new URL(o.url!).origin;
+          if (!seen.has(origin)) seen.set(origin, detectWooPi(o.url!));
+          if (await seen.get(origin)) o.checkout = "woo_pi";
+        }),
+      );
       const scored = await scoreTrust(rankedRaw);
       // Low-trust stores sink below the rest (stable order otherwise).
       scored.sort((a, b) => Number((a.trustScore ?? 50) < MIN_ORDER_TRUST) - Number((b.trustScore ?? 50) < MIN_ORDER_TRUST));
+      // Badges never go to a store we wouldn't order from; hand them to the best trusted offer instead.
+      const lost = new Set<string>();
+      for (const o of scored) if ((o.trustScore ?? 50) < MIN_ORDER_TRUST) o.badges.splice(0).forEach((b) => lost.add(b));
+      const okOffers = scored.filter((o) => (o.trustScore ?? 50) >= MIN_ORDER_TRUST && o.trust !== "suspicious" && !o.flags.includes("not_priced_in_pi"));
+      if (lost.has("bestValue") && okOffers[0] && !okOffers[0].badges.includes("bestValue")) okOffers[0].badges.unshift("bestValue");
+      if (lost.has("cheapest")) {
+        const c = [...okOffers].sort((a, b) => a.total - b.total)[0];
+        if (c && !c.badges.includes("cheapest")) c.badges.push("cheapest");
+      }
       const ranked = prepareOffers(scored);
       if (!ranked.length) throw new Error("no valid offers");
       ctx.state.offersShown = true;
@@ -514,6 +534,7 @@ async function execTool(
           score: o.score,
           trust: o.trust,
           trust_score: o.trustScore,
+          automatic_checkout: o.checkout === "woo_pi" || undefined,
           badges: o.badges,
           flags: o.flags,
         })),

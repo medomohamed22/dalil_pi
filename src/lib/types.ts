@@ -61,6 +61,8 @@ export interface Offer {
   trust: TrustLevel;
   /** Store trust score 0–100 (server-computed). Under 40 = no Order button. */
   trustScore?: number;
+  /** "woo_pi": the store's own checkout takes Pi — Dalil Pi can place the order for you. */
+  checkout?: "woo_pi";
   trustParts?: TrustParts;
   /** Up to 3 short review quotes, kept only if they appear verbatim on a page we read. */
   reviews?: string[];
@@ -222,6 +224,8 @@ export interface Me {
   /** Saved country preference (null = from IP). */
   country: Country | null;
   lang: Lang;
+  /** Saved email (for store receipts on automatic orders). */
+  email?: string | null;
 }
 
 /** Events streamed (as NDJSON) from /api/chat to the client. */

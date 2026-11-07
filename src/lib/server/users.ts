@@ -31,6 +31,7 @@ export function renewsAt(d = new Date()): string {
 /* -------- in-memory fallback for local development without Supabase -------- */
 interface MemUser {
   username?: string;
+  email?: string | null;
   country?: string | null;
   lang: Lang;
 }
@@ -41,20 +42,20 @@ const mem = globalThis as unknown as {
 const memUsers = (mem.__dalilUsers ??= new Map());
 const memUsage = (mem.__dalilUsage ??= new Map());
 
-export async function upsertUser(uid: string, username?: string): Promise<{ country: string | null; lang: Lang }> {
+export async function upsertUser(uid: string, username?: string): Promise<{ country: string | null; lang: Lang; email: string | null }> {
   if (!supabaseEnabled) {
     const cur = memUsers.get(uid);
-    const next = { username: username ?? cur?.username, country: cur?.country ?? null, lang: cur?.lang ?? "en" };
+    const next = { username: username ?? cur?.username, country: cur?.country ?? null, lang: cur?.lang ?? "en", email: cur?.email ?? null };
     memUsers.set(uid, next);
-    return { country: next.country, lang: next.lang };
+    return { country: next.country, lang: next.lang, email: next.email ?? null };
   }
   const db = supabase();
   const { error } = await db
     .from("users")
     .upsert({ pi_uid: uid, username: username ?? null, last_seen_at: new Date().toISOString() }, { onConflict: "pi_uid", ignoreDuplicates: false });
   if (error) throw new Error(`users: ${error.message}`);
-  const { data } = await db.from("users").select("country, lang").eq("pi_uid", uid).single();
-  return { country: (data?.country as string | null) ?? null, lang: (data?.lang as Lang) ?? "en" };
+  const { data } = await db.from("users").select("country, lang, email").eq("pi_uid", uid).single();
+  return { country: (data?.country as string | null) ?? null, lang: (data?.lang as Lang) ?? "en", email: (data?.email as string | null) ?? null };
 }
 
 export async function updatePrefs(uid: string, prefs: { country?: string | null; lang?: Lang }): Promise<void> {
@@ -269,7 +270,11 @@ export async function recordOrder(uid: string): Promise<Usage> {
 
 /** Saved profile fields (name/phone/email shown on orders). */
 export async function updateProfile(uid: string, p: { displayName?: string | null; phone?: string | null; email?: string | null }): Promise<void> {
-  if (!supabaseEnabled) return;
+  if (!supabaseEnabled) {
+    const cur = memUsers.get(uid) ?? { lang: "en" as Lang };
+    if (p.email !== undefined) memUsers.set(uid, { ...cur, email: p.email });
+    return;
+  }
   const patch: Record<string, unknown> = {};
   if (p.displayName !== undefined) patch.display_name = p.displayName;
   if (p.phone !== undefined) patch.phone = p.phone;

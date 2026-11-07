@@ -8,7 +8,7 @@ import { db, delKV, getKV, loadSettings, requestPersistence, saveSettings, setKV
 import { countryLabel, flag, t, type Strings } from "@/lib/i18n";
 import { inPiBrowser, loadPi, PI_SANDBOX, piAuthenticate } from "@/lib/pi-client";
 import { DEFAULT_SETTINGS, type AgentEvent, type Block, type ChatMessage, type Lang, type Me, type Offer, type Scope, type Settings, type Step, type Usage, type WireMessage } from "@/lib/types";
-import { AccountSheet } from "./Account";
+import { AccountSheet, AutoOrderSheet } from "./Account";
 import Composer, { type ComposerPayload } from "./Composer";
 import Logo from "./Logo";
 import MessageView from "./MessageView";
@@ -407,8 +407,15 @@ export default function App() {
    * (inside the click, so the browser doesn't block it), then save and count
    * the order on our server. The user pays the store directly.
    */
+  const [autoOffer, setAutoOffer] = useState<Offer | null>(null);
   const order = (o: Offer) => {
     if (!o.url) return;
+    // Stores whose checkout takes Pi: confirm what we send, then Dalil Pi places the order there.
+    if (o.checkout === "woo_pi") {
+      setNotice("");
+      setAutoOffer(o);
+      return;
+    }
     window.open(o.url, "_blank", "noopener,noreferrer");
     setNotice("");
     void authFetch("/api/orders", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ offer: o }), keepalive: true })
@@ -638,7 +645,7 @@ export default function App() {
               />
               <Composer s={s} lang={lang} busy={busy} onSend={send} onStop={() => abortRef.current?.abort()} prefill={prefill} />
               {notice && (
-                <p className="mt-2 text-center text-[11px] text-danger" dir="auto" role="status">
+                <p className={`mt-2 text-center text-[11px] ${notice === s.autoDone ? "font-medium text-emerald-700 dark:text-emerald-400" : "text-danger"}`} dir="auto" role="status">
                   {notice}
                 </p>
               )}
@@ -660,6 +667,19 @@ export default function App() {
         )}
       </main>
 
+      <AutoOrderSheet
+        offer={autoOffer}
+        onClose={() => setAutoOffer(null)}
+        s={s}
+        lang={lang}
+        me={me}
+        api={authFetch}
+        country={country}
+        onDone={(r) => {
+          setMe((cur) => (cur ? { ...cur, usage: r.usage ?? cur.usage, email: r.email } : cur));
+          setNotice(s.autoDone);
+        }}
+      />
       <AccountSheet open={accountOpen} onClose={() => setAccountOpen(false)} s={s} lang={lang} me={me} api={authFetch} country={country} onUsage={(u) => setMe((cur) => (cur ? { ...cur, usage: u } : cur))} />
       <CountrySheet
         open={countryOpen}

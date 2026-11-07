@@ -815,8 +815,9 @@ export function ProductCards({
                             title={s.payInStore}
                             className="flex w-full items-center justify-center gap-1.5 rounded-xl bg-inv-bg py-2 text-xs font-semibold text-inv-fg transition-opacity hover:opacity-90 disabled:opacity-40"
                           >
-                            <Package className="size-3.5" /> {s.order} <ExternalLink className="size-3" />
+                            <Package className="size-3.5" /> {o.checkout === "woo_pi" ? s.autoOrder : s.order} <ExternalLink className="size-3" />
                           </motion.button>
+                          {o.checkout === "woo_pi" && <span className="text-center text-[10.5px] font-medium text-fg-soft" data-testid="auto-tag">⚡ {s.autoTag}</span>}
                           {out && <span className="text-center text-[10.5px] text-danger">{s.noOrdersLeft}</span>}
                         </>
                       );

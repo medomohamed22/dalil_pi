@@ -5,7 +5,7 @@ import { Check, ExternalLink, Loader2, MapPin, Package, Pencil, Plus, Sparkles, 
 import { useCallback, useEffect, useState } from "react";
 import { countryLabel, flag, formatMoney, type Strings } from "@/lib/i18n";
 import { piPay } from "@/lib/pi-client";
-import type { Address, Lang, Me, Order, PaidPlanId, PlanOffer, Usage } from "@/lib/types";
+import type { Address, Lang, Me, Offer, Order, PaidPlanId, PlanOffer, Usage } from "@/lib/types";
 
 type Fetch = (url: string, init?: RequestInit) => Promise<Response>;
 
@@ -496,5 +496,131 @@ function PlanShop({ s, api, open, onUsage }: { s: Strings; api: Fetch; open: boo
         {s.expiryNote} {s.payNote}
       </p>
     </div>
+  );
+}
+
+/* ---------------- Automatic order at a store with a Pi checkout ---------------- */
+
+export function AutoOrderSheet({
+  offer,
+  onClose,
+  s,
+  lang,
+  me,
+  api,
+  country,
+  onDone,
+}: {
+  offer: Offer | null;
+  onClose: () => void;
+  s: Strings;
+  lang: Lang;
+  me: Me | null;
+  api: Fetch;
+  country: string;
+  onDone: (r: { order?: Order; usage?: Usage; email: string }) => void;
+}) {
+  const open = !!offer;
+  const { addresses, reload } = useAddresses(api, open && !!me);
+  const [email, setEmail] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState("");
+  useEffect(() => {
+    if (open) {
+      setEmail(me?.email ?? "");
+      setErr("");
+    }
+  }, [open, me?.email]);
+  const addr = addresses?.find((a) => a.isDefault) ?? addresses?.[0];
+
+  const place = async () => {
+    if (!offer || !addr || busy) return;
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return setErr(s.emailInvalid);
+    // Open the tab inside the click so the browser doesn't block it; fill it once the store answers.
+    const w = window.open("about:blank", "_blank");
+    if (w) w.opener = null;
+    setBusy(true);
+    setErr("");
+    try {
+      const res = await api("/api/orders", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ offer, addressId: addr.id, auto: true, email }) });
+      const j = (await res.json().catch(() => ({}))) as { order?: Order; usage?: Usage; error?: string };
+      if (!res.ok || !j.order?.checkoutUrl) throw new Error(j.error || `HTTP ${res.status}`);
+      if (w) w.location.href = j.order.checkoutUrl;
+      else window.location.href = j.order.checkoutUrl;
+      onDone({ order: j.order, usage: j.usage, email });
+      onClose();
+    } catch (e) {
+      w?.close();
+      setErr((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <Sheet open={open} title={s.autoTitle} onClose={onClose}>
+      {offer && (
+        <div className="space-y-3" data-testid="auto-order">
+          <div className="flex items-center gap-3 rounded-2xl border border-line p-3">
+            <div className="min-w-0 flex-1">
+              <div className="truncate text-sm font-semibold" dir="auto">
+                {offer.title}
+              </div>
+              <div className="text-[12px] text-fg-muted">{offer.store}</div>
+            </div>
+            <div className="text-sm font-semibold tabular-nums" dir="ltr">
+              {formatMoney(offer.total, offer.currency, lang)}
+            </div>
+          </div>
+          {addresses === null ? (
+            <Loader2 className="mx-auto size-5 animate-spin text-fg-muted" />
+          ) : addr ? (
+            <div className="rounded-2xl bg-bg-soft p-3 text-[12px] whitespace-pre-line" dir="auto" data-testid="ship-to">
+              <div className="mb-1 text-[11px] font-semibold uppercase tracking-widest text-fg-muted">{s.shipTo}</div>
+              {formatAddress(addr, lang)}
+            </div>
+          ) : (
+            <div>
+              <p className="mb-2 text-[12px] text-fg-soft">{s.needAddress}</p>
+              <AddressForm s={s} api={api} country={country} onCancel={onClose} onSaved={() => void reload()} />
+            </div>
+          )}
+          {addr && (
+            <>
+              <label className="block text-[12px]">
+                <span className="text-fg-muted">{s.email}</span>
+                <input
+                  type="email"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  dir="ltr"
+                  autoComplete="email"
+                  className="mt-1 w-full rounded-xl border border-line bg-bg px-3 py-2 text-sm outline-none focus:border-fg"
+                />
+              </label>
+              <p className="text-[11px] leading-relaxed text-fg-muted">{s.autoShare(offer.store)}</p>
+              {err && (
+                <p className="text-[12px] text-danger" role="alert" data-testid="auto-error">
+                  {err}
+                </p>
+              )}
+              <button
+                onClick={place}
+                disabled={busy}
+                className="flex w-full items-center justify-center gap-1.5 rounded-xl bg-inv-bg py-2.5 text-sm font-semibold text-inv-fg disabled:opacity-50"
+              >
+                {busy ? (
+                  <>
+                    <Loader2 className="size-4 animate-spin" /> {s.placing}
+                  </>
+                ) : (
+                  s.placeOrder
+                )}
+              </button>
+            </>
+          )}
+        </div>
+      )}
+    </Sheet>
   );
 }

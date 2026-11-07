@@ -1,5 +1,6 @@
 import "server-only";
 import { MIN_ORDER_TRUST } from "./trust";
+import { detectWooPi, wooCheckout } from "./woo";
 import { getAddress, listAddresses, NotFound } from "./addresses";
 import { piUsdPrice } from "./price";
 import { verifyOffer } from "./sign";
@@ -88,13 +89,23 @@ export async function listOrders(uid: string, limit = 50): Promise<Order[]> {
  * Creates an order from a server-signed offer. The address is optional: given
  * an id it uses that one, otherwise the user's default address (if any).
  */
-export async function createOrder(uid: string, offer: Offer, addressId?: string, quantity = 1): Promise<Order> {
+export async function createOrder(uid: string, offer: Offer, addressId?: string, quantity = 1, auto?: { email: string }): Promise<Order> {
   if (!verifyOffer(offer)) throw new BadOffer("This offer expired or was changed. Search again to get a fresh price.");
   if (offer.flags?.includes("price_unverified")) throw new BadOffer("This price wasn't confirmed on the store page.");
   if (offer.trust === "suspicious") throw new BadOffer("This store looks suspicious, so Dalil Pi won't place the order.");
   if (offer.trustScore != null && offer.trustScore < MIN_ORDER_TRUST) throw new BadOffer(`This store's trust score is ${offer.trustScore}/100, so Dalil Pi won't place the order.`);
   if (!offer.url) throw new BadOffer("This offer has no store link.");
   const address = addressId ? await getAddress(uid, addressId) : (await listAddresses(uid)).find((a) => a.isDefault) ?? null;
+  // Automatic checkout: place the order at the store (WooCommerce + Pi gateway) with the user's address.
+  let store: { connector: string; checkout_url: string; external_order_id: string; status: OrderStatus } | null = null;
+  if (auto) {
+    if (offer.checkout !== "woo_pi") throw new BadOffer("This store doesn't support automatic checkout.");
+    if (!address) throw Object.assign(new BadOffer("Add a shipping address first."), { code: "ADDRESS_REQUIRED" });
+    const gateway = await detectWooPi(offer.url);
+    if (!gateway) throw new BadOffer("The store no longer offers Pi at checkout.");
+    const r = await wooCheckout({ productUrl: offer.url, expectedPrice: offer.price, quantity, address, email: auto.email, gateway });
+    store = { connector: "woo_sallanet", checkout_url: r.payUrl, external_order_id: r.orderId, status: "awaiting_payment" };
+  }
   const price = await piUsdPrice();
   const total = Math.round(offer.total * quantity * 1e7) / 1e7;
   const totalUsd = offer.currency === "PI" && price ? Math.round(total * price.usd * 100) / 100 : null;
@@ -117,9 +128,10 @@ export async function createOrder(uid: string, offer: Offer, addressId?: string,
     offer: { ...offer },
     address_id: address?.id ?? null,
     shipping: address ? shippingSnapshot(address) : null,
-    // First connector: the "Order" button opens the product page in the store.
+    // Default connector: the "Order" button opens the product page in the store.
     connector: "deeplink",
     checkout_url: offer.url ?? null,
+    ...(store ?? {}),
   };
   if (!supabaseEnabled) {
     const o = fromRow({ id: crypto.randomUUID(), created_at: new Date().toISOString(), external_order_id: null, txid: null, tracking_number: null, ...base } as unknown as Row);

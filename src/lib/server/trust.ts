@@ -109,11 +109,12 @@ export async function scoreTrust(offers: Offer[], opts: { lookupAge?: boolean } 
 
   return offers.map((o) => {
     const d = o.storeDomain;
-    const official = o.trust === "verified" ? 1 : o.piEvidence ? 0.5 : 0;
+    // A Pi payment method in the store's own checkout is first-hand evidence it takes Pi.
+    const official = o.trust === "verified" ? 1 : o.checkout === "woo_pi" ? 0.8 : o.piEvidence ? 0.5 : 0;
     const n = o.reviewCount ?? 0;
     const bayes = o.rating ? (o.rating * n + 3.6 * 20) / (n + 20) : 3.4;
     const reviews = clamp01((bayes - 2.5) / 2.5);
-    const wallet = onDomain(d, ESCROW) ? 0.9 : o.trust === "verified" ? 0.7 : 0.35;
+    const wallet = onDomain(d, ESCROW) ? 0.9 : o.trust === "verified" ? 0.7 : o.checkout === "woo_pi" ? 0.6 : 0.35;
     const ratio = med > 0 ? o.total / med : 1;
     const price = (pi.length || offers.length) < 3 ? 0.7 : ratio < 0.6 ? 0 : ratio < 0.8 ? 0.6 : ratio > 1.8 ? 0.6 : 1;
     const age = d ? ages.get(d) : null;
