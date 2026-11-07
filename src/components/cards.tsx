@@ -13,6 +13,8 @@ import {
   ShieldCheck,
   Shield,
   Star,
+  Navigation,
+  Phone,
   Truck,
   ScanSearch,
   Scale,
@@ -610,6 +612,14 @@ function TrustBreakdown({ offer, s }: { offer: Offer; s: Strings }) {
   );
 }
 
+/** Google Maps link: exact pin when the shop's location is known, else name + address/city. */
+function mapsUrl(o: Offer, city?: string, directions = false): string {
+  const dest = o.lat != null && o.lon != null ? `${o.lat},${o.lon}` : [o.store, o.address ?? city ?? ""].filter(Boolean).join(" ");
+  return directions
+    ? `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(dest)}`
+    : `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(dest)}`;
+}
+
 const FLAG_TEXT: Record<string, { ar: string; en: string }> = {
   price_far_below_market: { ar: "السعر أقل من السوق بشكل مريب", en: "Price suspiciously below market" },
   suspicious_discount: { ar: "خصم مبالغ فيه — غالبًا وهمي", en: "Inflated 'was' price — likely fake discount" },
@@ -714,7 +724,7 @@ export function ProductCards({
                 <div className="flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-fg-muted">
                   {o.distanceKm != null && (
                     <a
-                      href={`https://www.google.com/maps/search/${encodeURIComponent(`${o.store} ${city ?? ""}`)}`}
+                      href={mapsUrl(o, city)}
                       target="_blank"
                       rel="noopener noreferrer"
                       className="inline-flex items-center gap-1 underline-offset-2 hover:text-fg hover:underline"
@@ -746,6 +756,29 @@ export function ProductCards({
                 {o.reason && (
                   <div className="line-clamp-2 text-[11px] text-fg-muted" dir="auto">
                     {o.reason}
+                  </div>
+                )}
+                {o.address && (
+                  <div className="line-clamp-2 text-[11px] text-fg-muted" dir="auto">
+                    <MapPin className="me-1 inline size-3" />
+                    {o.address}
+                  </div>
+                )}
+                {(o.kind === "local" || o.kind === "service") && (o.address || o.lat != null || o.phone || o.distanceKm != null) && (
+                  <div className="flex gap-1.5" data-testid="local-actions">
+                    <a
+                      href={mapsUrl(o, city, true)}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="flex flex-1 items-center justify-center gap-1 rounded-xl border border-line py-1.5 text-[11px] font-medium hover:bg-bg-soft"
+                    >
+                      <Navigation className="size-3" /> {s.directions}
+                    </a>
+                    {o.phone && (
+                      <a href={`tel:${o.phone}`} className="flex flex-1 items-center justify-center gap-1 rounded-xl border border-line py-1.5 text-[11px] font-medium hover:bg-bg-soft" dir="ltr">
+                        <Phone className="size-3" /> {s.call}
+                      </a>
+                    )}
                   </div>
                 )}
                 {!!o.reviews?.length && (

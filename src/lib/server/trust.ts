@@ -13,7 +13,8 @@ import type { Offer, TrustParts } from "../types";
  *   R reviews                Bayesian-smoothed rating (few reviews pull toward neutral)
  *   W payment protection     escrow marketplace 0.9, other Pi-verified 0.7, unknown 0.35
  *   P price sanity           near the market median = 1, far below = 0 (fake-deal pattern)
- *   D site                   HTTPS + domain age from public RDAP (old domains score higher)
+ *   D site                   HTTPS + domain age from public RDAP (old domains score higher);
+ *                            physical shops: published address, map location and phone
  *   F fulfilment record      delivered vs. failed/cancelled Dalil Pi orders for this store
  *
  *   80+ very trusted · 60–79 trusted · 40–59 caution (extra confirm) · <40 no Order button
@@ -115,9 +116,12 @@ export async function scoreTrust(offers: Offer[], opts: { lookupAge?: boolean } 
     const wallet = onDomain(d, ESCROW) ? 0.9 : o.trust === "verified" ? 0.7 : 0.35;
     const ratio = med > 0 ? o.total / med : 1;
     const price = (pi.length || offers.length) < 3 ? 0.7 : ratio < 0.6 ? 0 : ratio < 0.8 ? 0.6 : ratio > 1.8 ? 0.6 : 1;
-    const https = o.url?.startsWith("https://") ? 0.5 : 0;
     const age = d ? ages.get(d) : null;
-    const site = https + (age == null ? 0.2 : age >= 5 ? 0.5 : age >= 2 ? 0.4 : age >= 1 ? 0.25 : 0);
+    // A physical shop is judged on its published whereabouts, not on having a website.
+    const physical = (o.kind === "local" || o.kind === "service") && !o.url;
+    const site = physical
+      ? (o.address ? 0.35 : 0) + (o.lat != null ? 0.25 : 0) + (o.phone ? 0.2 : 0)
+      : (o.url?.startsWith("https://") ? 0.5 : 0) + (age == null ? 0.2 : age >= 5 ? 0.5 : age >= 2 ? 0.4 : age >= 1 ? 0.25 : 0);
     const h = d ? record.get(d) : undefined;
     const record01 = (((h?.good ?? 0) + 1) / ((h?.good ?? 0) + (h?.bad ?? 0) + 2));
     const parts: TrustParts = {
@@ -128,7 +132,7 @@ export async function scoreTrust(offers: Offer[], opts: { lookupAge?: boolean } 
       site: Math.round(clamp01(site) * 100) / 100,
       record: Math.round(record01 * 100) / 100,
     };
-    const flags = [...o.flags];
+    const flags = physical ? o.flags.filter((f) => f !== "no_source_link") : [...o.flags];
     if (age != null && age < 0.5 && !flags.includes("new_domain")) flags.push("new_domain");
     let trustScore = trustFrom(parts, flags);
     if (flags.includes("new_domain")) trustScore = Math.max(0, trustScore - 10);

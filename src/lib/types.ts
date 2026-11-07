@@ -48,6 +48,11 @@ export interface Offer {
   distanceKm?: number;
   pickup?: boolean;
   deliveryDays?: number;
+  /** Physical shops: published address, phone and location. */
+  address?: string;
+  phone?: string;
+  lat?: number;
+  lon?: number;
   kind?: OfferKind;
   /** ISO country the offer is sold / shipped in. */
   country?: string;

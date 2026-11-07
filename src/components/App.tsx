@@ -621,7 +621,21 @@ export default function App() {
         {token && (
           <div className="shrink-0 bg-gradient-to-t from-bg via-bg to-transparent px-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-2 sm:px-4">
             <div className="mx-auto max-w-3xl">
-              <ScopeBar s={s} scope={settings.scope} onChange={(scope) => updateSettings({ scope })} />
+              <ScopeBar
+                s={s}
+                scope={settings.scope}
+                onChange={(scope) => {
+                  updateSettings({ scope });
+                  // "Near me": ask for the location once. Rounded to ~1 km — it is shared with the AI model.
+                  if (scope === "local" && navigator.geolocation) {
+                    navigator.geolocation.getCurrentPosition(
+                      (pos) => updateSettings({ coords: { lat: Math.round(pos.coords.latitude * 100) / 100, lon: Math.round(pos.coords.longitude * 100) / 100 } }),
+                      () => {},
+                      { timeout: 10_000, maximumAge: 10 * 60_000 },
+                    );
+                  }
+                }}
+              />
               <Composer s={s} lang={lang} busy={busy} onSend={send} onStop={() => abortRef.current?.abort()} prefill={prefill} />
               {notice && (
                 <p className="mt-2 text-center text-[11px] text-danger" dir="auto" role="status">
@@ -680,6 +694,17 @@ function ScopeBar({ s, scope, onChange }: { s: Strings; scope: Scope; onChange: 
           {s.scopes[k]}
         </button>
       ))}
+      {scope === "local" && (
+        <a
+          href="https://mapofpi.com"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="ms-auto shrink-0 self-center text-[11px] text-fg-muted underline underline-offset-2 hover:text-fg"
+          data-testid="mapofpi"
+        >
+          {s.mapOfPi} ↗
+        </a>
+      )}
     </div>
   );
 }

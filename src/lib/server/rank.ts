@@ -36,6 +36,29 @@ export interface RawOffer {
   kind?: "online" | "local" | "service";
   piEvidence?: string;
   reviews?: string[];
+  address?: string;
+  phone?: string;
+  lat?: number;
+  lon?: number;
+}
+
+/** Great-circle distance in km. */
+export function haversineKm(a: { lat: number; lon: number }, b: { lat: number; lon: number }): number {
+  const R = 6371;
+  const rad = (d: number) => (d * Math.PI) / 180;
+  const dLat = rad(b.lat - a.lat);
+  const dLon = rad(b.lon - a.lon);
+  const h = Math.sin(dLat / 2) ** 2 + Math.cos(rad(a.lat)) * Math.cos(rad(b.lat)) * Math.sin(dLon / 2) ** 2;
+  return 2 * R * Math.asin(Math.min(1, Math.sqrt(h)));
+}
+
+const okCoord = (lat?: number, lon?: number) => typeof lat === "number" && typeof lon === "number" && Math.abs(lat) <= 90 && Math.abs(lon) <= 180 && !(lat === 0 && lon === 0);
+
+/** Only dialable characters survive (the value ends up in a tel: link). */
+function cleanPhone(p?: string): string | undefined {
+  if (typeof p !== "string") return;
+  const x = p.replace(/[^\d+]/g, "").replace(/(?!^)\+/g, "");
+  return x.replace(/\D/g, "").length >= 6 && x.length <= 20 ? x : undefined;
 }
 
 /** Only plain web links reach the UI (no javascript:, data:, file: …). */
@@ -74,8 +97,14 @@ function median(xs: number[]): number {
  * @param country ISO country the user shops in
  * @param piUsd   live Pi price in USD (OKX) for the "≈ $" hint, if available
  */
-export function rankOffers(raw: RawOffer[], country: string, piUsd?: number): Offer[] {
-  const valid = raw.filter((r) => r && r.title && isFinite(r.price) && r.price > 0);
+export function rankOffers(raw: RawOffer[], country: string, piUsd?: number, coords?: { lat: number; lon: number }): Offer[] {
+  const valid = raw
+    .filter((r) => r && r.title && isFinite(r.price) && r.price > 0)
+    .map((r) => {
+      // With the user's GPS and the shop's published location, the server measures the distance itself.
+      if (coords && okCoord(r.lat, r.lon)) return { ...r, distanceKm: Math.round(haversineKm(coords, { lat: r.lat!, lon: r.lon! }) * 10) / 10 };
+      return r;
+    });
   if (!valid.length) return [];
 
   // Compare prices only within one currency (Pi), so fiat listings don't skew the stats.
@@ -145,6 +174,10 @@ export function rankOffers(raw: RawOffer[], country: string, piUsd?: number): Of
       rating: r.rating,
       reviewCount: r.reviewCount,
       distanceKm: r.distanceKm,
+      address: typeof r.address === "string" ? r.address.slice(0, 160) : undefined,
+      phone: cleanPhone(r.phone),
+      lat: okCoord(r.lat, r.lon) ? r.lat : undefined,
+      lon: okCoord(r.lat, r.lon) ? r.lon : undefined,
       pickup: r.pickup,
       deliveryDays: r.deliveryDays,
       kind: r.kind,

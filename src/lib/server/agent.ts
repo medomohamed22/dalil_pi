@@ -23,6 +23,10 @@ const OFFER_SCHEMA = {
     rating: { type: "number", description: "0-5" },
     reviewCount: { type: "number" },
     distanceKm: { type: "number", description: "For physical stores in the user's city" },
+    address: { type: "string", description: "Physical shop: street address as published (Map of Pi / Google / the shop's page)" },
+    phone: { type: "string", description: "Physical shop or service: public phone number, if published" },
+    lat: { type: "number", description: "Physical shop latitude, only if published (e.g. on Map of Pi / a maps link)" },
+    lon: { type: "number", description: "Physical shop longitude, only if published" },
     pickup: { type: "boolean" },
     deliveryDays: { type: "number" },
     notes: { type: "string", description: "One short factual line, e.g. 'In stock, official warranty'" },
@@ -327,7 +331,7 @@ export async function runAgent(opts: RunOptions): Promise<{ offersShown: boolean
           if (call.name === "search_salla") step.detail = clip((Array.isArray(args.queries) ? args.queries : [args.query]).filter(Boolean).map(String).join(" · "), 90);
           emit({ type: "step", step });
           try {
-            const output = await execTool(call.name, args, { cfg, locale, piUsd: opts.piUsd, emit, signal, pages, state, browser, viaBrowser, evidence, trustedSearch });
+            const output = await execTool(call.name, args, { cfg, locale, piUsd: opts.piUsd, coords: opts.coords, emit, signal, pages, state, browser, viaBrowser, evidence, trustedSearch });
             const hosts =
               call.name === "search_salla"
                 ? ["mall.salla-shop.com"]
@@ -373,6 +377,7 @@ async function execTool(
     cfg: MetaConfig;
     locale: Locale;
     piUsd?: number;
+    coords?: { lat: number; lon: number };
     emit: (e: AgentEvent) => void;
     signal?: AbortSignal;
     pages: Map<string, { image?: string; rating?: number; reviewCount?: number }>;
@@ -485,7 +490,7 @@ async function execTool(
         return f ? { ...o, image: f.image || o.image, rating: o.rating ?? f.rating, reviewCount: o.reviewCount ?? f.reviewCount } : o;
       });
       const quotes = new Map(raw.map((o) => [o, (Array.isArray(o?.reviews) ? o.reviews : []).filter((q) => typeof q === "string" && q.length <= 240 && ctx.evidence.hasQuote(q)).slice(0, 3)]));
-      const rankedRaw = rankOffers(raw, ctx.locale.country, ctx.piUsd).map(ground);
+      const rankedRaw = rankOffers(raw, ctx.locale.country, ctx.piUsd, ctx.coords).map(ground);
       rankedRaw.forEach((o) => {
         const src = raw.find((r) => r.title === o.title && r.store === o.store);
         const q = src ? quotes.get(src) : undefined;
