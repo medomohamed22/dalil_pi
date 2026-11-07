@@ -2,7 +2,7 @@
 
 import { AnimatePresence, motion } from "framer-motion";
 import { useLiveQuery } from "dexie-react-hooks";
-import { Camera, Check, ChevronDown, Globe2, Languages, Loader2, LogOut, Menu, Moon, PanelLeft, Plus, Search, Sun, Trash2, UserRound, X } from "lucide-react";
+import { Camera, Check, Globe2, Loader2, LogOut, Menu, Moon, PanelLeft, Plus, Search, Sun, Trash2, UserRound, X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { db, delKV, getKV, loadSettings, requestPersistence, saveSettings, setKV, uid } from "@/lib/db";
 import { countryLabel, flag, t, type Strings } from "@/lib/i18n";
@@ -553,37 +553,39 @@ export default function App() {
           <button className="hidden rounded-lg p-2 text-fg-muted hover:bg-bg-soft hover:text-fg md:block" onClick={() => setDesktopSidebar((v) => !v)} aria-label="Toggle sidebar">
             <PanelLeft className="size-[18px] rtl:-scale-x-100" />
           </button>
-          <span className="text-[15px] font-semibold md:hidden">{s.appName}</span>
-          {config?.pi.network === "testnet" && (
-            <span className="ms-1 rounded-full border border-line px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-fg-muted">{s.testnet}</span>
-          )}
+          <span className="whitespace-nowrap text-[15px] font-semibold md:hidden">{s.appName}</span>
           <div className="ms-auto flex items-center gap-1">
-            {/* Country */}
+            {/* Country: flag + code */}
             <button
               onClick={() => setCountryOpen(true)}
-              className="inline-flex items-center gap-1.5 rounded-full border border-line px-2.5 py-1.5 text-[12px] font-medium hover:bg-bg-soft"
+              className="inline-flex h-9 items-center gap-1 rounded-full border border-line px-2.5 text-[12px] font-semibold hover:bg-bg-soft"
               aria-label={s.country}
               title={`${s.shoppingIn} ${countryLabel(country, lang)}`}
             >
               <span aria-hidden>{flag(country)}</span>
-              <span className="hidden sm:inline">{countryLabel(country, lang)}</span>
-              <span className="sm:hidden">{country}</span>
-              <ChevronDown className="size-3 text-fg-muted" />
+              <span dir="ltr">{country}</span>
             </button>
-            {/* Language */}
+            {/* Language: small circle with the other language's code */}
             <button
               onClick={() => updateSettings({ lang: ar ? "en" : "ar" })}
-              className="inline-flex items-center gap-1 rounded-full border border-line px-2.5 py-1.5 text-[12px] font-semibold hover:bg-bg-soft"
+              className="flex size-9 items-center justify-center rounded-full border border-line text-[11px] font-bold tracking-wide hover:bg-bg-soft"
               aria-label={s.language}
-              title={s.language}
+              title={ar ? "English" : "العربية"}
             >
-              <Languages className="size-3.5" />
-              {ar ? "English" : "العربية"}
+              <span dir="ltr">{ar ? "EN" : "AR"}</span>
             </button>
-            <button onClick={newChat} className="rounded-lg p-2 text-fg-muted hover:bg-bg-soft hover:text-fg md:hidden" aria-label={s.newChat}>
-              <Plus className="size-5" />
-            </button>
-            <button onClick={toggleTheme} className="rounded-lg p-2 text-fg-muted hover:bg-bg-soft hover:text-fg" aria-label="Theme">
+            {/* Account */}
+            {me && (
+              <button
+                onClick={() => setAccountOpen(true)}
+                className="flex size-9 items-center justify-center rounded-full bg-inv-bg text-inv-fg hover:opacity-90"
+                aria-label={s.account}
+                title={s.account}
+              >
+                <UserRound className="size-[18px]" />
+              </button>
+            )}
+            <button onClick={toggleTheme} className="flex size-9 items-center justify-center rounded-full text-fg-muted hover:bg-bg-soft hover:text-fg" aria-label="Theme">
               {dark ? <Sun className="size-[18px]" /> : <Moon className="size-[18px]" />}
             </button>
           </div>

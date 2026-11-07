@@ -32,6 +32,22 @@ const OFFER_SCHEMA = {
   required: ["title", "store", "price", "currency"],
 };
 
+const SALLA_TOOL: FunctionTool = {
+  type: "function",
+  function: {
+    name: "search_salla",
+    description:
+      "Search Salla Shop Mall (mall.salla-shop.com — Pi marketplace shipping across Egypt, the Middle East and Africa) directly. Returns REAL products with the Pi price, the exact product page URL, the product image and stock. Fast (1-4 s). Use short product keywords; you can pass 1-2 queries (e.g. English and Arabic) and they run one after another.",
+    parameters: {
+      type: "object",
+      properties: {
+        queries: { type: "array", items: { type: "string" }, description: "1-2 short keyword queries, e.g. [\"headphones\", \"سماعة\"]" },
+      },
+      required: ["queries"],
+    },
+  },
+};
+
 const BROWSER_TOOLS: FunctionTool[] = [
   {
     type: "function",
@@ -150,7 +166,7 @@ Country rule: only show stores that sell in ${loc.countryName} or ship to it. If
 ${SCOPE_RULE[scope]}
 
 Where Pi is accepted (check these first; they take payment in Pi):
-- Salla Shop Mall — https://mall.salla-shop.com (multi-vendor Pi marketplace from Egypt; ships across Egypt, the Middle East and Africa; also services: Telegram Stars/Premium, Salla Care, Salla Go, food, Salla Swap). Its pages need a real browser: use browser_open on https://mall.salla-shop.com/products and its search box.
+- Salla Shop Mall — https://mall.salla-shop.com (multi-vendor Pi marketplace from Egypt; ships across Egypt, the Middle East and Africa; also services: Telegram Stars/Premium, Salla Care, Salla Go, food, Salla Swap). Search it with the search_salla tool (exact links, prices and images) — never guess Salla URLs.
 - Stores using the Sallanet Pay gateway (WooCommerce stores that accept Pi at checkout).
 - Pi Chain Mall and Piketplace (https://piketplace.com), and Pi Mainnet commerce apps on *.pinet.com.
 - Local physical shops: Map of Pi (https://mapofpi.com) — only when the user asks for local shops.
@@ -158,7 +174,8 @@ A store counts as accepting Pi only if you saw evidence: a price in Pi, a Pi pay
 
 How to work:
 1. Identify the exact product or service. If the message contains a scanned barcode (8-14 digits), call lookup_barcode first. If the user sent a photo, identify brand/model from it. If they sent a link, browse it first.
-2. Start with ONE web_search call carrying 2-3 queries, e.g. "<product> pay with Pi Network ${loc.countryName}", "site:mall.salla-shop.com <product>", "<product> Pi coin store". Open the most promising product pages with browse_url (several in one turn) or browser_open for JavaScript pages such as Salla Shop. Each tool result ends with the time left; when it is under 15s, finish.
+2. Be fast. In your FIRST turn call, in parallel: search_salla (when the user is in Egypt, the Middle East or Africa, or asks for Salla) with 1-2 short keyword queries (English and Arabic), and ONE web_search with 2-3 queries for other Pi stores, e.g. "<product> pay with Pi Network ${loc.countryName}", "<product> Pi coin store". If search_salla already returned good matches, show them right away with show_offers and only browse other stores if needed. Open other product pages with browse_url (several in one turn) or browser_open for JavaScript pages. Each tool result ends with the time left; when it is under 15s, finish.
+   Links and images: use ONLY the exact URLs and image URLs returned by tools. Never build, shorten or guess a product URL; a store's home page or logo is not a product link or product image.
 3. Prices: report the price exactly as the store lists it. If the store shows a Pi price, use currency PI. If it only shows a local price (e.g. EGP) and says it accepts Pi, report that currency — never convert prices yourself.
 4. Call show_offers as soon as you have 2+ real offers and again later with a better list if you keep searching (it replaces the cards). 2-8 real offers. Never invent URLs, prices, ratings, reviews or stores — only use facts from tool results. If a fact is unknown, omit it.
 5. After show_offers, write 1-3 short sentences: your recommendation and why (using the returned ranking and flags). Put any warning (fake discount, risky store, a site asking for a wallet passphrase) on its own line starting with "> ". Don't use emoji.
@@ -224,7 +241,7 @@ export async function runAgent(opts: RunOptions): Promise<{ offersShown: boolean
   const evidence = new PriceEvidence();
   for (const o of opts.knownOffers ?? []) evidence.addObserved(o.url, o.price);
   const trustedSearch = !!opts.trustedSearch;
-  const tools = [...TOOLS, ...(browserAvailable() ? BROWSER_TOOLS : [])];
+  const tools = [...TOOLS, ...(browserAvailable() ? [SALLA_TOOL, ...BROWSER_TOOLS] : [])];
   const browser = new BrowserSession();
   // One tab: browser calls of the same turn run one after another.
   let browserQueue: Promise<unknown> = Promise.resolve();
@@ -301,11 +318,14 @@ export async function runAgent(opts: RunOptions): Promise<{ offersShown: boolean
           if (call.name === "browse_url" || call.name === "browser_open") step.detail = hostOf(String(args.url ?? ""));
           if (call.name === "browser_action") step.detail = clip(`${args.action}${args.id != null ? ` #${args.id}` : ""}${args.text ? ` "${args.text}"` : ""}`, 60);
           if (call.name === "lookup_barcode") step.detail = String(args.code ?? "");
+          if (call.name === "search_salla") step.detail = clip((Array.isArray(args.queries) ? args.queries : [args.query]).filter(Boolean).map(String).join(" · "), 90);
           emit({ type: "step", step });
           try {
             const output = await execTool(call.name, args, { cfg, locale, piUsd: opts.piUsd, emit, signal, pages, state, browser, viaBrowser, evidence, trustedSearch });
             const hosts =
-              call.name === "web_search" && Array.isArray(output)
+              call.name === "search_salla"
+                ? ["mall.salla-shop.com"]
+                : call.name === "web_search" && Array.isArray(output)
                 ? Array.from(
                     new Set(
                       (output as Array<{ sources?: Array<{ url: string }> }>)
@@ -384,6 +404,29 @@ async function execTool(
   switch (name) {
     case "lookup_barcode":
       return lookupBarcode(String(args.code ?? ""), ctx.signal);
+    case "search_salla": {
+      if (!ctx.browser || !ctx.viaBrowser) throw new Error("browser unavailable");
+      const qs = (Array.isArray(args.queries) ? args.queries : [args.query])
+        .map((q) => String(q ?? "").trim())
+        .filter(Boolean)
+        .slice(0, 2);
+      if (!qs.length) throw new Error("empty query");
+      const seen = new Set<string>();
+      const results: Array<Record<string, unknown>> = [];
+      for (const q of qs) {
+        const items = await ctx.viaBrowser(() => ctx.browser!.sallaSearch(q));
+        for (const it of items) {
+          if (seen.has(it.url)) continue;
+          seen.add(it.url);
+          // Prices and images come from the store page itself: trusted for grounding and for the cards.
+          ctx.evidence.addObserved(it.url, it.price);
+          ctx.pages.set(it.url, { image: it.image });
+          results.push({ ...it, kind: "online", piEvidence: "Pi price on Salla Shop Mall (Pi SDK checkout)" });
+        }
+      }
+      if (!results.length) return { results: [], hint: "No Salla match — try other keywords (English/Arabic) or other Pi stores." };
+      return results.slice(0, 16);
+    }
     case "browser_open": {
       if (!ctx.browser || !ctx.viaBrowser) throw new Error("browser unavailable");
       const url = String(args.url ?? "");
@@ -432,7 +475,8 @@ async function execTool(
       const raw = ((Array.isArray(args.offers) ? args.offers : []) as RawOffer[]).map((o) => {
         // Fill gaps the model left out with facts we already extracted from that page.
         const f = o?.url ? ctx.pages.get(o.url) : undefined;
-        return f ? { ...o, image: o.image || f.image, rating: o.rating ?? f.rating, reviewCount: o.reviewCount ?? f.reviewCount } : o;
+        // Images the server read from the product page win over whatever the model wrote (often a site logo).
+        return f ? { ...o, image: f.image || o.image, rating: o.rating ?? f.rating, reviewCount: o.reviewCount ?? f.reviewCount } : o;
       });
       const ranked = prepareOffers(rankOffers(raw, ctx.locale.country, ctx.piUsd).map(ground));
       if (!ranked.length) throw new Error("no valid offers");

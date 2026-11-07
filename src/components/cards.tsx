@@ -124,6 +124,7 @@ const STEP_ICON: Record<string, typeof Search> = {
 export function stepLabel(tool: string, s: Strings, lang: Lang): string {
   const ar: Record<string, string> = {
     web_search: "بيدوّر في المتاجر اللي بتقبل باي",
+    search_salla: "بيدوّر في سلة شوب",
     lookup_barcode: "بيتعرف على المنتج من الباركود",
     browse_url: "بيتصفح",
     browser_open: "بيفتح الصفحة في متصفح حقيقي",
@@ -134,6 +135,7 @@ export function stepLabel(tool: string, s: Strings, lang: Lang): string {
   };
   const en: Record<string, string> = {
     web_search: "Searching stores that accept Pi",
+    search_salla: "Searching Salla Shop",
     lookup_barcode: "Identifying product from barcode",
     browse_url: "Browsing",
     browser_open: "Opening in a real browser",
@@ -241,7 +243,7 @@ export function StepsTimeline({
   const browsed = steps.filter((x) => (x.tool === "browse_url" || x.tool === "browser_open") && x.detail);
   const found = Array.from(new Set(steps.flatMap((x) => x.hosts ?? [])));
   const allHosts = Array.from(new Set([...browsed.map((x) => x.detail!), ...found]));
-  const searches = steps.filter((x) => x.tool === "web_search").length;
+  const searches = steps.filter((x) => x.tool === "web_search" || x.tool === "search_salla").length;
   const sites = new Set(browsed.map((b) => b.detail)).size;
   const n = (v: number) => v.toLocaleString(ar ? "ar-EG-u-nu-latn" : "en-US");
   const clock = `${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, "0")}`;

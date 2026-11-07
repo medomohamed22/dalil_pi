@@ -97,9 +97,27 @@ const isTestHost = (u: string) => {
 };
 const checkUrl = async (u: string) => (isTestHost(u) ? new URL(u) : assertPublicUrl(u));
 
+const SALLA = "https://mall.salla-shop.com";
+
+export interface SallaItem {
+  title: string;
+  price: number;
+  /** Struck-through "was" price, if shown. */
+  listPrice?: number;
+  currency: "PI";
+  url: string;
+  image?: string;
+  inStock: boolean;
+  stock?: number;
+  store: string;
+  seller: "salla" | "merchant";
+}
+
 export class BrowserSession {
   private browser?: Browser;
   private page?: Page;
+  /** While true, image downloads are skipped (we only read their URLs). */
+  private lite = false;
   pagesVisited = 0;
 
   private async ensurePage(): Promise<Page> {
@@ -128,6 +146,7 @@ export class BrowserSession {
       if (PRIVATE_HOST.test(host) || (await hostIsPrivate(host))) return void req.abort("blockedbyclient");
       const type = req.resourceType();
       if (type === "media" || type === "font") return void req.abort();
+      if (this.lite && type === "image") return void req.abort();
       void req.continue();
     });
     page.setDefaultNavigationTimeout(NAV_TIMEOUT);
@@ -263,6 +282,87 @@ export class BrowserSession {
       .then((b) => `data:image/jpeg;base64,${Buffer.from(b).toString("base64")}`)
       .catch(() => undefined);
     return { url: page.url(), status, ...(data as Omit<PageState, "url" | "status" | "shot">), shot };
+  }
+
+  /**
+   * Salla Shop Mall search, the way a visitor does it: open the public search
+   * page and read the product cards it shows (title, Pi price, image). Product
+   * links come from the product list the page itself loads (`/product/<id>` for
+   * Salla products, `/merchant-product/<id>` for merchants' products), so we
+   * never guess a URL.
+   */
+  async sallaSearch(query: string, limit = 12): Promise<SallaItem[]> {
+    const q = query.trim().slice(0, 80);
+    if (!q) throw new Error("empty query");
+    const page = await this.ensurePage();
+    type Row = { id: string; name?: string; name_ar?: string; image?: string; images?: string[]; in_stock?: boolean; stock_quantity?: number; merchant?: { name?: string; slug?: string } };
+    const lists: { mall: Row[]; merchant: Row[] } = { mall: [], merchant: [] };
+    const onResponse = async (res: import("puppeteer-core").HTTPResponse) => {
+      const u = res.url();
+      const kind = /\/rest\/v1\/products\?/.test(u) ? "mall" : /\/rest\/v1\/merchant_products\?/.test(u) ? "merchant" : null;
+      if (!kind || res.request().method() !== "GET") return;
+      try {
+        const rows = (await res.json()) as unknown;
+        if (Array.isArray(rows)) lists[kind].push(...(rows as Row[]).filter((r) => r && typeof r.id === "string"));
+      } catch {
+        /* not JSON */
+      }
+    };
+    page.on("response", onResponse);
+    this.lite = true; // skip image downloads: we only need their URLs
+    try {
+      await page.goto(`${SALLA}/products?search=${encodeURIComponent(q)}`, { waitUntil: "domcontentloaded" });
+      this.pagesVisited++;
+      await page.waitForSelector(".app-product-card", { timeout: 9000 }).catch(() => {});
+      await page.waitForNetworkIdle({ idleTime: 400, timeout: 3000 }).catch(() => {});
+      const cards = await page.evaluate((max: number) => {
+        const out: Array<{ title: string; image?: string; price?: number; was?: number; text: string }> = [];
+        for (const card of Array.from(document.querySelectorAll(".app-product-card")).slice(0, max * 2)) {
+          const img = card.querySelector("img");
+          const title = (card.querySelector("h3")?.textContent || img?.getAttribute("alt") || "").trim();
+          const text = (card as HTMLElement).innerText || "";
+          // Prices are printed as "<was>\n<now>\nPi" — the number right before "Pi" is the price.
+          const nums = (text.split(/\bpi\b/i)[0].match(/\d[\d,]*(?:\.\d+)?/g) || []).map((n) => parseFloat(n.replace(/,/g, "")));
+          const price = nums.length ? nums[nums.length - 1] : undefined;
+          const was = nums.length > 1 ? nums[nums.length - 2] : undefined;
+          if (title) out.push({ title, image: img?.getAttribute("src") || undefined, price, was: was && price && was > price ? was : undefined, text: text.slice(0, 200) });
+        }
+        return out;
+      }, limit);
+      const norm = (s?: string) => (s ?? "").toLowerCase().replace(/\s+/g, " ").trim();
+      const find = (title: string) => {
+        const t = norm(title);
+        const m = lists.mall.find((r) => norm(r.name) === t || norm(r.name_ar) === t);
+        if (m) return { row: m, path: "product" as const };
+        const x = lists.merchant.find((r) => norm(r.name) === t || norm(r.name_ar) === t);
+        if (x) return { row: x, path: "merchant-product" as const };
+        return null;
+      };
+      const items: SallaItem[] = [];
+      for (const c of cards) {
+        if (!(c.price && c.price > 0)) continue;
+        const hit = find(c.title);
+        if (!hit) continue; // no verified link → skip rather than guess
+        const r = hit.row;
+        items.push({
+          title: c.title,
+          price: Math.round(c.price * 1e4) / 1e4,
+          listPrice: c.was,
+          currency: "PI",
+          url: `${SALLA}/${hit.path}/${r.id}`,
+          image: c.image || r.image || r.images?.[0],
+          inStock: r.in_stock !== false && (r.stock_quantity ?? 1) > 0,
+          stock: r.stock_quantity,
+          store: hit.path === "merchant-product" && r.merchant?.name ? `${r.merchant.name} · Salla Shop` : "Salla Shop Mall",
+          seller: hit.path === "merchant-product" ? "merchant" : "salla",
+        });
+        if (items.length >= limit) break;
+      }
+      return items;
+    } finally {
+      page.off("response", onResponse);
+      this.lite = false;
+    }
   }
 
   async close() {

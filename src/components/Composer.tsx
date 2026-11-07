@@ -115,16 +115,47 @@ export default function Composer({
     setImages((x) => [...x, ...out].slice(0, 4));
   }
 
-  function startVoice() {
+  /** Shown when the browser's speech engine gives nothing back (common in in-app browsers such as the Pi Browser). */
+  const voiceFallback = ar
+    ? "التسجيل الصوتي مش مدعوم في المتصفح ده. استخدم زرار المايك اللي في الكيبورد بتاعك (مثلاً Gboard) وهيكتبلك الكلام."
+    : "Voice input isn't supported in this browser. Use the mic key on your keyboard (e.g. Gboard) to dictate instead.";
+
+  async function startVoice() {
     const Ctor = speechCtor();
-    if (!Ctor || busy) return;
+    if (busy) return;
+    if (!Ctor) {
+      setVoiceErr(voiceFallback);
+      return;
+    }
     setVoiceErr("");
+    // Ask for the microphone first: some in-app browsers only start recognition after an explicit grant.
+    try {
+      const stream = await navigator.mediaDevices?.getUserMedia?.({ audio: true });
+      stream?.getTracks().forEach((t) => t.stop());
+    } catch {
+      setVoiceErr(ar ? "اسمح للموقع يستخدم المايك من إعدادات المتصفح" : "Allow microphone access in your browser settings");
+      return;
+    }
     const rec = new Ctor();
     rec.lang = ar ? "ar-EG" : "en-US";
     rec.interimResults = true;
     rec.continuous = false;
     heardRef.current = "";
+    let gotResult = false;
+    let failed = false;
+    // Watchdog: some engines start but never deliver results — stop and explain instead of hanging.
+    const watchdog = setTimeout(() => {
+      if (!gotResult) {
+        failed = true;
+        try {
+          rec.abort();
+        } catch {}
+        setListening(false);
+        setVoiceErr(voiceFallback);
+      }
+    }, 9000);
     rec.onresult = (e) => {
+      gotResult = true;
       let finalText = "";
       let interim = "";
       for (let i = 0; i < e.results.length; i++) {
@@ -136,13 +167,17 @@ export default function Composer({
       setText(heardRef.current);
     };
     rec.onerror = (e) => {
-      if (e.error === "not-allowed" || e.error === "service-not-allowed")
-        setVoiceErr(ar ? "اسمح للموقع يستخدم المايك من إعدادات المتصفح" : "Allow microphone access in your browser settings");
-      else if (e.error !== "aborted" && e.error !== "no-speech") setVoiceErr(ar ? "مقدرتش أسمعك، جرّب تاني" : "Couldn't hear you — try again");
+      failed = true;
+      if (e.error === "not-allowed") setVoiceErr(ar ? "اسمح للموقع يستخدم المايك من إعدادات المتصفح" : "Allow microphone access in your browser settings");
+      else if (e.error === "service-not-allowed" || e.error === "network" || e.error === "language-not-supported") setVoiceErr(voiceFallback);
+      else if (e.error === "no-speech") setVoiceErr(ar ? "مسمعتش حاجة، جرّب تاني وقرّب من المايك" : "Didn't hear anything — try again closer to the mic");
+      else if (e.error !== "aborted") setVoiceErr(ar ? "مقدرتش أسمعك، جرّب تاني" : "Couldn't hear you — try again");
     };
     rec.onend = () => {
+      clearTimeout(watchdog);
       setListening(false);
       recRef.current = null;
+      if (!gotResult && !failed) setVoiceErr(voiceFallback);
       // Hands-free: send what was heard.
       const heard = heardRef.current;
       if (heard) {
