@@ -5,6 +5,7 @@ import { ArrowUp, ImageIcon, Link2, Loader2, Mic, Plus, ScanBarcode, Square, X }
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { Strings } from "@/lib/i18n";
 import type { Lang, LinkPreview } from "@/lib/types";
+import { localSttSupported, preloadStt, startRecording, sttModelReady, transcribe, type Recording } from "@/lib/local-stt";
 import ScannerSheet from "./Scanner";
 
 const URL_RE = /https?:\/\/[^\s<>"']+/g;
@@ -24,24 +25,6 @@ export interface ComposerPayload {
   text: string;
   images: string[];
   links: LinkPreview[];
-}
-
-/* ---- Voice input (Web Speech API) ---- */
-type Rec = {
-  lang: string;
-  interimResults: boolean;
-  continuous: boolean;
-  onresult: ((e: { resultIndex: number; results: ArrayLike<ArrayLike<{ transcript: string }> & { isFinal: boolean }> }) => void) | null;
-  onend: (() => void) | null;
-  onerror: ((e: { error: string }) => void) | null;
-  start: () => void;
-  stop: () => void;
-  abort: () => void;
-};
-function speechCtor(): (new () => Rec) | null {
-  if (typeof window === "undefined") return null;
-  const w = window as unknown as { SpeechRecognition?: new () => Rec; webkitSpeechRecognition?: new () => Rec };
-  return w.SpeechRecognition ?? w.webkitSpeechRecognition ?? null;
 }
 
 export default function Composer({
@@ -68,13 +51,15 @@ export default function Composer({
   const [menu, setMenu] = useState(false);
   const [scan, setScan] = useState(false);
   const [listening, setListening] = useState(false);
+  /** Voice typing state: "transcribing" while Whisper runs; dlPct while the model downloads (first time). */
+  const [transcribing, setTranscribing] = useState(false);
+  const [dlPct, setDlPct] = useState<number | null>(null);
   const [voiceOk, setVoiceOk] = useState(false);
   const [voiceErr, setVoiceErr] = useState("");
-  const recRef = useRef<Rec | null>(null);
-  const heardRef = useRef("");
+  const recRef = useRef<Recording | null>(null);
   const ar = lang === "ar";
 
-  useEffect(() => setVoiceOk(!!speechCtor()), []);
+  useEffect(() => setVoiceOk(localSttSupported()), []);
 
   useEffect(() => {
     if (prefill) {
@@ -115,92 +100,55 @@ export default function Composer({
     setImages((x) => [...x, ...out].slice(0, 4));
   }
 
-  /** Shown when the browser's speech engine gives nothing back (common in in-app browsers such as the Pi Browser). */
-  const voiceFallback = ar
-    ? "التسجيل الصوتي مش مدعوم في المتصفح ده. استخدم زرار المايك اللي في الكيبورد بتاعك (مثلاً Gboard) وهيكتبلك الكلام."
-    : "Voice input isn't supported in this browser. Use the mic key on your keyboard (e.g. Gboard) to dictate instead.";
-
+  /**
+   * Free on-device voice typing: record → Whisper (in a Web Worker) → text in
+   * the box, ready to edit and send. Nothing is sent to a server.
+   */
   async function startVoice() {
-    const Ctor = speechCtor();
-    if (busy) return;
-    if (!Ctor) {
-      setVoiceErr(voiceFallback);
-      return;
-    }
+    if (busy || listening || transcribing) return;
     setVoiceErr("");
-    // Ask for the microphone first: some in-app browsers only start recognition after an explicit grant.
+    let rec: Recording;
     try {
-      const stream = await navigator.mediaDevices?.getUserMedia?.({ audio: true });
-      stream?.getTracks().forEach((t) => t.stop());
+      rec = await startRecording({ onAutoStop: () => void stopVoice() });
     } catch {
       setVoiceErr(ar ? "اسمح للموقع يستخدم المايك من إعدادات المتصفح" : "Allow microphone access in your browser settings");
       return;
     }
-    const rec = new Ctor();
-    rec.lang = ar ? "ar-EG" : "en-US";
-    rec.interimResults = true;
-    rec.continuous = false;
-    heardRef.current = "";
-    let gotResult = false;
-    let failed = false;
-    // Watchdog: some engines start but never deliver results — stop and explain instead of hanging.
-    const watchdog = setTimeout(() => {
-      if (!gotResult) {
-        failed = true;
-        try {
-          rec.abort();
-        } catch {}
-        setListening(false);
-        setVoiceErr(voiceFallback);
-      }
-    }, 9000);
-    rec.onresult = (e) => {
-      gotResult = true;
-      let finalText = "";
-      let interim = "";
-      for (let i = 0; i < e.results.length; i++) {
-        const r = e.results[i];
-        if (r.isFinal) finalText += r[0].transcript;
-        else interim += r[0].transcript;
-      }
-      heardRef.current = (finalText || interim).trim();
-      setText(heardRef.current);
-    };
-    rec.onerror = (e) => {
-      failed = true;
-      if (e.error === "not-allowed") setVoiceErr(ar ? "اسمح للموقع يستخدم المايك من إعدادات المتصفح" : "Allow microphone access in your browser settings");
-      else if (e.error === "service-not-allowed" || e.error === "network" || e.error === "language-not-supported") setVoiceErr(voiceFallback);
-      else if (e.error === "no-speech") setVoiceErr(ar ? "مسمعتش حاجة، جرّب تاني وقرّب من المايك" : "Didn't hear anything — try again closer to the mic");
-      else if (e.error !== "aborted") setVoiceErr(ar ? "مقدرتش أسمعك، جرّب تاني" : "Couldn't hear you — try again");
-    };
-    rec.onend = () => {
-      clearTimeout(watchdog);
-      setListening(false);
-      recRef.current = null;
-      if (!gotResult && !failed) setVoiceErr(voiceFallback);
-      // Hands-free: send what was heard.
-      const heard = heardRef.current;
-      if (heard) {
-        onSend({ text: heard, images, links: [] });
-        setText("");
-        setImages([]);
-      }
-    };
     recRef.current = rec;
+    setListening(true);
+    navigator.vibrate?.(20);
+    // Download the model while the user is still talking (first time only).
+    if (!sttModelReady()) preloadStt((pct) => setDlPct(pct >= 100 ? null : pct));
+  }
+
+  async function stopVoice() {
+    const rec = recRef.current;
+    if (!rec) return;
+    recRef.current = null;
+    setListening(false);
+    const audio = await rec.stop();
+    if (audio.length < 16000 * 0.4) {
+      setVoiceErr(ar ? "مسمعتش حاجة، جرّب تاني وقرّب من المايك" : "Didn't hear anything — try again closer to the mic");
+      return;
+    }
+    setTranscribing(true);
     try {
-      rec.start();
-      setListening(true);
-      navigator.vibrate?.(20);
-    } catch {
-      setListening(false);
+      const heard = await transcribe(audio, ar ? "ar" : "en", (pct) => setDlPct(pct >= 100 ? null : pct));
+      if (heard) {
+        setText((t) => (t ? `${t} ${heard}` : heard));
+        requestAnimationFrame(() => taRef.current?.focus());
+      } else {
+        setVoiceErr(ar ? "مفهمتش الكلام، جرّب تاني" : "Couldn't make out the words — try again");
+      }
+    } catch (e) {
+      setVoiceErr((ar ? "التحويل لنص فشل: " : "Voice typing failed: ") + (e as Error).message);
+    } finally {
+      setTranscribing(false);
+      setDlPct(null);
     }
   }
 
-  function stopVoice() {
-    recRef.current?.stop();
-  }
-
-  useEffect(() => () => recRef.current?.abort(), []);
+  useEffect(() => () => recRef.current?.cancel(), []);
 
   const onCode = useCallback(
     (code: string) => {
@@ -363,7 +311,21 @@ export default function Composer({
           rows={1}
           dir="auto"
           value={text}
-          placeholder={listening ? (ar ? "سامعك… اتكلم" : "Listening… speak now") : s.placeholder}
+          placeholder={
+            listening
+              ? ar
+                ? "سامعك… اتكلم ودوس تاني لما تخلص"
+                : "Listening… tap again when you're done"
+              : transcribing
+                ? dlPct != null
+                  ? ar
+                    ? `بيحمّل نموذج الصوت (أول مرة بس) ${dlPct}%`
+                    : `Downloading the voice model (first time only) ${dlPct}%`
+                  : ar
+                    ? "بيحوّل كلامك لنص…"
+                    : "Turning your voice into text…"
+                : s.placeholder
+          }
           onChange={(e) => setText(e.target.value)}
           onPaste={(e) => {
             const files = Array.from(e.clipboardData.files);
@@ -408,6 +370,19 @@ export default function Composer({
                 <span key={i} className="voice-bar w-[3px] rounded-full bg-current" style={{ animationDelay: `${i * 0.12}s` }} />
               ))}
             </motion.button>
+          ) : transcribing ? (
+            <motion.span
+              key="transcribing"
+              initial={{ scale: 0.6, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.6, opacity: 0 }}
+              className="mb-0.5 flex shrink-0 items-center gap-1 rounded-full bg-inv-bg px-2.5 py-2.5 text-inv-fg"
+              aria-label={ar ? "بيحوّل لنص" : "Transcribing"}
+              role="status"
+            >
+              <Loader2 className="size-4 animate-spin" />
+              {dlPct != null && <span className="text-[11px] tabular-nums">{dlPct}%</span>}
+            </motion.span>
           ) : !canSend && voiceOk ? (
             <motion.button
               key="mic"
