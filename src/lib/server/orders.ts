@@ -1,6 +1,5 @@
 import "server-only";
-import { getAddress } from "./addresses";
-import { NotFound } from "./addresses";
+import { getAddress, listAddresses, NotFound } from "./addresses";
 import { piUsdPrice } from "./price";
 import { verifyOffer } from "./sign";
 import { supabase, supabaseEnabled } from "./supabase";
@@ -84,12 +83,16 @@ export async function listOrders(uid: string, limit = 50): Promise<Order[]> {
   return (data as Row[]).map(fromRow);
 }
 
-/** Creates an order from a server-signed offer and one of the user's saved addresses. */
-export async function createOrder(uid: string, offer: Offer, addressId: string, quantity = 1): Promise<Order> {
+/**
+ * Creates an order from a server-signed offer. The address is optional: given
+ * an id it uses that one, otherwise the user's default address (if any).
+ */
+export async function createOrder(uid: string, offer: Offer, addressId?: string, quantity = 1): Promise<Order> {
   if (!verifyOffer(offer)) throw new BadOffer("This offer expired or was changed. Search again to get a fresh price.");
   if (offer.flags?.includes("price_unverified")) throw new BadOffer("This price wasn't confirmed on the store page.");
   if (offer.trust === "suspicious") throw new BadOffer("This store looks suspicious, so Dalil Pi won't place the order.");
-  const address = await getAddress(uid, addressId);
+  if (!offer.url) throw new BadOffer("This offer has no store link.");
+  const address = addressId ? await getAddress(uid, addressId) : (await listAddresses(uid)).find((a) => a.isDefault) ?? null;
   const price = await piUsdPrice();
   const total = Math.round(offer.total * quantity * 1e7) / 1e7;
   const totalUsd = offer.currency === "PI" && price ? Math.round(total * price.usd * 100) / 100 : null;
@@ -107,12 +110,12 @@ export async function createOrder(uid: string, offer: Offer, addressId: string, 
     total,
     total_usd: totalUsd,
     pi_usd_rate: offer.currency === "PI" && price ? price.usd : null,
-    country: offer.country ?? address.country,
+    country: offer.country ?? address?.country ?? null,
     trust: offer.trust,
     offer: { ...offer },
-    address_id: address.id,
-    shipping: shippingSnapshot(address),
-    // First connector: open the store page with the shipping details ready to copy.
+    address_id: address?.id ?? null,
+    shipping: address ? shippingSnapshot(address) : null,
+    // First connector: the "Order" button opens the product page in the store.
     connector: "deeplink",
     checkout_url: offer.url ?? null,
   };

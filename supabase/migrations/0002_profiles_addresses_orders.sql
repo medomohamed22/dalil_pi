@@ -20,11 +20,11 @@ create table if not exists public.plans (
   sort_order       integer not null default 0
 );
 insert into public.plans (id, name_en, name_ar, price_usd, searches_quota, orders_quota, duration_days, sort_order) values
-  ('free',  'Free',  'مجانية',  0.00,   5,   2, 30, 0),
-  ('basic', 'Basic', 'أساسية',  1.99,  60,  20, 30, 1),
-  ('plus',  'Plus',  'بلس',     4.99, 180,  60, 30, 2),
-  ('pro',   'Pro',   'برو',     9.99, 380, 150, 30, 3),
-  ('topup', 'Top-up','شحن رصيد', 0.79,  20,   5,  0, 4)
+  ('free',  'Free',  'مجانية',  0.00,   5,   5, 30, 0),
+  ('basic', 'Basic', 'أساسية',  1.99,  60,  60, 30, 1),
+  ('plus',  'Plus',  'بلس',     4.99, 180, 180, 30, 2),
+  ('pro',   'Pro',   'برو',     9.99, 380, 380, 30, 3),
+  ('topup', 'Top-up','شحن رصيد', 0.79,  20,  20,  0, 4)
 on conflict (id) do update set
   name_en = excluded.name_en, name_ar = excluded.name_ar, price_usd = excluded.price_usd,
   searches_quota = excluded.searches_quota, orders_quota = excluded.orders_quota,

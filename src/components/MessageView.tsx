@@ -16,6 +16,7 @@ export default function MessageView({
   lang,
   city,
   onOrder,
+  ordersLeft,
 }: {
   msg: ChatMessage;
   live: boolean;
@@ -23,6 +24,7 @@ export default function MessageView({
   lang: Lang;
   city?: string;
   onOrder?: (o: Offer) => void;
+  ordersLeft?: number | null;
 }) {
   if (msg.role === "user") {
     const texts = msg.blocks.filter((b): b is Extract<Block, { type: "text" }> => b.type === "text");
@@ -91,7 +93,7 @@ export default function MessageView({
                 </div>
               );
             case "products":
-              return <ProductCards key={i} offers={b.offers} s={s} lang={lang} city={city} onOrder={onOrder} />;
+              return <ProductCards key={i} offers={b.offers} s={s} lang={lang} city={city} onOrder={onOrder} ordersLeft={ordersLeft} />;
             case "link":
               return <LinkCard key={i} preview={b.preview} lang={lang} />;
             case "browser":

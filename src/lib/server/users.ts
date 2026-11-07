@@ -12,7 +12,7 @@ import type { Lang, Usage } from "../types";
 export function freeLimits() {
   return {
     searches: Math.max(0, Number(process.env.FREE_SEARCHES_PER_MONTH ?? 5) || 0),
-    orders: Math.max(0, Number(process.env.FREE_ORDERS_PER_MONTH ?? 2) || 0),
+    orders: Math.max(0, Number(process.env.FREE_ORDERS_PER_MONTH ?? 5) || 0),
   };
 }
 

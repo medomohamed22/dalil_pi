@@ -596,12 +596,15 @@ export function ProductCards({
   lang,
   city,
   onOrder,
+  ordersLeft,
 }: {
   offers: Offer[];
   s: Strings;
   lang: Lang;
   city?: string;
   onOrder?: (o: Offer) => void;
+  /** Orders left this month (null = unknown). */
+  ordersLeft?: number | null;
 }) {
   const badgeText: Record<string, string> = {
     cheapest: s.cheapest,
@@ -722,29 +725,37 @@ export function ProductCards({
                     π {o.piEvidence}
                   </div>
                 )}
-                <div className="mt-auto flex gap-2 pt-2">
-                  {o.url && (
-                    <a
-                      href={o.url}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      title={s.payInStore}
-                      className={`flex flex-1 items-center justify-center gap-1 rounded-xl py-2 text-xs font-semibold transition-opacity ${
-                        o.trust === "suspicious" ? "border border-line text-fg-soft hover:bg-bg-soft" : "bg-inv-bg text-inv-fg hover:opacity-90"
-                      }`}
-                    >
-                      {s.view} <ExternalLink className="size-3" />
-                    </a>
-                  )}
-                  {onOrder && o.url && o.sig && o.trust !== "suspicious" && !o.flags.includes("price_unverified") && !o.flags.includes("not_priced_in_pi") && (
-                    <motion.button
-                      whileTap={{ scale: 0.96 }}
-                      onClick={() => onOrder(o)}
-                      className="flex shrink-0 items-center justify-center gap-1 rounded-xl border border-line px-3 text-xs font-semibold hover:bg-bg-soft"
-                    >
-                      <Package className="size-3.5" /> {s.order}
-                    </motion.button>
-                  )}
+                <div className="mt-auto flex flex-col gap-1.5 pt-2">
+                  {(() => {
+                    const orderable = !!(onOrder && o.url && o.sig && o.trust !== "suspicious" && !o.flags.includes("price_unverified") && !o.flags.includes("not_priced_in_pi"));
+                    if (orderable) {
+                      const out = ordersLeft != null && ordersLeft <= 0;
+                      return (
+                        <>
+                          <motion.button
+                            whileTap={{ scale: 0.96 }}
+                            disabled={out}
+                            onClick={() => onOrder!(o)}
+                            title={s.payInStore}
+                            className="flex w-full items-center justify-center gap-1.5 rounded-xl bg-inv-bg py-2 text-xs font-semibold text-inv-fg transition-opacity hover:opacity-90 disabled:opacity-40"
+                          >
+                            <Package className="size-3.5" /> {s.order} <ExternalLink className="size-3" />
+                          </motion.button>
+                          {out && <span className="text-center text-[10.5px] text-danger">{s.noOrdersLeft}</span>}
+                        </>
+                      );
+                    }
+                    return o.url ? (
+                      <a
+                        href={o.url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="flex w-full items-center justify-center gap-1 rounded-xl border border-line py-2 text-xs font-medium text-fg-soft hover:bg-bg-soft"
+                      >
+                        {s.view} <ExternalLink className="size-3" />
+                      </a>
+                    ) : null;
+                  })()}
                 </div>
               </div>
             </motion.div>

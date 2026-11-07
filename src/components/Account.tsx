@@ -1,10 +1,10 @@
 "use client";
 
 import { AnimatePresence, motion } from "framer-motion";
-import { Check, Copy, ExternalLink, Loader2, MapPin, Package, Pencil, Plus, Trash2, X } from "lucide-react";
+import { Check, ExternalLink, Loader2, MapPin, Package, Pencil, Plus, Trash2, X } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { countryLabel, flag, formatMoney, type Strings } from "@/lib/i18n";
-import type { Address, Lang, Me, Offer, Order } from "@/lib/types";
+import type { Address, Lang, Me, Order } from "@/lib/types";
 
 type Fetch = (url: string, init?: RequestInit) => Promise<Response>;
 
@@ -370,138 +370,6 @@ export function AccountSheet({ open, onClose, s, lang, me, api, country }: { ope
                 </div>
               </div>
             ))
-          )}
-        </div>
-      )}
-    </Sheet>
-  );
-}
-
-/* ---------------- Order sheet (from a product card) ---------------- */
-
-export function OrderSheet({ offer, onClose, s, lang, api, country, onDone }: { offer: Offer | null; onClose: () => void; s: Strings; lang: Lang; api: Fetch; country: string; onDone?: () => void }) {
-  const { addresses, reload } = useAddresses(api, !!offer);
-  const [selected, setSelected] = useState<string | null>(null);
-  const [adding, setAdding] = useState(false);
-  const [busy, setBusy] = useState(false);
-  const [err, setErr] = useState("");
-  const [order, setOrder] = useState<Order | null>(null);
-  const [copied, setCopied] = useState(false);
-
-  useEffect(() => {
-    if (!offer) {
-      setOrder(null);
-      setErr("");
-      setAdding(false);
-      setSelected(null);
-    }
-  }, [offer]);
-  useEffect(() => {
-    if (addresses && !selected) setSelected(addresses.find((a) => a.isDefault)?.id ?? addresses[0]?.id ?? null);
-    if (addresses && addresses.length === 0) setAdding(true);
-  }, [addresses, selected]);
-
-  const create = async () => {
-    if (!offer || !selected) return;
-    setBusy(true);
-    setErr("");
-    try {
-      const res = await api("/api/orders", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ offer, addressId: selected }) });
-      setOrder((await json<{ order: Order }>(res)).order);
-      onDone?.();
-    } catch (e) {
-      setErr((e as Error).message);
-    } finally {
-      setBusy(false);
-    }
-  };
-  const details = order?.shipping ? formatAddress(order.shipping, lang) : "";
-
-  return (
-    <Sheet open={!!offer} title={s.orderTitle} onClose={onClose}>
-      {offer && (
-        <div className="space-y-3">
-          <div className="flex items-center gap-3 rounded-2xl bg-bg-soft p-3">
-            <div className="min-w-0 flex-1">
-              <div className="truncate text-sm font-semibold" dir="auto">
-                {offer.title}
-              </div>
-              <div className="text-xs text-fg-muted">{offer.store}</div>
-            </div>
-            <div className="text-end">
-              <div className="font-semibold tabular-nums" dir="ltr">
-                {formatMoney(offer.total, offer.currency, lang)}
-              </div>
-              {offer.totalUsd != null && (
-                <div className="text-[11px] text-fg-muted" dir="ltr">
-                  ≈ {formatMoney(offer.totalUsd, "USD", lang)}
-                </div>
-              )}
-            </div>
-          </div>
-
-          {order ? (
-            <div className="space-y-2.5" data-testid="order-done">
-              <p className="text-sm">{s.orderSaved}</p>
-              <pre className="whitespace-pre-wrap rounded-2xl border border-line p-3 font-sans text-[13px] leading-relaxed" dir="auto">
-                {details}
-              </pre>
-              <div className="flex gap-2">
-                <button
-                  onClick={async () => {
-                    try {
-                      await navigator.clipboard.writeText(details);
-                      setCopied(true);
-                      setTimeout(() => setCopied(false), 1500);
-                    } catch {}
-                  }}
-                  className="flex flex-1 items-center justify-center gap-1.5 rounded-xl border border-line py-2.5 text-sm font-medium hover:bg-bg-soft"
-                >
-                  {copied ? <Check className="size-4" /> : <Copy className="size-4" />} {copied ? s.copied : s.copyDetails}
-                </button>
-                {order.checkoutUrl && (
-                  <a href={order.checkoutUrl} target="_blank" rel="noopener noreferrer" className="flex flex-1 items-center justify-center gap-1.5 rounded-xl bg-inv-bg py-2.5 text-sm font-semibold text-inv-fg">
-                    {s.openStore} <ExternalLink className="size-3.5" />
-                  </a>
-                )}
-              </div>
-              <p className="text-[11px] text-fg-muted">{s.payDirect}</p>
-            </div>
-          ) : adding ? (
-            <AddressForm
-              s={s}
-              api={api}
-              country={country}
-              onCancel={() => setAdding(false)}
-              onSaved={async (a) => {
-                setAdding(false);
-                await reload();
-                setSelected(a.id);
-              }}
-            />
-          ) : (
-            <>
-              <div className="text-[11px] font-semibold uppercase tracking-widest text-fg-muted">{s.shipTo}</div>
-              <div className="space-y-2" role="radiogroup">
-                {addresses === null ? (
-                  <Loader2 className="mx-auto size-5 animate-spin text-fg-muted" />
-                ) : (
-                  addresses.map((a) => <AddressCard key={a.id} a={a} s={s} lang={lang} selected={selected === a.id} onSelect={() => setSelected(a.id)} />)
-                )}
-                <button onClick={() => setAdding(true)} className="flex w-full items-center justify-center gap-1.5 rounded-2xl border border-dashed border-line py-2 text-sm hover:bg-bg-soft">
-                  <Plus className="size-4" /> {s.addAddress}
-                </button>
-              </div>
-              {err && <p className="text-xs text-danger">{err}</p>}
-              <button
-                onClick={create}
-                disabled={busy || !selected}
-                className="flex w-full items-center justify-center gap-1.5 rounded-2xl bg-inv-bg py-3 text-sm font-semibold text-inv-fg disabled:opacity-50"
-              >
-                {busy ? <Loader2 className="size-4 animate-spin" /> : <Package className="size-4" />} {s.createOrder}
-              </button>
-              <p className="text-[11px] text-fg-muted">{s.payDirect}</p>
-            </>
           )}
         </div>
       )}

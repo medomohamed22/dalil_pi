@@ -8,7 +8,7 @@ import { db, delKV, getKV, loadSettings, requestPersistence, saveSettings, setKV
 import { countryLabel, flag, t, type Strings } from "@/lib/i18n";
 import { inPiBrowser, loadPi, PI_SANDBOX, piAuthenticate } from "@/lib/pi-client";
 import { DEFAULT_SETTINGS, type AgentEvent, type Block, type ChatMessage, type Lang, type Me, type Offer, type Scope, type Settings, type Step, type Usage, type WireMessage } from "@/lib/types";
-import { AccountSheet, OrderSheet } from "./Account";
+import { AccountSheet } from "./Account";
 import Composer, { type ComposerPayload } from "./Composer";
 import Logo from "./Logo";
 import MessageView from "./MessageView";
@@ -113,7 +113,7 @@ export default function App() {
   const [desktopSidebar, setDesktopSidebar] = useState(true);
   const [countryOpen, setCountryOpen] = useState(false);
   const [accountOpen, setAccountOpen] = useState(false);
-  const [orderOffer, setOrderOffer] = useState<Offer | null>(null);
+  const [notice, setNotice] = useState("");
   const [dark, setDark] = useState(false);
   const [prefill, setPrefill] = useState<{ text: string; n: number } | undefined>();
   const abortRef = useRef<AbortController | null>(null);
@@ -400,6 +400,25 @@ export default function App() {
   /* ---------- UI pieces ---------- */
   const usage = me?.usage;
   const left = usage ? Math.max(0, usage.searchLimit - usage.searchesUsed) : null;
+  const ordersLeft = usage ? Math.max(0, usage.orderLimit - usage.ordersUsed) : null;
+
+  /**
+   * "Order" on a product card: open the product page in the store right away
+   * (inside the click, so the browser doesn't block it), then save and count
+   * the order on our server. The user pays the store directly.
+   */
+  const order = (o: Offer) => {
+    if (!o.url) return;
+    window.open(o.url, "_blank", "noopener,noreferrer");
+    setNotice("");
+    void authFetch("/api/orders", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ offer: o }), keepalive: true })
+      .then(async (r) => {
+        const j = await r.json().catch(() => ({}));
+        if (j.usage) setMe((cur) => (cur ? { ...cur, usage: j.usage } : cur));
+        if (!r.ok) setNotice(`${s.orderFailed} ${j.error ?? r.status}`);
+      })
+      .catch((e) => setNotice(`${s.orderFailed} ${(e as Error).message}`));
+  };
 
   const sidebar = (
     <div className="flex h-full flex-col">
@@ -589,7 +608,7 @@ export default function App() {
               <div className="space-y-7 pt-4">
                 {messages.map((m) => (
                   <div key={m.id} id={`msg-${m.id}`}>
-                    <MessageView msg={m} live={live?.id === m.id} s={s} lang={lang} city={config?.geo.city} onOrder={setOrderOffer} />
+                    <MessageView msg={m} live={live?.id === m.id} s={s} lang={lang} city={config?.geo.city} onOrder={order} ordersLeft={ordersLeft} />
                   </div>
                 ))}
               </div>
@@ -602,6 +621,11 @@ export default function App() {
             <div className="mx-auto max-w-3xl">
               <ScopeBar s={s} scope={settings.scope} onChange={(scope) => updateSettings({ scope })} />
               <Composer s={s} lang={lang} busy={busy} onSend={send} onStop={() => abortRef.current?.abort()} prefill={prefill} />
+              {notice && (
+                <p className="mt-2 text-center text-[11px] text-danger" dir="auto" role="status">
+                  {notice}
+                </p>
+              )}
               <div className="mt-2 flex items-center justify-center gap-2 text-[11px] text-fg-muted">
                 {usage && left != null && (
                   <span className={`rounded-full px-2 py-0.5 tabular-nums ${left === 0 ? "bg-danger/10 text-danger" : "bg-bg-soft"}`} data-testid="usage">
@@ -616,7 +640,6 @@ export default function App() {
       </main>
 
       <AccountSheet open={accountOpen} onClose={() => setAccountOpen(false)} s={s} lang={lang} me={me} api={authFetch} country={country} />
-      <OrderSheet offer={orderOffer} onClose={() => setOrderOffer(null)} s={s} lang={lang} api={authFetch} country={country} />
       <CountrySheet
         open={countryOpen}
         lang={lang}
