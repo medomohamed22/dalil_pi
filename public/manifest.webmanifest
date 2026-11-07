@@ -1,6 +1,6 @@
 {
-  "name": "Dalil — AI shopping agent",
-  "short_name": "Dalil",
+  "name": "Dalil Pi — AI shopping agent for Pi",
+  "short_name": "Dalil Pi",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#ffffff",

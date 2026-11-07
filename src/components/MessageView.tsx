@@ -5,68 +5,22 @@ import { AlertCircle, AlertTriangle } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import type { Strings } from "@/lib/i18n";
-import type { Block, ChatMessage, Lang, Offer, Protection, WatchMode } from "@/lib/types";
-import { CartCard, type CartAction } from "./Cart";
-import { WatchDraftCard } from "./Watches";
-import { InsightCard } from "./Insight";
-import { ApprovalCard, BrowserCard, LinkCard, OfferSkeletons, ProductCards, StepsTimeline } from "./cards";
+import type { Block, ChatMessage, Lang } from "@/lib/types";
+import { BrowserCard, LinkCard, OfferSkeletons, ProductCards, StepsTimeline } from "./cards";
 import Logo from "./Logo";
 
-export type ApprovalAction = "approve" | "decline" | "cancel" | "capture" | "retry" | "track" | "refund" | "negotiate" | "group";
-
-export default function MessageView({
-  msg,
-  live,
-  s,
-  lang,
-  busy,
-  onBuy,
-  onWatch,
-  onOpenDraft,
-  onApproval,
-  onPatchApproval,
-  onCart,
-  onAddToCart,
-  inCart,
-  demo,
-  city,
-}: {
-  onPatchApproval?: (msgId: string, blockIndex: number, patch: { protection?: Protection; familyId?: string }) => Promise<void> | void;
-  onCart?: (msgId: string, blockIndex: number, action: CartAction, arg?: number) => Promise<void> | void;
-  onAddToCart?: (o: Offer) => void;
-  inCart?: (o: Offer) => boolean;
-  demo?: boolean;
-  msg: ChatMessage;
-  live: boolean;
-  s: Strings;
-  lang: Lang;
-  busy: boolean;
-  onBuy: (o: Offer) => void;
-  onWatch?: (o: Offer) => void;
-  onOpenDraft?: (d: { offer: Offer; targetPrice?: number; mode?: WatchMode }) => void;
-  city?: string;
-  onApproval: (msgId: string, blockIndex: number, action: ApprovalAction, reason?: string) => Promise<void> | void;
-}) {
+export default function MessageView({ msg, live, s, lang, city }: { msg: ChatMessage; live: boolean; s: Strings; lang: Lang; city?: string }) {
   if (msg.role === "user") {
     const texts = msg.blocks.filter((b): b is Extract<Block, { type: "text" }> => b.type === "text");
     const imgs = msg.blocks.filter((b): b is Extract<Block, { type: "image" }> => b.type === "image");
     const links = msg.blocks.filter((b): b is Extract<Block, { type: "link" }> => b.type === "link");
     return (
-      <motion.div
-        initial={{ opacity: 0, y: 10 }}
-        animate={{ opacity: 1, y: 0 }}
-        className="flex flex-col items-end gap-2"
-      >
+      <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="flex flex-col items-end gap-2">
         {imgs.length > 0 && (
           <div className={`grid gap-1.5 ${imgs.length > 1 ? "grid-cols-2" : ""} max-w-[18rem]`}>
             {imgs.map((im, i) => (
               // eslint-disable-next-line @next/next/no-img-element
-              <img
-                key={i}
-                src={im.dataUrl}
-                alt=""
-                className="aspect-square w-full rounded-2xl border border-line object-cover"
-              />
+              <img key={i} src={im.dataUrl} alt="" className="aspect-square w-full rounded-2xl border border-line object-cover" />
             ))}
           </div>
         )}
@@ -123,76 +77,11 @@ export default function MessageView({
                 </div>
               );
             case "products":
-              return (
-                <ProductCards
-                  key={i}
-                  offers={b.offers}
-                  s={s}
-                  lang={lang}
-                  onBuy={onBuy}
-                  onWatch={onWatch}
-                  onAddToCart={onAddToCart}
-                  inCart={inCart}
-                  disabled={busy}
-                  city={city}
-                />
-              );
-            case "cart":
-              return <CartCard key={i} block={b} lang={lang} onAction={(a, arg) => onCart?.(msg.id, i, a, arg)} />;
-            case "approval":
-              return (
-                <ApprovalCard
-                  key={i}
-                  offer={b.offer}
-                  status={b.status}
-                  message={b.message}
-                  holdExpiresAt={b.holdExpiresAt}
-                  shipping={b.shipping}
-                  payerEmail={b.payerEmail}
-                  s={s}
-                  lang={lang}
-                  onApprove={() => onApproval(msg.id, i, "approve")}
-                  onDecline={() => onApproval(msg.id, i, "decline")}
-                  negotiation={b.negotiation}
-                  context={b.context}
-                  groupId={b.groupId}
-                  onGroup={async (n) => onApproval(msg.id, i, "group", String(n))}
-                  mandate={b.mandate}
-                  orderId={b.orderId}
-                  captureId={b.captureId}
-                  onNegotiate={() => onApproval(msg.id, i, "negotiate")}
-                  onCancelHold={() => onApproval(msg.id, i, "cancel")}
-                  onCaptureNow={() => onApproval(msg.id, i, "capture")}
-                  onRetry={() => onApproval(msg.id, i, "retry")}
-                  tracking={b.tracking}
-                  refund={b.refund}
-                  onTrack={async () => onApproval(msg.id, i, "track")}
-                  onRefund={async (r) => onApproval(msg.id, i, "refund", r)}
-                  protection={b.protection}
-                  captureToken={b.captureToken}
-                  familyId={b.familyId}
-                  suggest={b.suggest}
-                  demo={demo}
-                  onPatch={onPatchApproval ? (patch) => onPatchApproval(msg.id, i, patch) : undefined}
-                />
-              );
+              return <ProductCards key={i} offers={b.offers} s={s} lang={lang} city={city} />;
             case "link":
               return <LinkCard key={i} preview={b.preview} lang={lang} />;
-            case "insight":
-              return <InsightCard key={i} offer={b.offer} insight={b.insight} lang={lang} onBuy={onBuy} onWatch={onOpenDraft} />;
             case "browser":
               return <BrowserCard key={i} block={b} lang={lang} live={live && b.live !== false} />;
-            case "watchDraft":
-              return (
-                <WatchDraftCard
-                  key={i}
-                  offer={b.offer}
-                  targetPrice={b.targetPrice}
-                  mode={b.mode}
-                  lang={lang}
-                  onOpen={() => onOpenDraft?.({ offer: b.offer, targetPrice: b.targetPrice, mode: b.mode })}
-                />
-              );
             case "error":
               return (
                 <div key={i} className="flex items-start gap-2 rounded-2xl border border-danger/30 px-3 py-2.5 text-sm text-danger">

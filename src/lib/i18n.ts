@@ -1,51 +1,52 @@
 import type { Lang } from "./types";
 
+/** UI strings. English is the default language; Arabic is one tap away (RTL). */
 const strings = {
   en: {
-    tagline: "Your trustworthy AI shopping agent",
+    appName: "Dalil Pi",
+    tagline: "AI shopping agent for Pi — only stores that accept Pi",
     newChat: "New chat",
     chats: "Chats",
-    watches: "Price watches",
-    settings: "Settings",
-    placeholder: "A product name, link, or photo…",
+    placeholder: "What do you want to buy with Pi?",
     send: "Send",
     attach: "Attach photo",
     stop: "Stop",
     emptyTitle: "What are you looking for?",
     emptySub:
-      "Send a product photo, link or name. Dalil compares prices online and in your city, checks for fake deals, and only pays with your approval.",
+      "Tell Dalil Pi what you need. It searches stores that accept Pi in your country, checks how trustworthy each store is, and shows ratings and reviews.",
     suggestions: [
-      "Find the cheapest iPhone 17 Pro 256GB near me",
-      "Watch AirPods Pro 3 and buy if it drops under $199",
-      "Is this deal real? ",
-      "Best-rated air fryer under $120",
+      "Wireless headphones under 500 Pi",
+      "Best price for a new phone charger",
+      "Telegram Premium with Pi",
+      "Shops near me that accept Pi",
     ],
-    apiSection: "Meta Model API",
-    baseUrl: "Base URL",
-    apiKey: "API key",
-    show: "Show",
-    hide: "Hide",
-    fetchModels: "Fetch models",
-    fetching: "Fetching…",
-    model: "Model",
-    reasoning: "Reasoning effort",
-    shoppingSection: "Shopping",
-    market: "Market",
-    city: "City",
+    signInTitle: "Sign in with Pi",
+    signInSub: "Use your Pi account to start. Your free plan includes searches every month.",
+    signInBtn: "Sign in with Pi",
+    signingIn: "Signing in…",
+    openInPiBrowser: "Open Dalil Pi in the Pi Browser to sign in.",
+    devSignIn: "Dev sign-in (local only)",
+    signOut: "Sign out",
+    testnet: "Testnet",
+    country: "Country",
+    countryAuto: "From my location",
+    shoppingIn: "Shopping in",
+    change: "Change",
     language: "Language",
-    demoMode: "Demo mode (no API key needed)",
-    save: "Save",
-    saved: "Saved",
-    keyLocal: "Stored only on this device (IndexedDB). Sent with each request, never stored on the server.",
-    modelsFound: (n: number) => `${n} models found`,
-    modelsFailed: "Could not fetch models — showing known models.",
-    needKey: "The AI is offline right now (the server has no Meta key configured).",
-    hostedLimit: "Daily AI limit reached for this connection — please try again tomorrow.",
+    scope: "Search",
+    scopes: { auto: "Auto", online: "Online", local: "Near me", services: "Services" },
+    searchesLeft: (left: number, limit: number) => `${left} of ${limit} searches left`,
+    quotaTitle: "You've used all your free searches this month",
+    quotaSub: (date: string) => `Your free searches renew on ${date}. Paid plans are coming soon.`,
+    hourly: "You're searching very fast — please wait a little and try again.",
+    needKey: "The AI isn't configured on the server yet (META_API_KEY).",
+    hostedLimit: "Today's AI limit was reached — please try again tomorrow.",
+    signInRequired: "Please sign in with Pi again.",
     cheapest: "Cheapest",
     topRated: "Top rated",
     bestValue: "Best value",
     nearest: "Nearest",
-    verified: "Verified store",
+    verified: "Accepts Pi",
     suspicious: "Suspicious",
     unknownStore: "Unverified",
     shipping: "Shipping",
@@ -55,70 +56,59 @@ const strings = {
     km: "km",
     days: "days",
     reviews: "reviews",
-    view: "View",
-    buy: "Buy",
-    approveTitle: "Approve purchase",
-    approveNote: "Funds are only held (authorized). You can cancel before capture.",
-    approveBtn: "Approve with PayPal",
-    decline: "Decline",
-    declined: "Declined",
-    held: "Funds held",
-    captured: "Purchased",
-    voided: "Cancelled — hold released",
-    processing: "Processing…",
-    cancelHold: "Cancel & release hold",
-    confirmCapture: "Confirm now",
-    shipTo: "Ships to your PayPal address",
-    item: "Item",
-    working: "Dalil is working",
+    view: "Open store",
+    payInStore: "Pay with Pi in the store",
+    notPi: "Not priced in Pi",
+    working: "Dalil Pi is working",
     copied: "Copied",
     deleteChat: "Delete chat",
+    piPrice: "Pi price",
   },
   ar: {
-    tagline: "وكيل تسوّق ذكي تقدر تثق فيه",
+    appName: "دليل باي",
+    tagline: "وكيل تسوّق ذكي للباي — بس المتاجر اللي بتقبل باي",
     newChat: "محادثة جديدة",
     chats: "المحادثات",
-    watches: "مراقبة الأسعار",
-    settings: "الإعدادات",
-    placeholder: "اسم منتج، لينك، أو صورة…",
+    placeholder: "عاوز تشتري إيه بالباي؟",
     send: "إرسال",
     attach: "إرفاق صورة",
     stop: "إيقاف",
     emptyTitle: "بتدوّر على إيه؟",
     emptySub:
-      "ابعت صورة المنتج أو لينكه أو اسمه. دليل بيقارن الأسعار أونلاين وفي مدينتك، ويكشف العروض الوهمية، ومابيدفعش غير بموافقتك.",
+      "قول لدليل باي إنت محتاج إيه. هيدوّر في المتاجر اللي بتقبل باي في بلدك، ويقيّم ثقة كل متجر، ويوريك التقييمات والتعليقات.",
     suggestions: [
-      "دوّرلي على أرخص iPhone 17 Pro 256GB في القاهرة",
-      "راقب AirPods Pro 3 واشتريها لو نزلت تحت ٨٠٠٠ جنيه",
-      "العرض ده حقيقي ولا وهمي؟ ",
-      "أحسن قلاية هوائية تقييمًا تحت ٤٠٠٠ جنيه",
+      "سماعة لاسلكية في حدود 500 باي",
+      "أحسن سعر لشاحن موبايل جديد",
+      "تليجرام بريميوم بالباي",
+      "محلات قريبة مني بتقبل باي",
     ],
-    apiSection: "Meta Model API",
-    baseUrl: "عنوان الـ API",
-    apiKey: "مفتاح الـ API",
-    show: "إظهار",
-    hide: "إخفاء",
-    fetchModels: "جلب النماذج",
-    fetching: "جاري الجلب…",
-    model: "النموذج",
-    reasoning: "مستوى التفكير",
-    shoppingSection: "التسوّق",
-    market: "السوق",
-    city: "المدينة",
+    signInTitle: "سجّل دخول بحساب باي",
+    signInSub: "استخدم حساب باي بتاعك علشان تبدأ. الباقة المجانية فيها عمليات بحث كل شهر.",
+    signInBtn: "سجّل دخول بباي",
+    signingIn: "جاري تسجيل الدخول…",
+    openInPiBrowser: "افتح دليل باي من متصفح باي علشان تسجّل دخول.",
+    devSignIn: "دخول تجريبي (محلي بس)",
+    signOut: "تسجيل خروج",
+    testnet: "شبكة تجريبية",
+    country: "البلد",
+    countryAuto: "من موقعي",
+    shoppingIn: "بتتسوّق في",
+    change: "غيّر",
     language: "اللغة",
-    demoMode: "وضع العرض التجريبي (من غير مفتاح)",
-    save: "حفظ",
-    saved: "اتحفظ",
-    keyLocal: "محفوظ على الجهاز ده بس (IndexedDB). بيتبعت مع كل طلب ومش بيتخزن على السيرفر.",
-    modelsFound: (n: number) => `تم العثور على ${n} نموذج`,
-    modelsFailed: "معرفناش نجيب النماذج — دي النماذج المعروفة.",
-    needKey: "ضيف مفتاح Meta API من الإعدادات، أو فعّل وضع العرض التجريبي.",
-    hostedLimit: "خلصت المحاولات المجانية النهارده. ضيف مفتاحك من الإعدادات أو جرّب وضع العرض التجريبي.",
+    scope: "البحث",
+    scopes: { auto: "تلقائي", online: "أونلاين", local: "قريب مني", services: "خدمات" },
+    searchesLeft: (left: number, limit: number) => `فاضل لك ${left} من ${limit} عمليات بحث`,
+    quotaTitle: "خلصت عمليات البحث المجانية للشهر ده",
+    quotaSub: (date: string) => `البحث المجاني بيتجدد يوم ${date}. الباقات المدفوعة جاية قريب.`,
+    hourly: "إنت بتبحث بسرعة جداً — استنى شوية وجرّب تاني.",
+    needKey: "الذكاء الاصطناعي لسه مش متظبط على السيرفر (META_API_KEY).",
+    hostedLimit: "الحد اليومي للذكاء الاصطناعي خلص — جرّب بكرة.",
+    signInRequired: "سجّل دخول بباي تاني من فضلك.",
     cheapest: "الأرخص",
     topRated: "الأعلى تقييمًا",
     bestValue: "أفضل قيمة",
     nearest: "الأقرب",
-    verified: "متجر موثوق",
+    verified: "بيقبل باي",
     suspicious: "مشبوه",
     unknownStore: "غير موثّق",
     shipping: "الشحن",
@@ -128,31 +118,20 @@ const strings = {
     km: "كم",
     days: "أيام",
     reviews: "تقييم",
-    view: "عرض",
-    buy: "شراء",
-    approveTitle: "الموافقة على الشراء",
-    approveNote: "المبلغ بيتحجز بس (Authorize). تقدر تلغي قبل الخصم.",
-    approveBtn: "وافق وادفع بـ PayPal",
-    decline: "رفض",
-    declined: "اترفض",
-    held: "المبلغ محجوز",
-    captured: "تم الشراء",
-    voided: "اتلغى — الحجز اتفك",
-    processing: "جاري التنفيذ…",
-    cancelHold: "إلغاء وفك الحجز",
-    confirmCapture: "تأكيد الآن",
-    shipTo: "الشحن على عنوانك في PayPal",
-    item: "المنتج",
-    working: "دليل بيشتغل",
+    view: "افتح المتجر",
+    payInStore: "ادفع بالباي في المتجر",
+    notPi: "السعر مش بالباي",
+    working: "دليل باي بيشتغل",
     copied: "اتنسخ",
     deleteChat: "حذف المحادثة",
+    piPrice: "سعر الباي",
   },
-} as const;
+};
 
 export type Strings = (typeof strings)["en"];
 
 export function t(lang: Lang): Strings {
-  return strings[lang] as unknown as Strings;
+  return strings[lang] as Strings;
 }
 
 /** Locale for numbers: the Arabic UI keeps Latin digits (clearer for prices & models). */
@@ -162,8 +141,9 @@ export function numLocale(lang: Lang): string {
 
 export function formatMoney(amount: number, currency: string, lang: Lang): string {
   const cur = currency.toUpperCase();
-  const digits = amount % 1 === 0 ? 0 : 2;
-  const num = amount.toLocaleString("en-US", { minimumFractionDigits: digits, maximumFractionDigits: digits });
+  const digits = cur === "PI" ? (amount % 1 === 0 ? 0 : amount < 10 ? 4 : 2) : amount % 1 === 0 ? 0 : 2;
+  const num = amount.toLocaleString("en-US", { minimumFractionDigits: 0, maximumFractionDigits: digits });
+  if (cur === "PI") return lang === "ar" ? `${num} باي` : `${num} π`;
   if (cur === "USD") return `$${num}`;
   if (cur === "EGP") return lang === "ar" ? `${num} ج.م` : `EGP ${num}`;
   try {
@@ -171,4 +151,18 @@ export function formatMoney(amount: number, currency: string, lang: Lang): strin
   } catch {
     return `${num} ${cur}`;
   }
+}
+
+export function countryLabel(code: string, lang: Lang): string {
+  try {
+    return new Intl.DisplayNames([lang], { type: "region" }).of(code) ?? code;
+  } catch {
+    return code;
+  }
+}
+
+/** ISO alpha-2 → flag emoji. */
+export function flag(code: string): string {
+  if (!/^[A-Z]{2}$/.test(code)) return "🌐";
+  return String.fromCodePoint(...[...code].map((c) => 0x1f1e6 + c.charCodeAt(0) - 65));
 }

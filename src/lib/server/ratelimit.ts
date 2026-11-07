@@ -1,6 +1,6 @@
 import "server-only";
 import { visitorId } from "./hosted";
-import { kv } from "./store";
+import { counters } from "./store";
 
 /**
  * Fixed-window rate limit per visitor (IP hash) and bucket. Returns a 429
@@ -10,7 +10,7 @@ import { kv } from "./store";
 export async function rateLimit(req: Request, bucket: string, limit: number, windowSec: number): Promise<Response | null> {
   const win = Math.floor(Date.now() / 1000 / windowSec);
   try {
-    const n = await kv.incr(`rl:${bucket}:${visitorId(req)}:${win}`, windowSec + 5);
+    const n = await counters.incr(`rl:${bucket}:${visitorId(req)}:${win}`, windowSec + 5);
     if (n <= limit) return null;
   } catch {
     return null;

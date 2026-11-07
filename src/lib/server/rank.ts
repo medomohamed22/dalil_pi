@@ -1,41 +1,19 @@
 import type { Offer, TrustLevel } from "../types";
 
-/** Stores we treat as verified for checkout in the demo markets. */
-const VERIFIED: Record<string, string[]> = {
-  EG: [
-    "amazon.eg", "noon.com", "jumia.com.eg", "btech.com", "2b.com.eg",
-    "carrefouregypt.com", "raneen.com", "select.com.eg", "elarabygroup.com", "tradelinestores.com",
-    "cairosales.com", "dream2000.com", "hubstore.com.eg", "istyle.com.eg", "virginmegastore.com.eg",
-    "spinneys-egypt.com", "kimostore.net", "sharafdg.com", "xcite.com", "elgendy.store",
-    "dalil-demo.store",
-  ],
-  US: [
-    "amazon.com", "walmart.com", "bestbuy.com", "target.com", "costco.com", "bhphotovideo.com",
-    "newegg.com", "homedepot.com", "lowes.com", "adorama.com", "crutchfield.com", "macys.com",
-    "kohls.com", "nordstrom.com", "samsclub.com", "staples.com", "officedepot.com", "gamestop.com",
-    "dickssportinggoods.com", "rei.com", "wayfair.com", "ikea.com", "sephora.com", "ulta.com",
-    "cvs.com", "walgreens.com", "microcenter.com", "verizon.com", "att.com", "t-mobile.com",
-    "dalil-demo.store",
-  ],
-};
-
-/** Official brand stores — trusted in every market. */
-const BRANDS = [
-  "apple", "samsung", "sony", "lg", "bose", "dell", "hp", "lenovo", "asus", "acer", "microsoft",
-  "google", "xiaomi", "mi", "oppo", "realme", "huawei", "honor", "oneplus", "nokia", "motorola",
-  "philips", "braun", "dyson", "jbl", "harman", "beats", "anker", "logitech", "razer", "canon",
-  "nikon", "fujifilm", "gopro", "garmin", "fitbit", "nintendo", "playstation", "xbox", "nike",
-  "adidas", "puma", "tefal", "moulinex", "kenwood", "delonghi", "ninja", "ninjakitchen", "instantbrands",
-  "sharp", "toshiba", "panasonic", "tornado", "fresh", "zanussi", "bosch", "whirlpool", "ikea",
+/**
+ * Stores known to accept Pi officially (Pi SDK checkout or an official Pi
+ * payment gateway). Everything else starts as "unknown" until the trust
+ * score (next phase) proves otherwise.
+ */
+const PI_VERIFIED = [
+  "mall.salla-shop.com", "salla-shop.com", // Salla Shop Mall (Pi SDK, escrow)
+  "piketplace.com",                        // Piketplace (Hackathon 2023 runner-up)
+  "mapofpi.com",                           // Map of Pi (local shops)
+  "pinet.com",                             // Pi Mainnet apps (*.pinet.com)
 ];
 
-/** Domain of an official brand store whose brand appears in the product title (e.g. sony.com for "Sony WH-1000XM5"). */
-function isOfficialBrand(domain: string, title: string): boolean {
-  const labels = domain.split(".");
-  const t = title.toLowerCase();
-  return labels.some(
-    (l) => l.length >= 2 && BRANDS.includes(l) && new RegExp(`(^|[^a-z])${l}([^a-z]|$)`).test(t),
-  );
+function isPiVerified(domain: string): boolean {
+  return PI_VERIFIED.some((v) => domain === v || domain.endsWith("." + v));
 }
 
 export interface RawOffer {
@@ -55,6 +33,8 @@ export interface RawOffer {
   notes?: string;
   /** false when the store says it's out of stock. */
   inStock?: boolean;
+  kind?: "online" | "local" | "service";
+  piEvidence?: string;
 }
 
 /** Only plain web links reach the UI (no javascript:, data:, file: …). */
@@ -66,13 +46,6 @@ function webUrl(u?: string): string | undefined {
   } catch {
     return;
   }
-}
-
-/** Affiliate/catalog redirect hosts: the link itself doesn't say which store it is. */
-const REDIRECT_HOSTS = ["buy.trychannel3.com"];
-export function isRedirectLink(url?: string): boolean {
-  const d = domainOf(url);
-  return !!d && REDIRECT_HOSTS.includes(d);
 }
 
 function domainOf(url?: string): string | undefined {
@@ -95,34 +68,34 @@ function median(xs: number[]): number {
  * Deterministic, explainable ranking. The model gathers facts; the score is
  * computed here so it can't be swayed by page content or "sponsored" text.
  *   price 50% · rating 25% (Bayesian-smoothed) · trust 15% · proximity 10%
+ * Offers not priced in Pi are flagged and ranked last (they can't be paid with Pi).
+ *
+ * @param country ISO country the user shops in
+ * @param piUsd   live Pi price in USD (OKX) for the "≈ $" hint, if available
  */
-/**
- * @param storeDomainOf server-side lookup of the real store domain for a link
- *   (catalog redirect links) — only ever filled from trusted catalog data.
- */
-export function rankOffers(raw: RawOffer[], market: string, storeDomainOf?: (url: string) => string | undefined): Offer[] {
+export function rankOffers(raw: RawOffer[], country: string, piUsd?: number): Offer[] {
   const valid = raw.filter((r) => r && r.title && isFinite(r.price) && r.price > 0);
   if (!valid.length) return [];
 
-  const totals = valid.map((r) => r.price + (r.shipping ?? 0));
+  // Compare prices only within one currency (Pi), so fiat listings don't skew the stats.
+  const isPi = (r: RawOffer) => ["PI", "Π"].includes((r.currency || "PI").toUpperCase());
+  const priced = valid.some(isPi) ? valid.filter(isPi) : valid;
+  const totals = priced.map((r) => r.price + (r.shipping ?? 0));
   const med = median(totals);
   const minT = Math.min(...totals);
   const maxT = Math.max(...totals);
-  const verified = VERIFIED[market] ?? [];
 
   const offers: Offer[] = valid.map((r, i) => {
     const total = Math.round((r.price + (r.shipping ?? 0)) * 100) / 100;
-    const linkDomain = domainOf(r.url);
-    const domain = r.url && isRedirectLink(r.url) ? domainOf(`https://${storeDomainOf?.(r.url) ?? ""}`) : linkDomain;
+    const domain = domainOf(r.url);
     const flags: string[] = [];
+    const currency = (r.currency || "PI").toUpperCase() === "Π" ? "PI" : (r.currency || "PI").toUpperCase();
 
-    let trust: TrustLevel =
-      domain && (verified.some((v) => domain === v || domain.endsWith("." + v)) || isOfficialBrand(domain, r.title))
-        ? "verified"
-        : "unknown";
+    let trust: TrustLevel = domain && isPiVerified(domain) ? "verified" : "unknown";
+    if (currency !== "PI") flags.push("not_priced_in_pi");
 
     // Too-good-to-be-true pricing is the classic fake-store pattern.
-    if (valid.length >= 3 && total < med * 0.6) {
+    if (priced.length >= 3 && isPi(r) === isPi(priced[0]) && total < med * 0.6) {
       trust = "suspicious";
       flags.push("price_far_below_market");
     }
@@ -136,7 +109,7 @@ export function rankOffers(raw: RawOffer[], market: string, storeDomainOf?: (url
     if (!webUrl(r.url)) flags.push("no_source_link");
     if (r.inStock === false) flags.push("out_of_stock");
 
-    const priceScore = maxT === minT ? 1 : 1 - (total - minT) / (maxT - minT);
+    const priceScore = !priced.includes(r) ? 0 : maxT === minT ? 1 : Math.max(0, Math.min(1, 1 - (total - minT) / (maxT - minT)));
     // Bayesian average: pull ratings with few reviews toward 3.8.
     const n = r.reviewCount ?? 0;
     const bayes = r.rating ? (r.rating * n + 3.8 * 25) / (n + 25) : 3.5;
@@ -153,6 +126,7 @@ export function rankOffers(raw: RawOffer[], market: string, storeDomainOf?: (url
     if (trust === "suspicious") raw01 *= 0.3;
     else if (flags.includes("suspicious_discount")) raw01 *= 0.7;
     if (flags.includes("out_of_stock")) raw01 *= 0.2;
+    if (flags.includes("not_priced_in_pi")) raw01 *= 0.4;
     const score = Math.round(raw01 * 1000) / 10;
 
     return {
@@ -163,14 +137,18 @@ export function rankOffers(raw: RawOffer[], market: string, storeDomainOf?: (url
       store: r.store,
       storeDomain: domain,
       price: r.price,
-      currency: r.currency || (market === "EG" ? "EGP" : "USD"),
+      currency,
       shipping: r.shipping,
       total,
+      totalUsd: currency === "PI" && piUsd ? Math.round(total * piUsd * 100) / 100 : undefined,
       rating: r.rating,
       reviewCount: r.reviewCount,
       distanceKm: r.distanceKm,
       pickup: r.pickup,
       deliveryDays: r.deliveryDays,
+      kind: r.kind,
+      country,
+      piEvidence: r.piEvidence?.slice(0, 160),
       trust,
       flags,
       badges: [],
@@ -183,10 +161,11 @@ export function rankOffers(raw: RawOffer[], market: string, storeDomainOf?: (url
     (a, b) =>
       Number(a.trust === "suspicious") - Number(b.trust === "suspicious") ||
       Number(a.flags.includes("out_of_stock")) - Number(b.flags.includes("out_of_stock")) ||
+      Number(a.flags.includes("not_priced_in_pi")) - Number(b.flags.includes("not_priced_in_pi")) ||
       (b.score ?? 0) - (a.score ?? 0),
   );
   // Badges only go to offers you can actually buy.
-  const eligible = offers.filter((o) => o.trust !== "suspicious" && !o.flags.includes("out_of_stock"));
+  const eligible = offers.filter((o) => o.trust !== "suspicious" && !o.flags.includes("out_of_stock") && !o.flags.includes("not_priced_in_pi"));
   const pool = eligible.length ? eligible : offers;
 
   const cheapest = [...pool].sort((a, b) => a.total - b.total)[0];

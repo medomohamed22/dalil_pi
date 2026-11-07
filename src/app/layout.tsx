@@ -11,10 +11,10 @@ const arabic = IBM_Plex_Sans_Arabic({
 });
 
 export const metadata: Metadata = {
-  title: "Dalil — AI shopping agent on PayPal",
+  title: "Dalil Pi — AI shopping agent for Pi",
   description:
-    "Send a photo, link or name. Dalil finds the best price online and in your city, flags fake deals, and only pays with your approval via PayPal.",
-  applicationName: "Dalil",
+    "Tell Dalil Pi what you need. It searches stores that accept Pi in your country, checks how trustworthy each store is, and shows ratings and reviews.",
+  applicationName: "Dalil Pi",
   manifest: "/manifest.webmanifest",
 };
 

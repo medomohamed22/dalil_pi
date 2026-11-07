@@ -1,27 +1,7 @@
 "use client";
 
 import Dexie, { type Table } from "dexie";
-import {
-  DEFAULT_SETTINGS,
-  type ChatMessage,
-  type Conversation,
-  type Settings,
-} from "./types";
-
-/**
- * The app runs English-only, US-only, on the server's Meta key with one fixed
- * model — only the spending mandate is the user's to change.
- */
-const LOCKED = {
-  apiKey: "",
-  baseUrl: DEFAULT_SETTINGS.baseUrl,
-  model: DEFAULT_SETTINGS.model,
-  reasoningEffort: DEFAULT_SETTINGS.reasoningEffort,
-  market: "US",
-  city: "New York",
-  lang: "en",
-  demoMode: false,
-} as const satisfies Partial<Settings>;
+import { DEFAULT_SETTINGS, type ChatMessage, type Conversation, type Settings } from "./types";
 
 interface KV {
   key: string;
@@ -29,9 +9,8 @@ interface KV {
 }
 
 /**
- * Everything the user owns lives in the browser's IndexedDB (large quota,
- * handles images), never on our server. Only price watches are mirrored
- * server-side because they must run while the tab is closed.
+ * Chats, photos and settings stay in the browser's IndexedDB. The server
+ * (Supabase) only keeps the Pi account, its preferences and monthly usage.
  */
 class DalilDB extends Dexie {
   conversations!: Table<Conversation, string>;
@@ -39,7 +18,7 @@ class DalilDB extends Dexie {
   kv!: Table<KV, string>;
 
   constructor() {
-    super("dalil");
+    super("dalil-pi");
     this.version(1).stores({
       conversations: "id, updatedAt",
       messages: "id, conversationId, createdAt, [conversationId+createdAt]",
@@ -57,14 +36,18 @@ export function db(): DalilDB {
 export async function loadSettings(): Promise<Settings> {
   try {
     const row = await db().kv.get("settings");
-    return { ...DEFAULT_SETTINGS, ...((row?.value as Partial<Settings>) ?? {}), ...LOCKED };
+    return { ...DEFAULT_SETTINGS, ...((row?.value as Partial<Settings>) ?? {}) };
   } catch {
     return { ...DEFAULT_SETTINGS };
   }
 }
 
 export async function saveSettings(s: Settings): Promise<void> {
-  await db().kv.put({ key: "settings", value: { ...s, ...LOCKED } });
+  try {
+    await db().kv.put({ key: "settings", value: s });
+  } catch {
+    /* private mode — settings live only for this visit */
+  }
 }
 
 export async function getKV<T>(key: string): Promise<T | undefined> {
@@ -76,7 +59,19 @@ export async function getKV<T>(key: string): Promise<T | undefined> {
 }
 
 export async function setKV(key: string, value: unknown): Promise<void> {
-  await db().kv.put({ key, value });
+  try {
+    await db().kv.put({ key, value });
+  } catch {
+    /* ignore */
+  }
+}
+
+export async function delKV(key: string): Promise<void> {
+  try {
+    await db().kv.delete(key);
+  } catch {
+    /* ignore */
+  }
 }
 
 /** Ask the browser not to evict our data under storage pressure. */
@@ -89,7 +84,5 @@ export async function requestPersistence(): Promise<void> {
 }
 
 export function uid(): string {
-  return (
-    Date.now().toString(36) + Math.random().toString(36).slice(2, 10)
-  );
+  return Date.now().toString(36) + Math.random().toString(36).slice(2, 10);
 }

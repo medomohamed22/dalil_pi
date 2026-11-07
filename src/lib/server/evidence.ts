@@ -9,8 +9,10 @@ import "server-only";
  * nor a custom model endpoint can invent a $1 iPhone.
  */
 const AR_DIGITS = /[٠-٩]/g;
-const CUR = String.raw`(?:US\$|\$|USD|EGP|E£|LE|L\.E\.?|ج\.?\s?م|جنيه|جم)`;
-const NUM = String.raw`(\d{1,3}(?:[,\s]\d{3})+(?:\.\d{1,2})?|\d+(?:\.\d{1,2})?)`;
+// Pi prices: "455 Pi", "π 455", "455 PI", "455 باي" (word boundary so "128 Pixel" doesn't count).
+const CUR = String.raw`(?:US\$|\$|USD|EGP|E£|LE|L\.E\.?|ج\.?\s?م|جنيه|جم|(?<![A-Za-z])Pi\b|π|باي)`;
+// Pi prices often carry up to 7 decimals (e.g. 360.4056).
+const NUM = String.raw`(\d{1,3}(?:[,\s]\d{3})+(?:\.\d{1,7})?|\d+(?:\.\d{1,7})?)`;
 const AMOUNT_RE = new RegExp(`${CUR}\\s?${NUM}|${NUM}\\s?${CUR}|"(?:price|sale_?price|current_?price|amount|value)"\\s*:\\s*"?${NUM}`, "gi");
 const MAX_AMOUNTS = 4000;
 

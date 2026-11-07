@@ -1,11 +1,10 @@
 import "server-only";
 import { createHash } from "node:crypto";
 import type { MetaConfig } from "./meta";
-import { kv } from "./store";
+import { counters } from "./store";
 
 /**
- * Hosted AI: lets visitors (e.g. hackathon judges) try the real agent without
- * bringing their own Meta API key. The key lives only in the server env
+ * Hosted AI: the agent always runs on the server's Meta key. The key lives only in the server env
  * (META_API_KEY), always targets the official Meta endpoint (never a
  * user-supplied base URL), and is rate-limited per visitor and globally.
  */
@@ -21,7 +20,7 @@ export function hostedEnabled(): boolean {
 export function hostedLimits() {
   return {
     perVisitor: Number(process.env.HOSTED_DAILY_LIMIT) || 40,
-    global: Number(process.env.HOSTED_GLOBAL_DAILY_LIMIT) || 500,
+    global: Number(process.env.GLOBAL_DAILY_AI_LIMIT ?? process.env.HOSTED_GLOBAL_DAILY_LIMIT) || 500,
   };
 }
 
@@ -48,9 +47,9 @@ export function visitorId(req: Request): string {
 export async function takeHostedQuota(req: Request): Promise<{ used: number; limit: number }> {
   const day = new Date().toISOString().slice(0, 10);
   const { perVisitor, global } = hostedLimits();
-  const all = await kv.incr(`hosted:all:${day}`, 26 * 3600);
+  const all = await counters.incr(`hosted:all:${day}`, 26 * 3600);
   if (all > global) throw new Error("HOSTED_LIMIT");
-  const used = await kv.incr(`hosted:v:${visitorId(req)}:${day}`, 26 * 3600);
+  const used = await counters.incr(`hosted:v:${visitorId(req)}:${day}`, 26 * 3600);
   if (used > perVisitor) throw new Error("HOSTED_LIMIT");
   return { used, limit: perVisitor };
 }

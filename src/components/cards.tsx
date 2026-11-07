@@ -14,32 +14,18 @@ import {
   Shield,
   Star,
   Truck,
-  X,
   ScanSearch,
   Scale,
   AlertTriangle,
   Camera,
-  Clock,
-  RotateCcw,
   Lock,
-  BellPlus,
-  PackageSearch,
   ScanBarcode,
-  ShoppingCart,
   MousePointerClick,
-  Handshake,
   AppWindow,
-  ArrowRight,
 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { formatMoney, type Strings } from "@/lib/i18n";
-import PayLaterMessage from "./PayLater";
-import { NegotiationPanel } from "./Negotiation";
-import { TrustReceipt } from "./Receipt";
-import { GroupMini, GroupStarter } from "./Group";
-import { FamilyMini, FamilyStarter } from "./Family";
-import { PriceProtectionPanel } from "./Protection";
-import type { ApprovalStatus, Block, Lang, LinkPreview, Negotiation, Offer, Protection, PurchaseContext, Step } from "@/lib/types";
+import type { Block, Lang, LinkPreview, Offer, Step } from "@/lib/types";
 
 /* ---------- Image with graceful fallback ---------- */
 
@@ -127,38 +113,32 @@ export function LinkCard({ preview, lang }: { preview: LinkPreview; lang: Lang }
 const STEP_ICON: Record<string, typeof Search> = {
   web_search: Search,
   lookup_barcode: ScanBarcode,
-  catalog_search: PackageSearch,
   browse_url: Globe,
   browser_open: AppWindow,
   browser_action: MousePointerClick,
   show_offers: Scale,
-  request_purchase_approval: ShieldCheck,
   deal_check: ScanSearch,
   identify_image: Camera,
 };
 
 export function stepLabel(tool: string, s: Strings, lang: Lang): string {
   const ar: Record<string, string> = {
-    web_search: "بيبحث في الويب",
+    web_search: "بيدوّر في المتاجر اللي بتقبل باي",
     lookup_barcode: "بيتعرف على المنتج من الباركود",
-    catalog_search: "بيدوّر في كتالوج ١٠٠ مليون منتج",
     browse_url: "بيتصفح",
     browser_open: "بيفتح الصفحة في متصفح حقيقي",
     browser_action: "بيتعامل مع الصفحة",
     show_offers: "بيقارن ويرتّب العروض",
-    request_purchase_approval: "بيجهّز طلب الموافقة",
     deal_check: "بيكشف العروض الوهمية",
     identify_image: "بيتعرف على المنتج من الصورة",
   };
   const en: Record<string, string> = {
-    web_search: "Searching the web",
+    web_search: "Searching stores that accept Pi",
     lookup_barcode: "Identifying product from barcode",
-    catalog_search: "Searching a 100M-product catalog",
     browse_url: "Browsing",
     browser_open: "Opening in a real browser",
     browser_action: "Interacting with the page",
     show_offers: "Comparing & ranking offers",
-    request_purchase_approval: "Preparing approval",
     deal_check: "Checking for fake deals",
     identify_image: "Identifying product from photo",
   };
@@ -178,21 +158,21 @@ function Favicon({ host, className }: { host: string; className?: string }) {
   );
 }
 
-const TIP_ICONS = [Scale, ShieldCheck, ScanSearch, BellPlus, MapPin] as const;
+const TIP_ICONS = [Scale, ShieldCheck, ScanSearch, Globe, MapPin] as const;
 const TIPS = {
   ar: [
-    "دليل بيقارن السعر النهائي بعد الشحن، مش سعر الرف بس",
-    "مفيش جنيه بيتخصم من غير موافقتك — والمبلغ بيتحجز الأول",
+    "دليل باي بيقارن السعر النهائي بالباي بعد الشحن",
+    "إنت بتدفع للمتجر مباشرة — فلوسك مش بتعدي علينا",
     "بيكشف الخصومات الوهمية والمتاجر المشبوهة",
-    "تقدر تقوله «راقب السعر» ويبلغك أول ما ينزل",
-    "بيحسب المسافة لأقرب محل لو حابب تستلم بنفسك",
+    "بيدوّر بس في المتاجر اللي بتبيع أو بتشحن لبلدك",
+    "قول «قريب مني» علشان يدوّر في المحلات اللي حواليك",
   ],
   en: [
-    "Dalil compares the total cost after shipping, not just the sticker price",
-    "Nothing is charged without your approval — funds are held first",
+    "Dalil Pi compares the total price in Pi after shipping",
+    "You pay the store directly — your Pi never passes through us",
     "It flags fake discounts and suspicious stores",
-    "Say “watch the price” and it alerts you when it drops",
-    "It measures the distance to the nearest store for pickup",
+    "It only searches stores that sell or ship to your country",
+    "Say “near me” to search physical shops around you",
   ],
 };
 
@@ -261,7 +241,7 @@ export function StepsTimeline({
   const browsed = steps.filter((x) => (x.tool === "browse_url" || x.tool === "browser_open") && x.detail);
   const found = Array.from(new Set(steps.flatMap((x) => x.hosts ?? [])));
   const allHosts = Array.from(new Set([...browsed.map((x) => x.detail!), ...found]));
-  const searches = steps.filter((x) => x.tool === "web_search" || x.tool === "catalog_search").length;
+  const searches = steps.filter((x) => x.tool === "web_search").length;
   const sites = new Set(browsed.map((b) => b.detail)).size;
   const n = (v: number) => v.toLocaleString(ar ? "ar-EG-u-nu-latn" : "en-US");
   const clock = `${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, "0")}`;
@@ -607,27 +587,18 @@ const FLAG_TEXT: Record<string, { ar: string; en: string }> = {
   no_source_link: { ar: "مفيش لينك للمصدر", en: "No source link" },
   out_of_stock: { ar: "خلصان حاليًا", en: "Out of stock" },
   price_unverified: { ar: "السعر ده متأكدناش منه من صفحة المتجر", en: "Price not confirmed on the store page" },
+  not_priced_in_pi: { ar: "السعر مش بالباي — اتأكد إن المتجر بيقبل باي", en: "Not priced in Pi — check the store accepts Pi" },
 };
 
 export function ProductCards({
   offers,
   s,
   lang,
-  onBuy,
-  onWatch,
-  onAddToCart,
-  inCart,
-  disabled,
   city,
 }: {
   offers: Offer[];
   s: Strings;
   lang: Lang;
-  onBuy?: (o: Offer) => void;
-  onWatch?: (o: Offer) => void;
-  onAddToCart?: (o: Offer) => void;
-  inCart?: (o: Offer) => boolean;
-  disabled?: boolean;
   city?: string;
 }) {
   const badgeText: Record<string, string> = {
@@ -684,9 +655,14 @@ export function ProductCards({
                 </div>
                 <div className="flex items-end justify-between">
                   <div>
-                    <div className="text-lg font-semibold tabular-nums leading-tight">
+                    <div className="text-lg font-semibold tabular-nums leading-tight" dir="ltr">
                       {formatMoney(o.total, o.currency, lang)}
                     </div>
+                    {o.totalUsd != null && (
+                      <div className="text-[11px] tabular-nums text-fg-muted" dir="ltr">
+                        ≈ {formatMoney(o.totalUsd, "USD", lang)}
+                      </div>
+                    )}
                     <div className="text-[11px] text-fg-muted">
                       {s.shipping}:{" "}
                       {o.shipping ? formatMoney(o.shipping, o.currency, lang) : o.shipping === 0 ? s.free : "—"}
@@ -739,51 +715,24 @@ export function ProductCards({
                     {o.reason}
                   </div>
                 )}
+                {o.piEvidence && (
+                  <div className="line-clamp-2 text-[11px] text-fg-muted" dir="auto" title={o.piEvidence}>
+                    π {o.piEvidence}
+                  </div>
+                )}
                 <div className="mt-auto flex gap-2 pt-2">
                   {o.url && (
                     <a
                       href={o.url}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="flex flex-1 items-center justify-center gap-1 rounded-xl border border-line py-2 text-xs font-medium transition-colors hover:bg-bg-soft"
+                      title={s.payInStore}
+                      className={`flex flex-1 items-center justify-center gap-1 rounded-xl py-2 text-xs font-semibold transition-opacity ${
+                        o.trust === "suspicious" ? "border border-line text-fg-soft hover:bg-bg-soft" : "bg-inv-bg text-inv-fg hover:opacity-90"
+                      }`}
                     >
                       {s.view} <ExternalLink className="size-3" />
                     </a>
-                  )}
-                  {onWatch && o.trust !== "suspicious" && (
-                    <motion.button
-                      whileTap={{ scale: 0.9 }}
-                      onClick={() => onWatch(o)}
-                      title={lang === "ar" ? "راقب السعر" : "Watch price"}
-                      aria-label={lang === "ar" ? "راقب السعر" : "Watch price"}
-                      className="flex shrink-0 items-center justify-center rounded-xl border border-line px-2.5 transition-colors hover:bg-bg-soft"
-                    >
-                      <BellPlus className="size-3.5" />
-                    </motion.button>
-                  )}
-                  {onAddToCart && o.trust !== "suspicious" && !o.flags.includes("price_unverified") && (
-                    <motion.button
-                      whileTap={{ scale: 0.9 }}
-                      onClick={() => onAddToCart(o)}
-                      title={inCart?.(o) ? (lang === "ar" ? "في السلة" : "In cart") : lang === "ar" ? "ضيف للسلة" : "Add to cart"}
-                      aria-label={inCart?.(o) ? (lang === "ar" ? "في السلة" : "In cart") : lang === "ar" ? "ضيف للسلة" : "Add to cart"}
-                      aria-pressed={inCart?.(o) ?? false}
-                      className={`flex shrink-0 items-center justify-center rounded-xl border px-2.5 transition-colors ${
-                        inCart?.(o) ? "border-fg bg-inv-bg text-inv-fg" : "border-line hover:bg-bg-soft"
-                      }`}
-                    >
-                      {inCart?.(o) ? <Check className="size-3.5" /> : <ShoppingCart className="size-3.5" />}
-                    </motion.button>
-                  )}
-                  {onBuy && o.trust !== "suspicious" && (
-                    <motion.button
-                      whileTap={{ scale: 0.96 }}
-                      disabled={disabled}
-                      onClick={() => onBuy(o)}
-                      className="flex-1 rounded-xl bg-inv-bg py-2 text-xs font-semibold text-inv-fg transition-opacity hover:opacity-90 disabled:opacity-40"
-                    >
-                      {s.buy}
-                    </motion.button>
                   )}
                 </div>
               </div>
@@ -792,486 +741,5 @@ export function ProductCards({
         })}
       </div>
     </div>
-  );
-}
-
-/* ---------- Purchase approval ---------- */
-
-function useNow(active: boolean) {
-  const [now, setNow] = useState(() => Date.now());
-  useEffect(() => {
-    if (!active) return;
-    const id = setInterval(() => setNow(Date.now()), 1000);
-    return () => clearInterval(id);
-  }, [active]);
-  return now;
-}
-
-function HoldCountdown({ until, lang, total }: { until: number; lang: Lang; total: number }) {
-  const now = useNow(true);
-  const left = Math.max(0, until - now);
-  const mm = Math.floor(left / 60000);
-  const ss = Math.floor((left % 60000) / 1000);
-  const pct = Math.max(0, Math.min(100, (left / total) * 100));
-  const clock = `${String(mm).padStart(2, "0")}:${String(ss).padStart(2, "0")}`;
-  return (
-    <div className="space-y-1.5">
-      <div className="flex items-center justify-between text-xs">
-        <span className="inline-flex items-center gap-1.5 text-fg-muted">
-          <Clock className="size-3.5" />
-          {lang === "ar" ? "هيتخصم تلقائيًا بعد" : "Auto-charges in"}
-        </span>
-        <span className="font-mono text-sm font-semibold tabular-nums" dir="ltr">
-          {clock}
-        </span>
-      </div>
-      <div className="h-1 overflow-hidden rounded-full bg-bg-muted">
-        <motion.div className="h-full rounded-full bg-fg" animate={{ width: `${pct}%` }} transition={{ ease: "linear", duration: 1 }} />
-      </div>
-    </div>
-  );
-}
-
-/* ---------- After the purchase: tracking & problems ---------- */
-
-type Reason = "not_received" | "damaged" | "not_as_described";
-
-function AfterCare({
-  lang,
-  tracking,
-  refund,
-  onTrack,
-  onRefund,
-}: {
-  lang: Lang;
-  tracking?: { trackingNumber: string; carrier: string; addedAt: number };
-  refund?: { id: string; status: string; reason: string; amount?: string; currency?: string };
-  onTrack?: () => Promise<void>;
-  onRefund?: (r: Reason) => Promise<void>;
-}) {
-  const ar = lang === "ar";
-  const [busy, setBusy] = useState<string | null>(null);
-  const [asking, setAsking] = useState(false);
-  const now = useNow(!!tracking && !refund);
-  const run = async (k: string, fn?: () => Promise<void>) => {
-    if (!fn) return;
-    setBusy(k);
-    try {
-      await fn();
-    } finally {
-      setBusy(null);
-    }
-  };
-
-  if (refund) {
-    return (
-      <motion.div initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} className="rounded-2xl bg-bg-soft p-3 text-xs">
-        <div className="flex items-center gap-1.5 font-semibold">
-          <RotateCcw className="size-3.5" /> {ar ? "اترجّعلك المبلغ عن طريق PayPal" : "Refunded via PayPal"}
-        </div>
-        <div className="mt-1 text-fg-muted" dir="ltr">
-          {refund.amount ? `${refund.amount} ${refund.currency} · ` : ""}
-          {refund.status} · {refund.id}
-        </div>
-      </motion.div>
-    );
-  }
-
-  // Demo shipment timeline (sandbox: Dalil is the merchant of record).
-  const stages = ar ? ["اتدفع", "اتشحن", "في الطريق", "اتسلّم"] : ["Paid", "Shipped", "In transit", "Delivered"];
-  const elapsed = tracking ? now - tracking.addedAt : -1;
-  const reached = !tracking ? 1 : elapsed > 120_000 ? 4 : elapsed > 30_000 ? 3 : 2;
-
-  return (
-    <div className="space-y-2.5">
-      {tracking && (
-        <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }} className="overflow-hidden rounded-2xl border border-line p-3">
-          <div className="mb-3 flex items-center justify-between text-xs">
-            <span className="font-semibold">{tracking.carrier}</span>
-            <span className="font-mono text-fg-muted" dir="ltr">
-              {tracking.trackingNumber}
-            </span>
-          </div>
-          <div className="relative flex justify-between">
-            <div className="absolute inset-x-2 top-[5px] h-[2px] bg-line" />
-            <motion.div
-              className="absolute top-[5px] h-[2px] bg-fg ltr:left-2 rtl:right-2"
-              initial={{ width: 0 }}
-              animate={{ width: `calc(${((reached - 1) / (stages.length - 1)) * 100}% - 1rem)` }}
-              transition={{ duration: 0.8, ease: "easeOut" }}
-            />
-            {stages.map((st, i) => (
-              <div key={st} className="relative z-10 flex flex-col items-center gap-1.5">
-                <motion.span
-                  animate={{ scale: i + 1 === reached ? [1, 1.25, 1] : 1 }}
-                  transition={{ repeat: i + 1 === reached && reached < 4 ? Infinity : 0, duration: 1.6 }}
-                  className={`size-3 rounded-full border-2 ${i < reached ? "border-fg bg-fg" : "border-line-strong bg-bg"}`}
-                />
-                <span className={`text-[10px] ${i < reached ? "font-semibold" : "text-fg-muted"}`}>{st}</span>
-              </div>
-            ))}
-          </div>
-          <p className="mt-2 text-center text-[10px] text-fg-muted">
-            {ar ? "رقم التتبع اتسجّل على الأوردر في PayPal · خط سير تجريبي" : "Tracking added to the PayPal order · demo timeline"}
-          </p>
-        </motion.div>
-      )}
-      <div className="flex gap-2">
-        {!tracking && onTrack && (
-          <button
-            onClick={() => run("track", onTrack)}
-            className="inline-flex flex-1 items-center justify-center gap-1.5 rounded-2xl border border-line py-2.5 text-xs font-semibold hover:bg-bg-soft"
-          >
-            {busy === "track" ? <Loader2 className="size-3.5 animate-spin" /> : <Truck className="size-3.5" />}
-            {ar ? "تتبّع الطلب" : "Track order"}
-          </button>
-        )}
-        {onRefund && !asking && (
-          <button
-            onClick={() => setAsking(true)}
-            className="inline-flex flex-1 items-center justify-center gap-1.5 rounded-2xl border border-line py-2.5 text-xs font-medium text-fg-soft hover:bg-bg-soft"
-          >
-            {ar ? "مشكلة في الطلب؟" : "Problem with order?"}
-          </button>
-        )}
-      </div>
-      <AnimatePresence>
-        {asking && onRefund && (
-          <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }} exit={{ opacity: 0, height: 0 }} className="space-y-1.5 overflow-hidden">
-            {(
-              [
-                ["not_received", ar ? "الطلب ماوصلش" : "It didn't arrive"],
-                ["damaged", ar ? "وصل بايظ" : "It arrived damaged"],
-                ["not_as_described", ar ? "مش زي الوصف" : "Not as described"],
-              ] as const
-            ).map(([k, label]) => (
-              <button
-                key={k}
-                onClick={() => run(k, () => onRefund(k))}
-                className="flex w-full items-center justify-between rounded-xl border border-line px-3 py-2.5 text-xs hover:border-fg"
-              >
-                {label}
-                {busy === k ? <Loader2 className="size-3.5 animate-spin" /> : <span className="inline-flex items-center gap-1 text-fg-muted">
-                    {ar ? "استرجاع" : "Refund"}
-                    <ArrowRight className="size-3 rtl:-scale-x-100" />
-                  </span>}
-              </button>
-            ))}
-            <button onClick={() => setAsking(false)} className="w-full py-1 text-[11px] text-fg-muted underline">
-              {ar ? "رجوع" : "Back"}
-            </button>
-          </motion.div>
-        )}
-      </AnimatePresence>
-    </div>
-  );
-}
-
-export function ApprovalCard({
-  offer,
-  status,
-  message,
-  holdExpiresAt,
-  shipping,
-  payerEmail,
-  s,
-  lang,
-  onApprove,
-  onDecline,
-  onCancelHold,
-  onCaptureNow,
-  onRetry,
-  tracking,
-  refund,
-  onTrack,
-  onRefund,
-  negotiation,
-  onNegotiate,
-  context,
-  mandate,
-  orderId,
-  captureId,
-  groupId,
-  onGroup,
-  protection,
-  captureToken,
-  familyId,
-  suggest,
-  demo,
-  onPatch,
-}: {
-  groupId?: string;
-  onGroup?: (shares: number) => Promise<void>;
-  protection?: Protection;
-  captureToken?: string;
-  familyId?: string;
-  suggest?: "family";
-  demo?: boolean;
-  /** Persist a change to this approval block (protection state, family request id). */
-  onPatch?: (patch: { protection?: Protection; familyId?: string }) => Promise<void> | void;
-  context?: PurchaseContext;
-  mandate?: { maxSpend: number; verifiedOnly: boolean };
-  orderId?: string;
-  captureId?: string;
-  negotiation?: Negotiation;
-  onNegotiate?: () => void;
-  offer: Offer;
-  status: ApprovalStatus;
-  message?: string;
-  holdExpiresAt?: number;
-  shipping?: { name?: string; address?: string };
-  payerEmail?: string;
-  s: Strings;
-  lang: Lang;
-  onApprove: () => void;
-  onDecline: () => void;
-  onCancelHold?: () => void;
-  onCaptureNow?: () => void;
-  onRetry?: () => void;
-  tracking?: { trackingNumber: string; carrier: string; addedAt: number };
-  refund?: { id: string; status: string; reason: string; amount?: string; currency?: string };
-  onTrack?: () => Promise<void>;
-  onRefund?: (r: "not_received" | "damaged" | "not_as_described") => Promise<void>;
-}) {
-  const statusLine: Partial<Record<ApprovalStatus, string>> = {
-    processing: s.processing,
-    held: s.held,
-    captured: s.captured,
-    voided: s.voided,
-    declined: s.declined,
-  };
-  const converted = offer.chargeCurrency && offer.chargeCurrency !== offer.currency && offer.chargeAmount != null;
-  return (
-    <motion.div
-      data-approval-card={offer.id}
-      data-status={status}
-      initial={{ opacity: 0, y: 16, scale: 0.97 }}
-      animate={{ opacity: 1, y: 0, scale: 1 }}
-      transition={{ type: "spring", stiffness: 240, damping: 22 }}
-      className="w-full max-w-sm overflow-hidden rounded-3xl border border-line bg-bg shadow-card"
-    >
-      <div className="flex items-center justify-between border-b border-line px-4 py-3">
-        <div className="flex items-center gap-2 text-sm font-semibold">
-          <ShieldCheck className="size-4" />
-          {s.approveTitle}
-        </div>
-        <TrustPill offer={offer} s={s} />
-      </div>
-      <div className="relative">
-        <SmartImage src={offer.image} alt={offer.title} fallbackLabel={offer.store} className="h-48 w-full" />
-        <AnimatePresence>
-          {(status === "held" || status === "captured") && (
-            <motion.div
-              initial={{ opacity: 0, scale: 0.8 }}
-              animate={{ opacity: 1, scale: 1 }}
-              className="absolute end-3 top-3 inline-flex items-center gap-1 rounded-full bg-inv-bg px-2.5 py-1 text-[11px] font-semibold text-inv-fg"
-            >
-              {status === "held" ? <Lock className="size-3" /> : <Check className="size-3" />}
-              {status === "held" ? s.held : s.captured}
-            </motion.div>
-          )}
-        </AnimatePresence>
-      </div>
-      <div className="space-y-3 p-4">
-        <div>
-          <div className="text-xs text-fg-muted">{offer.store}</div>
-          <div className="text-[15px] font-medium leading-snug" dir="auto">
-            {offer.title}
-          </div>
-        </div>
-        <dl className="space-y-1.5 rounded-2xl bg-bg-soft p-3 text-sm">
-          <div className="flex justify-between">
-            <dt className="text-fg-muted">{s.item}</dt>
-            <dd className="tabular-nums">{formatMoney(offer.price, offer.currency, lang)}</dd>
-          </div>
-          <div className="flex justify-between">
-            <dt className="text-fg-muted">{s.shipping}</dt>
-            <dd className="tabular-nums">
-              {offer.shipping ? formatMoney(offer.shipping, offer.currency, lang) : s.free}
-            </dd>
-          </div>
-          <div className="flex justify-between border-t border-line pt-1.5 font-semibold">
-            <dt>{s.total}</dt>
-            <dd className="flex items-baseline gap-2 tabular-nums">
-              {negotiation && negotiation.original.total > offer.total ? (
-                <span className="text-xs font-normal text-fg-muted line-through">{formatMoney(negotiation.original.total, offer.currency, lang)}</span>
-              ) : null}
-              <motion.span key={offer.total} initial={{ scale: 1.15 }} animate={{ scale: 1 }}>
-                {formatMoney(offer.total, offer.currency, lang)}
-              </motion.span>
-            </dd>
-          </div>
-          {converted && (
-            <div className="flex justify-between text-xs text-fg-muted">
-              <dt>{lang === "ar" ? "المبلغ في PayPal" : "Charged via PayPal"}</dt>
-              <dd className="tabular-nums" dir="ltr">
-                {formatMoney(offer.chargeAmount!, offer.chargeCurrency!, "en")}
-                {offer.fxRate ? ` · 1 USD = ${offer.fxRate} ${offer.currency}` : ""}
-              </dd>
-            </div>
-          )}
-        </dl>
-        <div className="flex items-start gap-1.5 text-xs text-fg-muted">
-          <Truck className="mt-px size-3.5 shrink-0" />
-          {shipping?.address ? (
-            <span dir="auto">
-              <span className="font-medium text-fg-soft">{shipping.name}</span>
-              {shipping.name ? " · " : ""}
-              {shipping.address}
-            </span>
-          ) : (
-            s.shipTo
-          )}
-        </div>
-        {payerEmail && (
-          <div className="truncate text-[11px] text-fg-muted" dir="ltr">
-            PayPal · {payerEmail}
-          </div>
-        )}
-
-        {negotiation && <NegotiationPanel neg={negotiation} offer={offer} lang={lang} />}
-
-        <AnimatePresence mode="wait">
-          {status === "pending" ? (
-            <motion.div key="actions" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="space-y-2">
-              {onNegotiate && !groupId && offer.trust !== "suspicious" && (!negotiation || negotiation.status === "failed") && (
-                <motion.button
-                  whileTap={{ scale: 0.97 }}
-                  onClick={onNegotiate}
-                  className="flex w-full items-center justify-center gap-2 rounded-2xl border border-dashed border-line-strong py-2.5 text-sm font-medium transition-colors hover:bg-bg-soft"
-                >
-                  <Handshake className="size-4" />
-                  {lang === "ar" ? "خلّي دليل يفاوض على سعر أحسن" : "Let Dalil negotiate a better price"}
-                </motion.button>
-              )}
-              {groupId ? (
-                <GroupMini id={groupId} lang={lang} />
-              ) : familyId ? null : onGroup && offer.trust !== "suspicious" && negotiation?.status !== "running" ? (
-                <GroupStarter lang={lang} onCreate={onGroup} />
-              ) : null}
-              {familyId ? (
-                <FamilyMini id={familyId} lang={lang} />
-              ) : !groupId && onPatch && offer.trust !== "suspicious" && negotiation?.status !== "running" ? (
-                <FamilyStarter lang={lang} offer={offer} initialOpen={suggest === "family"} onCreated={(id) => onPatch({ familyId: id })} />
-              ) : null}
-              {!groupId && !familyId && (
-                <PayLaterMessage
-                  amount={offer.chargeAmount ?? offer.total}
-                  currency={offer.chargeCurrency ?? offer.currency}
-                  lang={lang}
-                />
-              )}
-              {!groupId && !familyId && (
-              <motion.button
-                whileHover={{ scale: 1.01 }}
-                whileTap={{ scale: 0.97 }}
-                onClick={onApprove}
-                disabled={negotiation?.status === "running"}
-                className="relative w-full overflow-hidden rounded-2xl bg-inv-bg py-3.5 text-sm font-semibold text-inv-fg transition-opacity disabled:opacity-40"
-              >
-                <span className="relative z-10">{s.approveBtn}</span>
-                <motion.span
-                  className="absolute inset-y-0 w-1/3 bg-gradient-to-r from-transparent via-white/25 to-transparent dark:via-black/15"
-                  initial={{ x: "-120%" }}
-                  animate={{ x: "320%" }}
-                  transition={{ duration: 2.2, repeat: Infinity, ease: "easeInOut", repeatDelay: 0.8 }}
-                />
-              </motion.button>
-              )}
-              <button
-                onClick={onDecline}
-                className="w-full rounded-2xl border border-line py-2.5 text-sm font-medium text-fg-soft transition-colors hover:bg-bg-soft"
-              >
-                {s.decline}
-              </button>
-              <p className="text-center text-[11px] leading-snug text-fg-muted">{s.approveNote}</p>
-            </motion.div>
-          ) : (
-            <motion.div key={status} initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} className="space-y-2.5">
-              {status === "held" && holdExpiresAt && (
-                <HoldCountdown until={holdExpiresAt} lang={lang} total={10 * 60_000} />
-              )}
-              {status !== "held" && (
-                <div
-                  className={`flex items-center justify-center gap-2 rounded-2xl px-3 py-3 text-center text-sm font-semibold ${
-                    status === "captured" ? "bg-inv-bg text-inv-fg" : "bg-bg-soft"
-                  } ${status === "error" ? "text-danger" : ""}`}
-                >
-                  {status === "processing" && <Loader2 className="size-4 shrink-0 animate-spin" />}
-                  {status === "captured" && <Check className="size-4 shrink-0" />}
-                  {status === "error" && <AlertTriangle className="size-4 shrink-0" />}
-                  <span>{status === "error" ? message : statusLine[status]}</span>
-                </div>
-              )}
-              {status === "held" && (
-                <div className="flex gap-2">
-                  {onCancelHold && (
-                    <motion.button
-                      whileTap={{ scale: 0.97 }}
-                      onClick={onCancelHold}
-                      className="flex-1 rounded-2xl border border-fg py-2.5 text-xs font-semibold"
-                    >
-                      {s.cancelHold}
-                    </motion.button>
-                  )}
-                  {onCaptureNow && (
-                    <motion.button
-                      whileTap={{ scale: 0.97 }}
-                      onClick={onCaptureNow}
-                      className="flex-1 rounded-2xl bg-inv-bg py-2.5 text-xs font-semibold text-inv-fg"
-                    >
-                      {s.confirmCapture}
-                    </motion.button>
-                  )}
-                </div>
-              )}
-              {status === "held" && (
-                <p className="text-center text-[11px] leading-snug text-fg-muted">
-                  {lang === "ar"
-                    ? "المبلغ محجوز في PayPal ومتخصمش. تقدر تلغي ويرجع فورًا."
-                    : "Funds are held in PayPal, not charged. Cancel to release them instantly."}
-                </p>
-              )}
-              {status === "error" && onRetry && (
-                <button
-                  onClick={onRetry}
-                  className="flex w-full items-center justify-center gap-1.5 rounded-2xl border border-line py-2.5 text-xs font-medium hover:bg-bg-soft"
-                >
-                  <RotateCcw className="size-3.5" />
-                  {lang === "ar" ? "حاول تاني" : "Try again"}
-                </button>
-              )}
-              {status === "captured" && (
-                <TrustReceipt
-                  offer={offer}
-                  lang={lang}
-                  context={context}
-                  mandate={mandate}
-                  negotiation={negotiation}
-                  orderId={orderId}
-                  captureId={captureId}
-                  refunded={!!refund}
-                  protection={protection}
-                />
-              )}
-              {status === "captured" && !refund && onPatch && (
-                <PriceProtectionPanel
-                  lang={lang}
-                  offer={offer}
-                  captureId={captureId}
-                  captureToken={captureToken}
-                  demo={!!demo}
-                  protection={protection}
-                  onUpdate={(p) => onPatch({ protection: p })}
-                />
-              )}
-              {status === "captured" && (
-                <AfterCare lang={lang} tracking={tracking} refund={refund} onTrack={onTrack} onRefund={onRefund} />
-              )}
-            </motion.div>
-          )}
-        </AnimatePresence>
-      </div>
-    </motion.div>
   );
 }

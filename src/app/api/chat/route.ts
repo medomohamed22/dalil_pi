@@ -1,18 +1,21 @@
 import { z } from "zod";
 import { runAgent } from "@/lib/server/agent";
-import { runDemo } from "@/lib/server/demo";
+import { countryName, currencyOf, geoFromRequest, isCountryCode } from "@/lib/server/geo";
 import { hostedConfig, hostedEnabled, takeHostedQuota } from "@/lib/server/hosted";
-import { verifyOffer } from "@/lib/server/sign";
-import type { AgentEvent, Offer } from "@/lib/types";
+import { piUsdPrice } from "@/lib/server/price";
 import { rateLimit } from "@/lib/server/ratelimit";
+import { readSession } from "@/lib/server/session";
+import { verifyOffer } from "@/lib/server/sign";
+import { assertCanSearch, recordSearch } from "@/lib/server/users";
+import type { AgentEvent, Offer } from "@/lib/types";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
 
 /**
- * The agent always runs on the server's Meta key (META_API_KEY in the Vercel
- * environment) with one fixed model, for the US market in English. Whatever a
- * client sends for key, base URL, model, market or language is ignored.
+ * Runs the shopping agent for a signed-in Pi user. The agent always runs on
+ * the server's Meta key (META_API_KEY) with one fixed model. Each successful
+ * search counts against the user's monthly quota (free: FREE_SEARCHES_PER_MONTH).
  */
 const Body = z.object({
   history: z
@@ -27,35 +30,58 @@ const Body = z.object({
     .max(60),
   settings: z
     .object({
-      reasoningEffort: z.enum(["minimal", "low", "medium", "high", "xhigh"]).optional(),
-      city: z.string().min(1).max(80).optional(),
-      /** Scripted sample data without the model — only for the automated test suites. */
-      demoMode: z.boolean().optional(),
+      lang: z.enum(["en", "ar"]).optional(),
+      /** Country the user picked; omitted/null = from the IP. */
+      country: z.string().length(2).nullish(),
+      scope: z.enum(["auto", "online", "local", "services"]).optional(),
       coords: z.object({ lat: z.number().min(-90).max(90), lon: z.number().min(-180).max(180) }).nullish(),
     })
-    .passthrough()
     .default({}),
-  /** Offers Dalil already signed in this conversation — lets follow-ups ("buy the 2nd one") reuse their verified prices. */
+  /** Offers Dalil already signed in this conversation — lets follow-ups reuse their verified prices. */
   offers: z.array(z.object({ sig: z.string() }).passthrough()).max(60).optional(),
 });
 
-const MARKET = "US" as const;
-const LANG = "en" as const;
-const US_CITIES = ["New York", "Los Angeles", "Chicago", "Houston", "San Francisco", "Seattle", "Boston", "Miami", "Austin", "Denver"];
+function errorResponse(err: unknown) {
+  const e = err as { status?: number; code?: string; message?: string; usage?: unknown };
+  return Response.json({ error: e.message ?? "Error", code: e.code, usage: e.usage }, { status: e.status ?? 500 });
+}
 
 export async function POST(req: Request) {
   const limited = await rateLimit(req, "chat", 40, 600);
   if (limited) return limited;
+
+  const session = readSession(req);
+  if (!session) return Response.json({ error: "Sign in with Pi to continue.", code: "SIGN_IN_REQUIRED" }, { status: 401 });
+
   let body: z.infer<typeof Body>;
   try {
     body = Body.parse(await req.json());
   } catch {
     return Response.json({ error: "Invalid request" }, { status: 400 });
   }
+  if (!hostedEnabled()) return Response.json({ error: "The AI is not configured (META_API_KEY).", code: "NO_API_KEY" }, { status: 503 });
+
+  // Quota first: no AI call when the user has nothing left.
+  try {
+    await assertCanSearch(session.uid);
+    await takeHostedQuota(req);
+  } catch (err) {
+    return errorResponse(err);
+  }
+
   const { settings, history } = body;
-  const city = settings.city && US_CITIES.includes(settings.city) ? settings.city : "New York";
-  const last = history[history.length - 1];
+  const lang = settings.lang ?? "en";
+  const geo = geoFromRequest(req);
+  const picked = settings.country?.toUpperCase();
+  const country = isCountryCode(picked) ? picked : geo.country;
+  const locale = {
+    country,
+    countryName: countryName(country, "en"),
+    city: country === geo.country ? geo.city : undefined,
+    currency: currencyOf(country),
+  };
   const knownOffers = ((body.offers ?? []) as unknown as Offer[]).filter((o) => verifyOffer(o) && !o.flags?.includes("price_unverified"));
+  const price = await piUsdPrice();
 
   const stream = new ReadableStream<Uint8Array>({
     async start(controller) {
@@ -68,23 +94,26 @@ export async function POST(req: Request) {
         }
       };
       try {
-        if (settings.demoMode) {
-          await runDemo({ text: last.text, hasImage: !!last.images?.length, market: MARKET, city, lang: LANG, signal: req.signal, emit });
-        } else {
-          if (!hostedEnabled()) throw new Error("NO_API_KEY");
-          await takeHostedQuota(req);
-          await runAgent({
-            cfg: hostedConfig(settings.reasoningEffort ?? "low"),
-            history,
-            market: MARKET,
-            city,
-            coords: settings.coords ?? undefined,
-            lang: LANG,
-            signal: req.signal,
-            emit,
-            knownOffers,
-            trustedSearch: true,
-          });
+        await runAgent({
+          cfg: hostedConfig("low"),
+          history,
+          locale,
+          scope: settings.scope ?? "auto",
+          coords: settings.coords ?? undefined,
+          lang,
+          piUsd: price?.usd,
+          signal: req.signal,
+          emit,
+          knownOffers,
+          trustedSearch: true,
+        });
+        // Count the search only once it finished without an error.
+        if (!req.signal.aborted) {
+          try {
+            emit({ type: "usage", usage: await recordSearch(session.uid) });
+          } catch {
+            /* usage write failed — don't fail the user's search */
+          }
         }
       } catch (err) {
         emit({ type: "error", message: err instanceof Error ? err.message : String(err) });

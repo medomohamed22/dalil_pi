@@ -11,20 +11,10 @@ const nextConfig: NextConfig = {
         headers: [
           { key: "X-Content-Type-Options", value: "nosniff" },
           { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
-          // No framing (clickjacking on the approve-and-pay buttons).
-          { key: "Content-Security-Policy", value: "frame-ancestors 'none'" },
-          { key: "X-Frame-Options", value: "DENY" },
+          // Framing only by the Pi Sandbox (it runs the app in an iframe on Testnet) and the Pi apps.
+          { key: "Content-Security-Policy", value: "frame-ancestors 'self' https://sandbox.minepi.com https://*.minepi.com" },
           { key: "Permissions-Policy", value: "camera=(self), microphone=(self), geolocation=(self), payment=(self)" },
           { key: "Strict-Transport-Security", value: "max-age=31536000; includeSubDomains" },
-        ],
-      },
-      {
-        // The guided demo shows the approver's page inside Dalil itself ("Mom's phone").
-        // Same-origin framing only — other sites still can't frame it.
-        source: "/f/:id",
-        headers: [
-          { key: "Content-Security-Policy", value: "frame-ancestors 'self'" },
-          { key: "X-Frame-Options", value: "SAMEORIGIN" },
         ],
       },
     ];
