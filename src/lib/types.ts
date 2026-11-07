@@ -111,6 +111,31 @@ export const DEFAULT_SETTINGS: Settings = {
 };
 
 export type PlanId = "free" | "basic" | "plus" | "pro";
+/** What can be bought: a 30-day plan or a 30-day top-up. */
+export type PaidPlanId = "basic" | "plus" | "pro" | "topup";
+
+/** One purchase = one 30-day credit pack. Unused credit expires with it. */
+export interface Pack {
+  id: string;
+  plan: PaidPlanId;
+  searchesQuota: number;
+  ordersQuota: number;
+  searchesLeft: number;
+  ordersLeft: number;
+  startsAt: string;
+  endsAt: string;
+}
+
+/** A plan in the shop, priced live in Pi from the OKX rate. */
+export interface PlanOffer {
+  id: PaidPlanId;
+  priceUsd: number;
+  searches: number;
+  orders: number;
+  days: number;
+  /** null when the Pi price is unavailable right now. */
+  amountPi: number | null;
+}
 
 /** A saved shipping address (stored in Supabase, per Pi account). */
 export interface Address {
@@ -166,6 +191,8 @@ export interface Usage {
   searchLimit: number;
   ordersUsed: number;
   orderLimit: number;
+  /** Active 30-day packs (soonest to expire first). */
+  packs?: Pack[];
 }
 
 export interface Me {

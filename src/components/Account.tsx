@@ -1,10 +1,11 @@
 "use client";
 
 import { AnimatePresence, motion } from "framer-motion";
-import { Check, ExternalLink, Loader2, MapPin, Package, Pencil, Plus, Trash2, X } from "lucide-react";
+import { Check, ExternalLink, Loader2, MapPin, Package, Pencil, Plus, Sparkles, Trash2, X } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { countryLabel, flag, formatMoney, type Strings } from "@/lib/i18n";
-import type { Address, Lang, Me, Order } from "@/lib/types";
+import { piPay } from "@/lib/pi-client";
+import type { Address, Lang, Me, Order, PaidPlanId, PlanOffer, Usage } from "@/lib/types";
 
 type Fetch = (url: string, init?: RequestInit) => Promise<Response>;
 
@@ -224,7 +225,25 @@ function Sheet({ open, title, onClose, children }: { open: boolean; title: strin
 
 /* ---------------- Account sheet: plan, addresses, orders ---------------- */
 
-export function AccountSheet({ open, onClose, s, lang, me, api, country }: { open: boolean; onClose: () => void; s: Strings; lang: Lang; me: Me | null; api: Fetch; country: string }) {
+export function AccountSheet({
+  open,
+  onClose,
+  s,
+  lang,
+  me,
+  api,
+  country,
+  onUsage,
+}: {
+  open: boolean;
+  onClose: () => void;
+  s: Strings;
+  lang: Lang;
+  me: Me | null;
+  api: Fetch;
+  country: string;
+  onUsage: (u: Usage) => void;
+}) {
   const [tab, setTab] = useState<"plan" | "addresses" | "orders">("plan");
   const { addresses, reload } = useAddresses(api, open && !!me);
   const [editing, setEditing] = useState<Address | "new" | null>(null);
@@ -272,10 +291,20 @@ export function AccountSheet({ open, onClose, s, lang, me, api, country }: { ope
 
       {tab === "plan" && u && (
         <div className="space-y-3">
-          <div className="rounded-2xl border border-line p-4">
+          <div className="rounded-2xl border border-line p-4" data-testid="current-plan">
             <div className="text-[11px] font-semibold uppercase tracking-widest text-fg-muted">{s.plan}</div>
             <div className="mt-1 text-xl font-semibold">{s.plans[u.plan] ?? u.plan}</div>
-            <div className="mt-0.5 text-xs text-fg-muted">{s.planEnds(date(u.renewsAt))}</div>
+            <div className="mt-0.5 text-xs text-fg-muted">{u.planEndsAt ? s.planValidUntil(date(u.planEndsAt)) : s.freeRenews(date(u.renewsAt))}</div>
+            {!!u.packs?.length && (
+              <ul className="mt-3 space-y-1.5 border-t border-line pt-3">
+                {u.packs.map((p) => (
+                  <li key={p.id} className="text-[12px]" data-testid="pack">
+                    <span className="font-medium">{s.plans[p.plan] ?? p.plan}</span>
+                    <span className="text-fg-muted"> — {s.packLine(p.searchesLeft, p.ordersLeft, date(p.endsAt))}</span>
+                  </li>
+                ))}
+              </ul>
+            )}
           </div>
           {[
             { label: s.searchesUsed, used: u.searchesUsed, limit: u.searchLimit },
@@ -293,6 +322,7 @@ export function AccountSheet({ open, onClose, s, lang, me, api, country }: { ope
               </div>
             </div>
           ))}
+          <PlanShop s={s} api={api} open={open} onUsage={onUsage} />
           <p className="text-[11px] text-fg-muted">@{me?.username ?? me?.uid}</p>
         </div>
       )}
@@ -374,5 +404,97 @@ export function AccountSheet({ open, onClose, s, lang, me, api, country }: { ope
         </div>
       )}
     </Sheet>
+  );
+}
+
+/* ---------------- Plan shop: pay with Pi, 30-day packs ---------------- */
+
+function PlanShop({ s, api, open, onUsage }: { s: Strings; api: Fetch; open: boolean; onUsage: (u: Usage) => void }) {
+  const [plans, setPlans] = useState<(PlanOffer & { quote: string | null })[] | null>(null);
+  const [paying, setPaying] = useState<PaidPlanId | null>(null);
+  const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
+
+  const load = useCallback(async () => {
+    try {
+      setPlans((await json<{ plans: (PlanOffer & { quote: string | null })[] }>(await api("/api/plans"))).plans);
+    } catch {
+      setPlans([]);
+    }
+  }, [api]);
+  useEffect(() => {
+    if (open) void load();
+  }, [open, load]);
+
+  const buy = async (p: PlanOffer & { quote: string | null }) => {
+    if (!p.amountPi || !p.quote || paying) return;
+    setPaying(p.id);
+    setMsg(null);
+    try {
+      const post = (url: string, body: unknown) => api(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+      const r = await piPay<{ usage: Usage }>({
+        amount: p.amountPi,
+        memo: `Dalil Pi — ${s.plans[p.id] ?? p.id} (30 days)`,
+        metadata: { plan: p.id, quote: p.quote },
+        post,
+      });
+      onUsage(r.usage);
+      setMsg({ ok: true, text: s.paid(s.plans[p.id] ?? p.id) });
+    } catch (e) {
+      const code = (e as { code?: string }).code ?? (e as Error).message;
+      setMsg({
+        ok: false,
+        text: code === "PAYMENT_CANCELLED" ? s.payCancelled : code === "PI_SDK_UNAVAILABLE" ? s.payInPiBrowser : `${s.payFailed} ${(e as Error).message}`,
+      });
+    } finally {
+      setPaying(null);
+      void load(); // fresh quotes
+    }
+  };
+
+  return (
+    <div className="space-y-2 pt-1" data-testid="plan-shop">
+      <div className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-widest text-fg-muted">
+        <Sparkles className="size-3.5" /> {s.shop}
+      </div>
+      {plans === null ? (
+        <Loader2 className="mx-auto size-5 animate-spin text-fg-muted" />
+      ) : (
+        plans.map((p) => (
+          <div key={p.id} className="flex items-center gap-3 rounded-2xl border border-line p-3" data-testid="plan-offer" data-plan={p.id}>
+            <div className="min-w-0 flex-1">
+              <div className="flex items-baseline gap-1.5">
+                <span className="font-semibold">{s.plans[p.id] ?? p.id}</span>
+                <span className="text-[11px] text-fg-muted">· {s.perDays(p.days)}</span>
+              </div>
+              <div className="text-[12px] text-fg-soft">{s.planIncludes(p.searches, p.orders)}</div>
+            </div>
+            <div className="text-end">
+              <div className="text-sm font-semibold tabular-nums" dir="ltr">
+                {p.amountPi != null ? `${p.amountPi} π` : "—"}
+              </div>
+              <div className="text-[10px] text-fg-muted tabular-nums" dir="ltr">
+                ${p.priceUsd.toFixed(2)}
+              </div>
+            </div>
+            <button
+              onClick={() => buy(p)}
+              disabled={!p.amountPi || !!paying}
+              title={!p.amountPi ? s.priceUnavailable : undefined}
+              className="flex min-w-16 items-center justify-center gap-1 rounded-full bg-inv-bg px-3 py-1.5 text-[12px] font-semibold text-inv-fg disabled:opacity-40"
+            >
+              {paying === p.id ? <Loader2 className="size-3.5 animate-spin" /> : s.buy}
+            </button>
+          </div>
+        ))
+      )}
+      {msg && (
+        <p className={`text-[12px] ${msg.ok ? "font-medium text-emerald-600 dark:text-emerald-400" : "text-danger"}`} role="status" data-testid="pay-msg">
+          {msg.text}
+        </p>
+      )}
+      <p className="text-[11px] leading-relaxed text-fg-muted">
+        {s.expiryNote} {s.payNote}
+      </p>
+    </div>
   );
 }

@@ -1,7 +1,7 @@
 import "server-only";
 import { counters } from "./store";
 import { supabase, supabaseEnabled } from "./supabase";
-import type { Lang, Usage } from "../types";
+import type { Lang, Pack, PaidPlanId, PlanId, Usage } from "../types";
 
 /**
  * Users and monthly quotas, keyed by the app-specific Pi uid. Free plan
@@ -71,58 +71,126 @@ export async function updatePrefs(uid: string, prefs: { country?: string | null;
   if (error) throw new Error(`users: ${error.message}`);
 }
 
+/* ---------------- plans & 30-day packs ---------------- */
+
+/** The plan shop. Prices are in USD; the Pi price is computed from OKX when bought. Mirrors public.plans. */
+export const PLAN_CATALOG: Record<PaidPlanId, { priceUsd: number; searches: number; orders: number; days: number; tier: number }> = {
+  basic: { priceUsd: 1.99, searches: 60, orders: 60, days: 30, tier: 1 },
+  plus: { priceUsd: 4.99, searches: 180, orders: 180, days: 30, tier: 2 },
+  pro: { priceUsd: 9.99, searches: 380, orders: 380, days: 30, tier: 3 },
+  topup: { priceUsd: 0.79, searches: 20, orders: 20, days: 30, tier: 0 },
+};
+
+interface MemPack extends Pack {
+  uid: string;
+  paymentId?: string;
+}
+const memPacks = ((globalThis as unknown as { __dalilPacks?: MemPack[] }).__dalilPacks ??= []);
+
+/** Active packs of a user (not expired), soonest to expire first. */
+export async function listPacks(uid: string): Promise<Pack[]> {
+  const now = Date.now();
+  if (!supabaseEnabled) {
+    return memPacks
+      .filter((p) => p.uid === uid && Date.parse(p.endsAt) > now)
+      .sort((a, b) => Date.parse(a.endsAt) - Date.parse(b.endsAt))
+      .map(({ uid: _u, paymentId: _p, ...p }) => p);
+  }
+  const { data, error } = await supabase()
+    .from("subscriptions")
+    .select("id, plan, searches_quota, orders_quota, searches_used, orders_used, starts_at, ends_at")
+    .eq("pi_uid", uid)
+    .eq("status", "active")
+    .gt("ends_at", new Date(now).toISOString())
+    .order("ends_at", { ascending: true })
+    .limit(50);
+  if (error) return [];
+  return (data ?? []).map((r) => ({
+    id: String(r.id),
+    plan: r.plan as PaidPlanId,
+    searchesQuota: r.searches_quota,
+    ordersQuota: r.orders_quota,
+    searchesLeft: Math.max(0, r.searches_quota - (r.searches_used ?? 0)),
+    ordersLeft: Math.max(0, r.orders_quota - (r.orders_used ?? 0)),
+    startsAt: r.starts_at,
+    endsAt: r.ends_at,
+  }));
+}
+
+/** Local-dev twin of public.activate_payment(): one 30-day pack per payment. */
+export function memActivate(uid: string, plan: PaidPlanId, paymentId: string): void {
+  if (memPacks.some((p) => p.paymentId === paymentId)) return;
+  const c = PLAN_CATALOG[plan];
+  const start = new Date();
+  memPacks.push({
+    uid,
+    paymentId,
+    id: String(memPacks.length + 1),
+    plan,
+    searchesQuota: c.searches,
+    ordersQuota: c.orders,
+    searchesLeft: c.searches,
+    ordersLeft: c.orders,
+    startsAt: start.toISOString(),
+    endsAt: new Date(start.getTime() + c.days * 86_400_000).toISOString(),
+  });
+}
+
+function summarize(base: { searches: number; orders: number; bonus: number }, packs: Pack[]): Usage {
+  const free = freeLimits();
+  const period = currentPeriod();
+  const plans = packs.filter((p) => p.plan !== "topup").sort((a, b) => PLAN_CATALOG[b.plan].tier - PLAN_CATALOG[a.plan].tier);
+  const plan = (plans[0]?.plan as PlanId | undefined) ?? "free";
+  const planEndsAt = plans.length ? plans.map((p) => p.endsAt).sort().at(-1)! : null;
+  const sum = (f: (p: Pack) => number) => packs.reduce((n, p) => n + f(p), 0);
+  return {
+    plan,
+    planEndsAt,
+    period,
+    renewsAt: renewsAt(),
+    searchesUsed: Math.min(base.searches, free.searches + base.bonus) + sum((p) => p.searchesQuota - p.searchesLeft),
+    searchLimit: free.searches + base.bonus + sum((p) => p.searchesQuota),
+    ordersUsed: Math.min(base.orders, free.orders) + sum((p) => p.ordersQuota - p.ordersLeft),
+    orderLimit: free.orders + sum((p) => p.ordersQuota),
+    packs,
+  };
+}
+
 /**
- * With Supabase, the quota comes from `user_quota()`: the active paid plan
- * (subscriptions) or the free plan (plans table), plus this month's top-ups
- * and bonus searches. The free plan's numbers live in the `plans` table.
+ * Quota right now = the free monthly allowance + every 30-day pack that
+ * hasn't expired. With Supabase the numbers come from `user_quota()`.
  */
 export async function getUsage(uid: string): Promise<Usage> {
   const period = currentPeriod();
-  const limits = freeLimits();
-  let row = { searches: 0, orders: 0, bonus: 0 };
   if (!supabaseEnabled) {
-    row = memUsage.get(`${uid}:${period}`) ?? row;
-  } else {
-    const q = await supabase().rpc("user_quota", { p_uid: uid, p_period: period });
-    if (!q.error && Array.isArray(q.data) && q.data[0]) {
-      const r = q.data[0] as { plan: Usage["plan"]; searches_quota: number; orders_quota: number; ends_at: string | null; searches_used: number; orders_used: number };
-      return {
-        plan: r.plan,
-        planEndsAt: r.ends_at,
-        period,
-        renewsAt: r.plan !== "free" && r.ends_at ? r.ends_at : renewsAt(),
-        searchesUsed: r.searches_used,
-        searchLimit: r.searches_quota,
-        ordersUsed: r.orders_used,
-        orderLimit: r.orders_quota,
-      };
-    }
-    // Older schema (before migration 0002): usage table + free limits from the environment.
-    const { data, error } = await supabase()
-      .from("usage")
-      .select("searches, orders, bonus_searches")
-      .eq("pi_uid", uid)
-      .eq("period", period)
-      .maybeSingle();
-    if (error) throw new Error(`usage: ${error.message}`);
-    if (data) row = { searches: data.searches ?? 0, orders: data.orders ?? 0, bonus: data.bonus_searches ?? 0 };
+    return summarize(memUsage.get(`${uid}:${period}`) ?? { searches: 0, orders: 0, bonus: 0 }, await listPacks(uid));
   }
-  return {
-    plan: "free",
-    period,
-    renewsAt: renewsAt(),
-    searchesUsed: row.searches,
-    searchLimit: limits.searches + row.bonus,
-    ordersUsed: row.orders,
-    orderLimit: limits.orders,
-  };
+  const [q, packs] = await Promise.all([supabase().rpc("user_quota", { p_uid: uid, p_period: period }), listPacks(uid)]);
+  if (!q.error && Array.isArray(q.data) && q.data[0]) {
+    const r = q.data[0] as { plan: PlanId; searches_quota: number; orders_quota: number; ends_at: string | null; searches_used: number; orders_used: number };
+    return {
+      plan: r.plan,
+      planEndsAt: r.ends_at,
+      period,
+      renewsAt: renewsAt(),
+      searchesUsed: r.searches_used,
+      searchLimit: r.searches_quota,
+      ordersUsed: r.orders_used,
+      orderLimit: r.orders_quota,
+      packs,
+    };
+  }
+  // Older schema (before migration 0002): usage table + free limits from the environment.
+  const { data, error } = await supabase().from("usage").select("searches, orders, bonus_searches").eq("pi_uid", uid).eq("period", period).maybeSingle();
+  if (error) throw new Error(`usage: ${error.message}`);
+  return summarize({ searches: data?.searches ?? 0, orders: data?.orders ?? 0, bonus: data?.bonus_searches ?? 0 }, []);
 }
 
 export class QuotaExceeded extends Error {
   status = 402;
   code = "QUOTA_EXCEEDED";
   constructor(public usage: Usage) {
-    super("You've used all your free searches this month.");
+    super(usage.plan === "free" ? "You've used all your free searches this month." : "You've used all the searches in your plan.");
   }
 }
 
@@ -144,17 +212,37 @@ export async function assertCanSearch(uid: string): Promise<Usage> {
   return usage;
 }
 
+/** Takes one search/order from the credit that expires first (free month or a 30-day pack). */
+async function consume(uid: string, kind: "search" | "order"): Promise<void> {
+  const period = currentPeriod();
+  if (supabaseEnabled) {
+    const { error } = await supabase().rpc("consume_credit", { p_uid: uid, p_kind: kind, p_period: period });
+    if (!error) return;
+    if (!/consume_credit/.test(error.message)) throw new Error(`usage: ${error.message}`);
+    // Before migration 0004: plain monthly counter.
+    const r = await supabase().rpc("add_usage", { p_uid: uid, p_period: period, p_searches: kind === "search" ? 1 : 0, p_orders: kind === "order" ? 1 : 0 });
+    if (r.error) throw new Error(`usage: ${r.error.message}`);
+    return;
+  }
+  const k = `${uid}:${period}`;
+  const cur = memUsage.get(k) ?? { searches: 0, orders: 0, bonus: 0 };
+  const free = freeLimits();
+  const freeLeft = kind === "search" ? free.searches + cur.bonus - cur.searches : free.orders - cur.orders;
+  const now = Date.now();
+  const pack = memPacks
+    .filter((p) => p.uid === uid && Date.parse(p.endsAt) > now && (kind === "search" ? p.searchesLeft : p.ordersLeft) > 0)
+    .sort((a, b) => Date.parse(a.endsAt) - Date.parse(b.endsAt))[0];
+  if (freeLeft > 0 && (!pack || Date.parse(renewsAt()) <= Date.parse(pack.endsAt))) {
+    memUsage.set(k, { ...cur, searches: cur.searches + (kind === "search" ? 1 : 0), orders: cur.orders + (kind === "order" ? 1 : 0) });
+  } else if (pack) {
+    if (kind === "search") pack.searchesLeft--;
+    else pack.ordersLeft--;
+  }
+}
+
 /** Counts one search (called only after the search returned results). */
 export async function recordSearch(uid: string): Promise<Usage> {
-  const period = currentPeriod();
-  if (!supabaseEnabled) {
-    const k = `${uid}:${period}`;
-    const cur = memUsage.get(k) ?? { searches: 0, orders: 0, bonus: 0 };
-    memUsage.set(k, { ...cur, searches: cur.searches + 1 });
-  } else {
-    const { error } = await supabase().rpc("add_usage", { p_uid: uid, p_period: period, p_searches: 1, p_orders: 0 });
-    if (error) throw new Error(`usage: ${error.message}`);
-  }
+  await consume(uid, "search");
   return getUsage(uid);
 }
 
@@ -162,28 +250,20 @@ export class OrderQuotaExceeded extends Error {
   status = 402;
   code = "ORDER_QUOTA_EXCEEDED";
   constructor(public usage: Usage) {
-    super("You've used all your automatic orders this month.");
+    super("You've used all your orders.");
   }
 }
 
-/** Throws when the user has no automatic orders left. */
+/** Throws when the user has no orders left. */
 export async function assertCanOrder(uid: string): Promise<Usage> {
   const usage = await getUsage(uid);
   if (usage.ordersUsed >= usage.orderLimit) throw new OrderQuotaExceeded(usage);
   return usage;
 }
 
-/** Counts one automatic order. */
+/** Counts one order. */
 export async function recordOrder(uid: string): Promise<Usage> {
-  const period = currentPeriod();
-  if (!supabaseEnabled) {
-    const k = `${uid}:${period}`;
-    const cur = memUsage.get(k) ?? { searches: 0, orders: 0, bonus: 0 };
-    memUsage.set(k, { ...cur, orders: cur.orders + 1 });
-  } else {
-    const { error } = await supabase().rpc("add_usage", { p_uid: uid, p_period: period, p_searches: 0, p_orders: 1 });
-    if (error) throw new Error(`usage: ${error.message}`);
-  }
+  await consume(uid, "order");
   return getUsage(uid);
 }
 

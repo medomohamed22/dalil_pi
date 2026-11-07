@@ -10,9 +10,21 @@ interface PiAuthResult {
   accessToken: string;
   user: { uid: string; username?: string };
 }
+export interface PiPaymentDTO {
+  identifier: string;
+  amount: number;
+  transaction: null | { txid: string };
+}
+interface PiPaymentCallbacks {
+  onReadyForServerApproval: (paymentId: string) => void;
+  onReadyForServerCompletion: (paymentId: string, txid: string) => void;
+  onCancel: (paymentId: string) => void;
+  onError: (error: Error, payment?: PiPaymentDTO) => void;
+}
 interface PiSDK {
   init(cfg: { version: string; sandbox?: boolean }): void;
-  authenticate(scopes: string[], onIncompletePaymentFound: (payment: unknown) => void): Promise<PiAuthResult>;
+  authenticate(scopes: string[], onIncompletePaymentFound: (payment: PiPaymentDTO) => void): Promise<PiAuthResult>;
+  createPayment(data: { amount: number; memo: string; metadata: Record<string, unknown> }, callbacks: PiPaymentCallbacks): void;
 }
 
 declare global {
@@ -66,4 +78,47 @@ export async function piAuthenticate(timeoutMs = 60_000): Promise<string> {
   const res = await Promise.race([auth, timeout]);
   if (!res?.accessToken) throw new Error("PI_AUTH_FAILED");
   return res.accessToken;
+}
+
+type Post = (url: string, body: unknown) => Promise<Response>;
+
+async function postOk<T>(post: Post, url: string, body: unknown): Promise<T> {
+  const res = await post(url, body);
+  const j = (await res.json().catch(() => ({}))) as T & { error?: string; code?: string };
+  if (!res.ok) throw Object.assign(new Error(j.error || `HTTP ${res.status}`), { code: j.code });
+  return j;
+}
+
+/**
+ * Pays for a plan with Pi (user → app). The server approves only after it
+ * checked the amount against its signed quote, and activates the 30-day pack
+ * when it completes the payment. Resolves with the server's reply to /complete.
+ */
+export async function piPay<T>(opts: { amount: number; memo: string; metadata: Record<string, unknown>; post: Post }): Promise<T> {
+  const Pi = await loadPi();
+  if (!Pi) throw Object.assign(new Error("PI_SDK_UNAVAILABLE"), { code: "PI_SDK_UNAVAILABLE" });
+  // Payments need the "payments" scope in this page session. A payment left
+  // unfinished earlier blocks new ones, so settle it first.
+  let stuck: PiPaymentDTO | null = null;
+  await Pi.authenticate(["username", "payments"], (p) => {
+    stuck = p;
+  });
+  if (stuck) {
+    await postOk(opts.post, "/api/payments/incomplete", { paymentId: (stuck as PiPaymentDTO).identifier }).catch(() => {});
+  }
+  return new Promise<T>((resolve, reject) => {
+    Pi.createPayment(
+      { amount: opts.amount, memo: opts.memo, metadata: opts.metadata },
+      {
+        onReadyForServerApproval: (paymentId) => {
+          postOk(opts.post, "/api/payments/approve", { paymentId }).catch(reject);
+        },
+        onReadyForServerCompletion: (paymentId, txid) => {
+          postOk<T>(opts.post, "/api/payments/complete", { paymentId, txid }).then(resolve, reject);
+        },
+        onCancel: () => reject(Object.assign(new Error("PAYMENT_CANCELLED"), { code: "PAYMENT_CANCELLED" })),
+        onError: (err) => reject(err instanceof Error ? err : new Error(String(err))),
+      },
+    );
+  });
 }

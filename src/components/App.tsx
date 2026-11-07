@@ -634,6 +634,11 @@ export default function App() {
                     {s.searchesLeft(left, usage.searchLimit)}
                   </span>
                 )}
+                {usage && left === 0 && (
+                  <button onClick={() => setAccountOpen(true)} className="rounded-full bg-inv-bg px-2.5 py-0.5 font-semibold text-inv-fg" data-testid="see-plans">
+                    {s.seePlans}
+                  </button>
+                )}
                 <span className="hidden sm:inline">{s.tagline}</span>
               </div>
             </div>
@@ -641,7 +646,7 @@ export default function App() {
         )}
       </main>
 
-      <AccountSheet open={accountOpen} onClose={() => setAccountOpen(false)} s={s} lang={lang} me={me} api={authFetch} country={country} />
+      <AccountSheet open={accountOpen} onClose={() => setAccountOpen(false)} s={s} lang={lang} me={me} api={authFetch} country={country} onUsage={(u) => setMe((cur) => (cur ? { ...cur, usage: u } : cur))} />
       <CountrySheet
         open={countryOpen}
         lang={lang}
