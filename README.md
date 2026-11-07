@@ -15,13 +15,15 @@ AI shopping agent for Pi Network. Tell it what you need; it searches stores that
 | ✅ English default + Arabic switch (RTL) | |
 | ✅ Agent searches Pi-accepting stores (Salla Shop Mall, Sallanet Pay stores, Piketplace, Pi Chain Mall, *.pinet.com; Map of Pi only for "near me") | |
 | ✅ Cards: Pi price, ≈ USD (OKX), rating, "Accepts Pi" / "Not priced in Pi", evidence line, Open store | |
-| ✅ Supabase database (users, usage, counters; subscriptions and payments tables ready) | |
+| ✅ Supabase database: users (Pi uid + username), monthly usage, plans, subscriptions, payments, saved addresses, orders, counters | |
+| ✅ My account: plan + usage, saved shipping addresses (one default), order history with status | |
+| ✅ "Order" on Pi-priced cards: pick/add an address → order saved (signed offer re-verified) → copy shipping details → pay the store directly | |
 | ⏭ Next: trust score 0–100, Salla connector, shipping profile + checkout connectors, paid plans | |
 
 PayPal features from Dalil (holds, refunds, watches, family, group buy, demo tour) were removed.
 
 ## Setup
-1. **Supabase**: create a project → SQL editor → run [`supabase/migrations/0001_init.sql`](supabase/migrations/0001_init.sql). Copy the project URL and the **service-role** key.
+1. **Supabase**: create a project → SQL editor → run the files in [`supabase/migrations`](supabase/migrations) in order (`0001`, `0002`). The free plan limits live in the `plans` table. Copy the project URL and the **service-role** key.
 2. **Pi Developer Portal** (open `develop.pi` in the Pi Browser): create a **Testnet** app, set its URL to your Vercel URL, copy the **Server API Key**. To test in a desktop browser, open the app's sandbox link (`https://sandbox.minepi.com/...`) and authorize the sandbox from the Pi app.
 3. **Vercel**: create a **new** project from this repository (not the PayPal one) and add the variables from [`.env.example`](.env.example):
    `META_API_KEY`, `PI_API_KEY`, `PI_NETWORK=testnet`, `NEXT_PUBLIC_PI_SANDBOX=true`, `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `OFFER_SIGNING_SECRET` (new: `openssl rand -hex 32`).

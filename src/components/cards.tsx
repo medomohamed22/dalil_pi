@@ -595,11 +595,13 @@ export function ProductCards({
   s,
   lang,
   city,
+  onOrder,
 }: {
   offers: Offer[];
   s: Strings;
   lang: Lang;
   city?: string;
+  onOrder?: (o: Offer) => void;
 }) {
   const badgeText: Record<string, string> = {
     cheapest: s.cheapest,
@@ -733,6 +735,15 @@ export function ProductCards({
                     >
                       {s.view} <ExternalLink className="size-3" />
                     </a>
+                  )}
+                  {onOrder && o.url && o.sig && o.trust !== "suspicious" && !o.flags.includes("price_unverified") && !o.flags.includes("not_priced_in_pi") && (
+                    <motion.button
+                      whileTap={{ scale: 0.96 }}
+                      onClick={() => onOrder(o)}
+                      className="flex shrink-0 items-center justify-center gap-1 rounded-xl border border-line px-3 text-xs font-semibold hover:bg-bg-soft"
+                    >
+                      <Package className="size-3.5" /> {s.order}
+                    </motion.button>
                   )}
                 </div>
               </div>

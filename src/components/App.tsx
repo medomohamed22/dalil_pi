@@ -2,12 +2,13 @@
 
 import { AnimatePresence, motion } from "framer-motion";
 import { useLiveQuery } from "dexie-react-hooks";
-import { Camera, Check, ChevronDown, Globe2, Languages, Loader2, LogOut, Menu, Moon, PanelLeft, Plus, Search, Sun, Trash2, X } from "lucide-react";
+import { Camera, Check, ChevronDown, Globe2, Languages, Loader2, LogOut, Menu, Moon, PanelLeft, Plus, Search, Sun, Trash2, UserRound, X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { db, delKV, getKV, loadSettings, requestPersistence, saveSettings, setKV, uid } from "@/lib/db";
 import { countryLabel, flag, t, type Strings } from "@/lib/i18n";
 import { inPiBrowser, loadPi, PI_SANDBOX, piAuthenticate } from "@/lib/pi-client";
-import { DEFAULT_SETTINGS, type AgentEvent, type Block, type ChatMessage, type Lang, type Me, type Scope, type Settings, type Step, type Usage, type WireMessage } from "@/lib/types";
+import { DEFAULT_SETTINGS, type AgentEvent, type Block, type ChatMessage, type Lang, type Me, type Offer, type Scope, type Settings, type Step, type Usage, type WireMessage } from "@/lib/types";
+import { AccountSheet, OrderSheet } from "./Account";
 import Composer, { type ComposerPayload } from "./Composer";
 import Logo from "./Logo";
 import MessageView from "./MessageView";
@@ -111,6 +112,8 @@ export default function App() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [desktopSidebar, setDesktopSidebar] = useState(true);
   const [countryOpen, setCountryOpen] = useState(false);
+  const [accountOpen, setAccountOpen] = useState(false);
+  const [orderOffer, setOrderOffer] = useState<Offer | null>(null);
   const [dark, setDark] = useState(false);
   const [prefill, setPrefill] = useState<{ text: string; n: number } | undefined>();
   const abortRef = useRef<AbortController | null>(null);
@@ -455,6 +458,19 @@ export default function App() {
       </nav>
       <div className="space-y-1 border-t border-line p-2 text-sm">
         {me && (
+          <button
+            onClick={() => {
+              setAccountOpen(true);
+              setSidebarOpen(false);
+            }}
+            className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 hover:bg-bg-muted"
+          >
+            <UserRound className="size-4" />
+            {s.account}
+            {me.usage && <span className="ms-auto rounded-full bg-bg-muted px-2 py-0.5 text-[10px] font-semibold">{s.plans[me.usage.plan] ?? me.usage.plan}</span>}
+          </button>
+        )}
+        {me && (
           <div className="flex items-center gap-2 rounded-lg px-2.5 py-2">
             <span className="flex size-6 items-center justify-center rounded-full bg-inv-bg text-[11px] font-semibold text-inv-fg">π</span>
             <span className="min-w-0 flex-1 truncate" dir="ltr">
@@ -573,7 +589,7 @@ export default function App() {
               <div className="space-y-7 pt-4">
                 {messages.map((m) => (
                   <div key={m.id} id={`msg-${m.id}`}>
-                    <MessageView msg={m} live={live?.id === m.id} s={s} lang={lang} city={config?.geo.city} />
+                    <MessageView msg={m} live={live?.id === m.id} s={s} lang={lang} city={config?.geo.city} onOrder={setOrderOffer} />
                   </div>
                 ))}
               </div>
@@ -599,6 +615,8 @@ export default function App() {
         )}
       </main>
 
+      <AccountSheet open={accountOpen} onClose={() => setAccountOpen(false)} s={s} lang={lang} me={me} api={authFetch} country={country} />
+      <OrderSheet offer={orderOffer} onClose={() => setOrderOffer(null)} s={s} lang={lang} api={authFetch} country={country} />
       <CountrySheet
         open={countryOpen}
         lang={lang}

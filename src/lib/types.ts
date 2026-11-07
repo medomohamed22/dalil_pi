@@ -110,9 +110,56 @@ export const DEFAULT_SETTINGS: Settings = {
   scope: "auto",
 };
 
+export type PlanId = "free" | "basic" | "plus" | "pro";
+
+/** A saved shipping address (stored in Supabase, per Pi account). */
+export interface Address {
+  id: string;
+  label?: string | null;
+  fullName: string;
+  phone: string;
+  country: string;
+  city: string;
+  area?: string | null;
+  street: string;
+  building?: string | null;
+  postalCode?: string | null;
+  notes?: string | null;
+  isDefault: boolean;
+}
+
+export type OrderStatus = "draft" | "placed" | "awaiting_payment" | "paid" | "shipped" | "delivered" | "cancelled" | "failed";
+
+/** An order the user started from a product card. Payment goes to the store, never to Dalil Pi. */
+export interface Order {
+  id: string;
+  status: OrderStatus;
+  storeName: string;
+  storeDomain?: string | null;
+  productTitle: string;
+  productUrl?: string | null;
+  productImage?: string | null;
+  quantity: number;
+  price: number;
+  currency: string;
+  total: number;
+  totalUsd?: number | null;
+  country?: string | null;
+  trust?: string | null;
+  addressId?: string | null;
+  shipping?: Omit<Address, "id" | "isDefault"> | null;
+  connector?: string | null;
+  checkoutUrl?: string | null;
+  txid?: string | null;
+  trackingNumber?: string | null;
+  createdAt: string;
+}
+
 /** Monthly usage of the signed-in Pi user. */
 export interface Usage {
-  plan: "free";
+  plan: PlanId;
+  /** When the paid plan ends (ISO), if any. */
+  planEndsAt?: string | null;
   period: string;
   renewsAt: string;
   searchesUsed: number;

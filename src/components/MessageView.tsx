@@ -5,11 +5,25 @@ import { AlertCircle, AlertTriangle } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import type { Strings } from "@/lib/i18n";
-import type { Block, ChatMessage, Lang } from "@/lib/types";
+import type { Block, ChatMessage, Lang, Offer } from "@/lib/types";
 import { BrowserCard, LinkCard, OfferSkeletons, ProductCards, StepsTimeline } from "./cards";
 import Logo from "./Logo";
 
-export default function MessageView({ msg, live, s, lang, city }: { msg: ChatMessage; live: boolean; s: Strings; lang: Lang; city?: string }) {
+export default function MessageView({
+  msg,
+  live,
+  s,
+  lang,
+  city,
+  onOrder,
+}: {
+  msg: ChatMessage;
+  live: boolean;
+  s: Strings;
+  lang: Lang;
+  city?: string;
+  onOrder?: (o: Offer) => void;
+}) {
   if (msg.role === "user") {
     const texts = msg.blocks.filter((b): b is Extract<Block, { type: "text" }> => b.type === "text");
     const imgs = msg.blocks.filter((b): b is Extract<Block, { type: "image" }> => b.type === "image");
@@ -77,7 +91,7 @@ export default function MessageView({ msg, live, s, lang, city }: { msg: ChatMes
                 </div>
               );
             case "products":
-              return <ProductCards key={i} offers={b.offers} s={s} lang={lang} city={city} />;
+              return <ProductCards key={i} offers={b.offers} s={s} lang={lang} city={city} onOrder={onOrder} />;
             case "link":
               return <LinkCard key={i} preview={b.preview} lang={lang} />;
             case "browser":

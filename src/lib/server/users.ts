@@ -71,6 +71,11 @@ export async function updatePrefs(uid: string, prefs: { country?: string | null;
   if (error) throw new Error(`users: ${error.message}`);
 }
 
+/**
+ * With Supabase, the quota comes from `user_quota()`: the active paid plan
+ * (subscriptions) or the free plan (plans table), plus this month's top-ups
+ * and bonus searches. The free plan's numbers live in the `plans` table.
+ */
 export async function getUsage(uid: string): Promise<Usage> {
   const period = currentPeriod();
   const limits = freeLimits();
@@ -78,6 +83,21 @@ export async function getUsage(uid: string): Promise<Usage> {
   if (!supabaseEnabled) {
     row = memUsage.get(`${uid}:${period}`) ?? row;
   } else {
+    const q = await supabase().rpc("user_quota", { p_uid: uid, p_period: period });
+    if (!q.error && Array.isArray(q.data) && q.data[0]) {
+      const r = q.data[0] as { plan: Usage["plan"]; searches_quota: number; orders_quota: number; ends_at: string | null; searches_used: number; orders_used: number };
+      return {
+        plan: r.plan,
+        planEndsAt: r.ends_at,
+        period,
+        renewsAt: r.plan !== "free" && r.ends_at ? r.ends_at : renewsAt(),
+        searchesUsed: r.searches_used,
+        searchLimit: r.searches_quota,
+        ordersUsed: r.orders_used,
+        orderLimit: r.orders_quota,
+      };
+    }
+    // Older schema (before migration 0002): usage table + free limits from the environment.
     const { data, error } = await supabase()
       .from("usage")
       .select("searches, orders, bonus_searches")
@@ -136,4 +156,45 @@ export async function recordSearch(uid: string): Promise<Usage> {
     if (error) throw new Error(`usage: ${error.message}`);
   }
   return getUsage(uid);
+}
+
+export class OrderQuotaExceeded extends Error {
+  status = 402;
+  code = "ORDER_QUOTA_EXCEEDED";
+  constructor(public usage: Usage) {
+    super("You've used all your automatic orders this month.");
+  }
+}
+
+/** Throws when the user has no automatic orders left. */
+export async function assertCanOrder(uid: string): Promise<Usage> {
+  const usage = await getUsage(uid);
+  if (usage.ordersUsed >= usage.orderLimit) throw new OrderQuotaExceeded(usage);
+  return usage;
+}
+
+/** Counts one automatic order. */
+export async function recordOrder(uid: string): Promise<Usage> {
+  const period = currentPeriod();
+  if (!supabaseEnabled) {
+    const k = `${uid}:${period}`;
+    const cur = memUsage.get(k) ?? { searches: 0, orders: 0, bonus: 0 };
+    memUsage.set(k, { ...cur, orders: cur.orders + 1 });
+  } else {
+    const { error } = await supabase().rpc("add_usage", { p_uid: uid, p_period: period, p_searches: 0, p_orders: 1 });
+    if (error) throw new Error(`usage: ${error.message}`);
+  }
+  return getUsage(uid);
+}
+
+/** Saved profile fields (name/phone/email shown on orders). */
+export async function updateProfile(uid: string, p: { displayName?: string | null; phone?: string | null; email?: string | null }): Promise<void> {
+  if (!supabaseEnabled) return;
+  const patch: Record<string, unknown> = {};
+  if (p.displayName !== undefined) patch.display_name = p.displayName;
+  if (p.phone !== undefined) patch.phone = p.phone;
+  if (p.email !== undefined) patch.email = p.email;
+  if (!Object.keys(patch).length) return;
+  const { error } = await supabase().from("users").update(patch).eq("pi_uid", uid);
+  if (error) throw new Error(`users: ${error.message}`);
 }
