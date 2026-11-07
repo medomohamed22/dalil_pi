@@ -1,0 +1,293 @@
+@import "tailwindcss";
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* Monochrome design tokens */
+:root {
+  --bg: #ffffff;
+  --bg-soft: #f6f6f6;
+  --bg-muted: #efefef;
+  --fg: #0a0a0a;
+  --fg-soft: #3f3f3f;
+  --fg-muted: #8a8a8a;
+  --line: #e7e7e7;
+  --line-strong: #d4d4d4;
+  --inv-bg: #0a0a0a;
+  --inv-fg: #ffffff;
+  --shadow: 0 1px 2px rgb(0 0 0 / 0.04), 0 8px 24px -12px rgb(0 0 0 / 0.12);
+  --danger: #b42318;
+}
+
+.dark {
+  --bg: #0a0a0a;
+  --bg-soft: #141414;
+  --bg-muted: #1d1d1d;
+  --fg: #fafafa;
+  --fg-soft: #d4d4d4;
+  --fg-muted: #8a8a8a;
+  --line: #232323;
+  --line-strong: #333333;
+  --inv-bg: #fafafa;
+  --inv-fg: #0a0a0a;
+  --shadow: 0 1px 2px rgb(0 0 0 / 0.4), 0 8px 24px -12px rgb(0 0 0 / 0.6);
+  --danger: #f97066;
+}
+
+@theme inline {
+  --color-bg: var(--bg);
+  --color-bg-soft: var(--bg-soft);
+  --color-bg-muted: var(--bg-muted);
+  --color-fg: var(--fg);
+  --color-fg-soft: var(--fg-soft);
+  --color-fg-muted: var(--fg-muted);
+  --color-line: var(--line);
+  --color-line-strong: var(--line-strong);
+  --color-inv-bg: var(--inv-bg);
+  --color-inv-fg: var(--inv-fg);
+  --color-danger: var(--danger);
+  --font-sans: var(--font-inter), var(--font-arabic), ui-sans-serif, system-ui, sans-serif;
+  --font-arabic-stack: var(--font-arabic), var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+  --shadow-card: var(--shadow);
+}
+
+html,
+body {
+  background: var(--bg);
+  color: var(--fg);
+  height: 100%;
+}
+
+body {
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  -webkit-tap-highlight-color: transparent;
+}
+
+html[lang="ar"] body {
+  font-family: var(--font-arabic-stack);
+}
+
+::selection {
+  background: var(--fg);
+  color: var(--bg);
+}
+
+/* Thin, quiet scrollbars */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--line-strong) transparent;
+}
+
+.no-scrollbar {
+  scrollbar-width: none;
+}
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
+/* Shimmer for "agent is working" text */
+.shimmer {
+  background: linear-gradient(
+    90deg,
+    var(--fg-muted) 0%,
+    var(--fg) 40%,
+    var(--fg-muted) 80%
+  );
+  background-size: 200% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: shimmer 1.6s linear infinite;
+}
+html[dir="rtl"] .shimmer {
+  animation-direction: reverse;
+}
+@keyframes shimmer {
+  from {
+    background-position: 100% 0;
+  }
+  to {
+    background-position: -100% 0;
+  }
+}
+
+/* Markdown inside assistant bubbles */
+.prose-dalil p {
+  margin: 0.35rem 0;
+  line-height: 1.7;
+}
+.prose-dalil a {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.prose-dalil ul,
+.prose-dalil ol {
+  padding-inline-start: 1.2rem;
+  margin: 0.4rem 0;
+}
+.prose-dalil ul {
+  list-style: disc;
+}
+.prose-dalil ol {
+  list-style: decimal;
+}
+.prose-dalil code {
+  background: var(--bg-muted);
+  padding: 0.1rem 0.35rem;
+  border-radius: 0.35rem;
+  font-size: 0.85em;
+}
+.prose-dalil em {
+  color: var(--fg-muted);
+}
+.prose-dalil table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.9em;
+  margin: 0.5rem 0;
+}
+.prose-dalil th,
+.prose-dalil td {
+  border-bottom: 1px solid var(--line);
+  padding: 0.35rem 0.5rem;
+  text-align: start;
+}
+
+/* ---- Search radar (compositor-only: transform + opacity) ---- */
+.radar-ring {
+  position: absolute;
+  inset: 0;
+  border-radius: 9999px;
+  border: 1px solid color-mix(in srgb, var(--fg) 28%, transparent);
+  animation: radar-ring 2.4s cubic-bezier(0.2, 0.6, 0.3, 1) infinite;
+  will-change: transform, opacity;
+}
+.radar-sweep {
+  position: absolute;
+  inset: 4px;
+  border-radius: 9999px;
+  background: conic-gradient(from 0deg, transparent 0deg, color-mix(in srgb, var(--fg) 20%, transparent) 60deg, transparent 100deg);
+  animation: radar-spin 2.4s linear infinite;
+  will-change: transform;
+  backface-visibility: hidden;
+}
+.browser-scan {
+  background: linear-gradient(to bottom, transparent, color-mix(in srgb, var(--fg) 10%, transparent), transparent);
+  animation: browser-scan 2.2s ease-in-out infinite;
+  will-change: transform;
+}
+@keyframes browser-scan {
+  from { transform: translateY(-100%); }
+  to { transform: translateY(560%); }
+}
+.live-dot {
+  animation: live-dot 1.2s ease-in-out infinite;
+}
+@keyframes live-dot {
+  50% { opacity: 0.25; }
+}
+.voice-bar {
+  height: 14px;
+  transform-origin: center;
+  animation: voice-bar 0.9s ease-in-out infinite;
+  will-change: transform;
+}
+@keyframes voice-bar {
+  0%, 100% { transform: scaleY(0.35); }
+  50% { transform: scaleY(1); }
+}
+.voice-ring {
+  animation: voice-ring 1.4s ease-out infinite;
+  box-shadow: 0 0 0 0 color-mix(in srgb, var(--fg) 35%, transparent);
+}
+@keyframes voice-ring {
+  to { box-shadow: 0 0 0 12px transparent; }
+}
+.scan-laser {
+  top: 0;
+  animation: scan-laser 1.8s ease-in-out infinite alternate;
+}
+@keyframes scan-laser {
+  from { top: 4%; }
+  to { top: 94%; }
+}
+.insight-ping {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: insight-ping 1.8s ease-out 1.2s infinite;
+}
+@keyframes insight-ping {
+  0% { transform: scale(1); opacity: 0.5; }
+  100% { transform: scale(3.2); opacity: 0; }
+}
+.typing-dot {
+  animation: typing-dot 1s ease-in-out infinite;
+}
+@keyframes typing-dot {
+  0%, 60%, 100% { transform: translateY(0); opacity: 0.4; }
+  30% { transform: translateY(-3px); opacity: 1; }
+}
+.savings-shine {
+  background: linear-gradient(110deg, transparent 30%, color-mix(in srgb, var(--inv-fg, #fff) 14%, transparent) 50%, transparent 70%);
+  transform: translateX(-100%);
+  animation: savings-shine 3.2s ease-in-out 0.6s infinite;
+}
+@keyframes savings-shine {
+  60%, 100% { transform: translateX(100%); }
+}
+.savings-grid .ag-row {
+  cursor: pointer;
+}
+.savings-grid .ag-layout-auto-height {
+  min-height: 0 !important;
+}
+.focus-flash {
+  animation: focus-flash 2s ease-out;
+}
+@keyframes focus-flash {
+  0%, 30% { box-shadow: 0 0 0 3px color-mix(in srgb, var(--fg) 55%, transparent); }
+  100% { box-shadow: 0 0 0 3px transparent; }
+}
+.logo-rest {
+  transform: rotate(0deg);
+  transition: transform 0.4s ease-out;
+}
+.radar-needle {
+  transform-origin: 50% 50%;
+  animation: radar-needle 3.2s ease-in-out infinite;
+  will-change: transform;
+}
+@keyframes radar-ring {
+  from { transform: scale(0.55); opacity: 0.75; }
+  to { transform: scale(1.6); opacity: 0; }
+}
+@keyframes radar-spin {
+  to { transform: rotate(360deg); }
+}
+@keyframes radar-needle {
+  0%, 100% { transform: rotate(-18deg); }
+  50% { transform: rotate(18deg); }
+}
+
+/* Guided demo: the element the tour is about to use. */
+.tour-spot {
+  position: relative;
+  z-index: 30;
+  outline: 3px solid var(--fg);
+  outline-offset: 3px;
+  border-radius: 1rem;
+  animation: tour-pulse 1.4s ease-in-out infinite;
+}
+@keyframes tour-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgb(0 0 0 / 0.18); }
+  50% { box-shadow: 0 0 0 10px rgb(0 0 0 / 0); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}

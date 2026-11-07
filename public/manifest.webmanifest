@@ -1,0 +1,9 @@
+{
+  "name": "Dalil Pi — AI shopping agent for Pi",
+  "short_name": "Dalil Pi",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#0a0a0a",
+  "icons": [{ "src": "/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }]
+}
