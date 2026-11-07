@@ -1,0 +1,36 @@
+name: Price watch
+
+# Runs Dalil's price checks every 10 minutes (Vercel Hobby cron is daily only).
+# Setup: repo Settings → Secrets and variables → Actions → New repository secret
+#   CRON_SECRET = the same value as CRON_SECRET in Vercel
+# Optional repository variable APP_URL (defaults to the production URL below).
+on:
+  schedule:
+    - cron: "*/10 * * * *"
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: price-watch
+  cancel-in-progress: false
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - name: Check all price watches
+        env:
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+          APP_URL: ${{ vars.APP_URL || 'https://paypalai-m.vercel.app' }}
+        run: |
+          if [ -z "$CRON_SECRET" ]; then
+            echo "::warning::CRON_SECRET secret is not set — skipping."
+            exit 0
+          fi
+          code=$(curl -sS -o out.json -w '%{http_code}' --max-time 300 \
+            -H "Authorization: Bearer $CRON_SECRET" "$APP_URL/api/cron")
+          cat out.json; echo
+          echo "HTTP $code"
+          test "$code" = "200"

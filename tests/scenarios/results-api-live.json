@@ -1,0 +1,680 @@
+[
+ {
+  "n": 1,
+  "cat": "func",
+  "name": "demo US search returns ranked offers + approval + insight",
+  "ok": true
+ },
+ {
+  "n": 2,
+  "cat": "func",
+  "name": "every offer is signed and priced in USD",
+  "ok": true
+ },
+ {
+  "n": 3,
+  "cat": "func",
+  "name": "suspicious offers ranked last",
+  "ok": true
+ },
+ {
+  "n": 4,
+  "cat": "func",
+  "name": "the app is US-only: a request for another market is served in USD",
+  "ok": true
+ },
+ {
+  "n": 5,
+  "cat": "func",
+  "name": "barcode in message → lookup step + product",
+  "ok": true
+ },
+ {
+  "n": 6,
+  "cat": "func",
+  "name": "photo message → identify_image step",
+  "ok": true
+ },
+ {
+  "n": 7,
+  "cat": "func",
+  "name": "unknown product in demo still answers (no crash)",
+  "ok": true
+ },
+ {
+  "n": 8,
+  "cat": "func",
+  "name": "60-message history accepted",
+  "ok": true
+ },
+ {
+  "n": 9,
+  "cat": "func",
+  "name": "public config exposes only feature flags",
+  "ok": true
+ },
+ {
+  "n": 10,
+  "cat": "func",
+  "name": "paypal status: sandbox + public client id only",
+  "ok": true
+ },
+ {
+  "n": 11,
+  "cat": "pay",
+  "name": "create PayPal order for a signed offer (+ orderToken)",
+  "ok": true
+ },
+ {
+  "n": 12,
+  "cat": "pay",
+  "name": "mandate: over spending limit blocked",
+  "ok": true
+ },
+ {
+  "n": 13,
+  "cat": "pay",
+  "name": "mandate: verified-only blocks an unverified store",
+  "ok": true
+ },
+ {
+  "n": 14,
+  "cat": "pay",
+  "name": "suspicious store can never be bought",
+  "ok": true
+ },
+ {
+  "n": 15,
+  "cat": "pay",
+  "name": "EGP offer creates a USD order",
+  "ok": true
+ },
+ {
+  "n": 16,
+  "cat": "sec",
+  "name": "authorize without orderToken is refused",
+  "ok": true
+ },
+ {
+  "n": 17,
+  "cat": "sec",
+  "name": "authorize with another order's token is refused",
+  "ok": true
+ },
+ {
+  "n": 18,
+  "cat": "sec",
+  "name": "authorize before buyer approval fails cleanly",
+  "ok": true
+ },
+ {
+  "n": 19,
+  "cat": "sec",
+  "name": "capture without hold token",
+  "ok": true
+ },
+ {
+  "n": 20,
+  "cat": "sec",
+  "name": "void with forged token",
+  "ok": true
+ },
+ {
+  "n": 21,
+  "cat": "sec",
+  "name": "refund with forged token",
+  "ok": true
+ },
+ {
+  "n": 22,
+  "cat": "sec",
+  "name": "track without token",
+  "ok": true
+ },
+ {
+  "n": 23,
+  "cat": "sec",
+  "name": "orderToken cannot be used as a hold token (kind confusion)",
+  "ok": true
+ },
+ {
+  "n": 24,
+  "cat": "sec",
+  "name": "path traversal in order id",
+  "ok": true
+ },
+ {
+  "n": 25,
+  "cat": "sec",
+  "name": "refund with invalid reason rejected",
+  "ok": true
+ },
+ {
+  "n": 26,
+  "cat": "sec",
+  "name": "garbage JSON body → 4xx, not 500",
+  "ok": true
+ },
+ {
+  "n": 27,
+  "cat": "sec",
+  "name": "wrong HTTP method → 405",
+  "ok": true
+ },
+ {
+  "n": 28,
+  "cat": "sec",
+  "name": "tampered offer: price → $1",
+  "ok": true
+ },
+ {
+  "n": 29,
+  "cat": "sec",
+  "name": "tampered offer: charge amount → $1",
+  "ok": true
+ },
+ {
+  "n": 30,
+  "cat": "sec",
+  "name": "tampered offer: currency USD → EGP",
+  "ok": true
+ },
+ {
+  "n": 31,
+  "cat": "sec",
+  "name": "tampered offer: suspicious store → verified",
+  "ok": true
+ },
+ {
+  "n": 32,
+  "cat": "sec",
+  "name": "tampered offer: add or strip flags",
+  "ok": true
+ },
+ {
+  "n": 33,
+  "cat": "sec",
+  "name": "tampered offer: garbage signature",
+  "ok": true
+ },
+ {
+  "n": 34,
+  "cat": "sec",
+  "name": "tampered offer: expired signature",
+  "ok": true
+ },
+ {
+  "n": 35,
+  "cat": "sec",
+  "name": "tampered offer: swap product URL",
+  "ok": true
+ },
+ {
+  "n": 36,
+  "cat": "func",
+  "name": "agent-to-agent negotiation lowers the price and re-signs",
+  "ok": true
+ },
+ {
+  "n": 37,
+  "cat": "func",
+  "name": "negotiated deal stays within a plausible discount (≥80% of list)",
+  "ok": true
+ },
+ {
+  "n": 38,
+  "cat": "func",
+  "name": "negotiated offer can be bought",
+  "ok": true
+ },
+ {
+  "n": 39,
+  "cat": "sec",
+  "name": "re-negotiating a negotiated offer is refused",
+  "ok": true
+ },
+ {
+  "n": 40,
+  "cat": "sec",
+  "name": "stripping the negotiated flag breaks the signature",
+  "ok": true
+ },
+ {
+  "n": 41,
+  "cat": "func",
+  "name": "offers whose random id starts with \"n\" can still be negotiated (regression)",
+  "ok": true
+ },
+ {
+  "n": 42,
+  "cat": "sec",
+  "name": "cheap fake competitor cannot push the deal below the floor",
+  "ok": true
+ },
+ {
+  "n": 43,
+  "cat": "sec",
+  "name": "suspicious store: negotiation refused",
+  "ok": true
+ },
+ {
+  "n": 44,
+  "cat": "func",
+  "name": "seller agent describes its protocol",
+  "ok": true
+ },
+ {
+  "n": 45,
+  "cat": "sec",
+  "name": "seller agent rejects negative price",
+  "ok": true
+ },
+ {
+  "n": 46,
+  "cat": "sec",
+  "name": "forged seller session cannot lock a chosen price",
+  "ok": true
+ },
+ {
+  "n": 47,
+  "cat": "sec",
+  "name": "seller lowball bid of $1 is not accepted",
+  "ok": true
+ },
+ {
+  "n": 48,
+  "cat": "func",
+  "name": "organizer creates a 3-way group buy",
+  "ok": true
+ },
+ {
+  "n": 49,
+  "cat": "func",
+  "name": "friend opens the link: sees the group but is not organizer",
+  "ok": true
+ },
+ {
+  "n": 50,
+  "cat": "func",
+  "name": "friend starts paying a share → PayPal approve link",
+  "ok": true
+ },
+ {
+  "n": 51,
+  "cat": "sec",
+  "name": "member name is stored as plain text and capped at 40 chars",
+  "ok": true
+ },
+ {
+  "n": 52,
+  "cat": "sec",
+  "name": "non-organizer cannot cancel the group",
+  "ok": true
+ },
+ {
+  "n": 53,
+  "cat": "sec",
+  "name": "confirming an unknown order in a group → 404",
+  "ok": true
+ },
+ {
+  "n": 54,
+  "cat": "func",
+  "name": "organizer cancels → group cancelled",
+  "ok": true
+ },
+ {
+  "n": 55,
+  "cat": "func",
+  "name": "paying into a cancelled group is refused",
+  "ok": true
+ },
+ {
+  "n": 56,
+  "cat": "sec",
+  "name": "group with 50 shares rejected",
+  "ok": true
+ },
+ {
+  "n": 57,
+  "cat": "sec",
+  "name": "group with 1 share rejected",
+  "ok": true
+ },
+ {
+  "n": 58,
+  "cat": "sec",
+  "name": "group with tampered offer rejected",
+  "ok": true
+ },
+ {
+  "n": 59,
+  "cat": "sec",
+  "name": "group from a suspicious store rejected",
+  "ok": true
+ },
+ {
+  "n": 60,
+  "cat": "sec",
+  "name": "group without device id → 401",
+  "ok": true
+ },
+ {
+  "n": 61,
+  "cat": "sec",
+  "name": "group id injection / traversal",
+  "ok": true
+ },
+ {
+  "n": 62,
+  "cat": "func",
+  "name": "create a price watch (notify)",
+  "ok": true
+ },
+ {
+  "n": 63,
+  "cat": "func",
+  "name": "watch listed for its device only",
+  "ok": true
+ },
+ {
+  "n": 64,
+  "cat": "sec",
+  "name": "another device cannot act on someone's watch (IDOR)",
+  "ok": true
+ },
+ {
+  "n": 65,
+  "cat": "sec",
+  "name": "CRITICAL: simulated drop to $0.01 cannot produce a signed $0.01 offer",
+  "ok": true
+ },
+ {
+  "n": 66,
+  "cat": "func",
+  "name": "simulate (default) triggers the watch with a real-looking price",
+  "ok": true
+ },
+ {
+  "n": 67,
+  "cat": "sec",
+  "name": "simulate cannot go below 85% even with a low target",
+  "ok": true
+ },
+ {
+  "n": 68,
+  "cat": "sec",
+  "name": "demo random walk never drifts under the floor (40 syncs)",
+  "ok": true
+ },
+ {
+  "n": 69,
+  "cat": "sec",
+  "name": "watch with tampered offer rejected",
+  "ok": true
+ },
+ {
+  "n": 70,
+  "cat": "sec",
+  "name": "auto-buy watch requires a connected PayPal vault",
+  "ok": true
+ },
+ {
+  "n": 71,
+  "cat": "sec",
+  "name": "watches without / with malformed device id → 401",
+  "ok": true
+ },
+ {
+  "n": 72,
+  "cat": "func",
+  "name": "delete the watch",
+  "ok": true
+ },
+ {
+  "n": 73,
+  "cat": "sec",
+  "name": "push subscription to an arbitrary server is rejected (SSRF)",
+  "ok": true
+ },
+ {
+  "n": 74,
+  "cat": "sec",
+  "name": "push subscription over plain http rejected",
+  "ok": true
+ },
+ {
+  "n": 75,
+  "cat": "func",
+  "name": "real push service endpoint accepted",
+  "ok": true
+ },
+ {
+  "n": 76,
+  "cat": "sec",
+  "name": "link preview SSRF blocked: http://169.254.169.254/latest/meta-data/",
+  "ok": true
+ },
+ {
+  "n": 77,
+  "cat": "sec",
+  "name": "link preview SSRF blocked: http://127.0.0.1:3100/api/config",
+  "ok": true
+ },
+ {
+  "n": 78,
+  "cat": "sec",
+  "name": "link preview SSRF blocked: http://localhost/",
+  "ok": true
+ },
+ {
+  "n": 79,
+  "cat": "sec",
+  "name": "link preview SSRF blocked: http://127.0.0.1.nip.io/",
+  "ok": true
+ },
+ {
+  "n": 80,
+  "cat": "sec",
+  "name": "link preview SSRF blocked: file:///etc/passwd",
+  "ok": true
+ },
+ {
+  "n": 81,
+  "cat": "sec",
+  "name": "link preview SSRF blocked: http://[::1]/",
+  "ok": true
+ },
+ {
+  "n": 82,
+  "cat": "sec",
+  "name": "link preview SSRF blocked: http://0x7f000001/",
+  "ok": true
+ },
+ {
+  "n": 83,
+  "cat": "sec",
+  "name": "link preview SSRF blocked: http://2130706433/",
+  "ok": true
+ },
+ {
+  "n": 84,
+  "cat": "sec",
+  "name": "link preview SSRF blocked: http://[::ffff:127.0.0.1]/",
+  "ok": true
+ },
+ {
+  "n": 85,
+  "cat": "sec",
+  "name": "link preview SSRF blocked: gopher://127.0.0.1:6379/_INFO",
+  "ok": true
+ },
+ {
+  "n": 86,
+  "cat": "sec",
+  "name": "a model base URL / key sent by the browser is ignored (server model only)",
+  "ok": true
+ },
+ {
+  "n": 87,
+  "cat": "sec",
+  "name": "model list → loopback blocked",
+  "ok": true
+ },
+ {
+  "n": 88,
+  "cat": "sec",
+  "name": "model list error does not echo internal data",
+  "ok": true
+ },
+ {
+  "n": 89,
+  "cat": "sec",
+  "name": "oversized chat message rejected",
+  "ok": true
+ },
+ {
+  "n": 90,
+  "cat": "sec",
+  "name": "any market value is ignored (always US)",
+  "ok": true
+ },
+ {
+  "n": 91,
+  "cat": "sec",
+  "name": "more than 4 images rejected",
+  "ok": true
+ },
+ {
+  "n": 92,
+  "cat": "sec",
+  "name": "empty history rejected",
+  "ok": true
+ },
+ {
+  "n": 93,
+  "cat": "sec",
+  "name": "cron without / with wrong secret → 401",
+  "ok": true
+ },
+ {
+  "n": 94,
+  "cat": "sec",
+  "name": "diagnostics require the secret",
+  "ok": true
+ },
+ {
+  "n": 95,
+  "cat": "sec",
+  "name": "removed debug route is gone",
+  "ok": true
+ },
+ {
+  "n": 96,
+  "cat": "sec",
+  "name": "security headers (frame, sniff, referrer)",
+  "ok": true
+ },
+ {
+  "n": 97,
+  "cat": "sec",
+  "name": "no secrets in any public JSON",
+  "ok": true
+ },
+ {
+  "n": 98,
+  "cat": "sec",
+  "name": "errors never leak stack traces",
+  "ok": true
+ },
+ {
+  "n": 99,
+  "cat": "func",
+  "name": "group page /g/<id> renders (SSR) for unknown id",
+  "ok": true
+ },
+ {
+  "n": 100,
+  "cat": "func",
+  "name": "PayPal return page exists",
+  "ok": true
+ },
+ {
+  "n": 101,
+  "cat": "cart",
+  "name": "cart: one PayPal order with one purchase unit per store",
+  "ok": true
+ },
+ {
+  "n": 102,
+  "cat": "cart",
+  "name": "cart: total over the spending limit is blocked",
+  "ok": true
+ },
+ {
+  "n": 103,
+  "cat": "cart",
+  "name": "cart: a tampered price is refused",
+  "ok": true
+ },
+ {
+  "n": 104,
+  "cat": "cart",
+  "name": "cart: an offer re-labelled to another currency is refused",
+  "ok": true
+ },
+ {
+  "n": 105,
+  "cat": "cart",
+  "name": "cart: a suspicious store cannot be added",
+  "ok": true
+ },
+ {
+  "n": 106,
+  "cat": "cart",
+  "name": "cart: the same offer twice is refused",
+  "ok": true
+ },
+ {
+  "n": 107,
+  "cat": "family",
+  "name": "family: request created for a signed offer within the limit",
+  "ok": true
+ },
+ {
+  "n": 108,
+  "cat": "family",
+  "name": "family: request above the limit is refused",
+  "ok": true
+ },
+ {
+  "n": 109,
+  "cat": "family",
+  "name": "family: tampered offer is refused",
+  "ok": true
+ },
+ {
+  "n": 110,
+  "cat": "family",
+  "name": "family: the requester cannot approve their own request",
+  "ok": true
+ },
+ {
+  "n": 111,
+  "cat": "family",
+  "name": "family: approver gets a PayPal approval link",
+  "ok": true
+ },
+ {
+  "n": 112,
+  "cat": "family",
+  "name": "family: approver view hides nothing it needs, requester view masks",
+  "ok": true
+ },
+ {
+  "n": 113,
+  "cat": "func",
+  "name": "family approval page exists",
+  "ok": true
+ }
+]
