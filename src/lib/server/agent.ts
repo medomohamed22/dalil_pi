@@ -5,6 +5,7 @@ import { BrowserSession, browserAvailable, type PageState } from "./browser";
 import { streamChat, webSearch, type ChatMsg, type FunctionTool, type MetaConfig } from "./meta";
 import { rankOffers, type RawOffer } from "./rank";
 import { prepareOffers } from "./sign";
+import { MIN_ORDER_TRUST, scoreTrust } from "./trust";
 import { PriceEvidence } from "./evidence";
 import type { AgentEvent, Lang, Offer, Scope, Step, WireMessage } from "../types";
 
@@ -28,6 +29,11 @@ const OFFER_SCHEMA = {
     inStock: { type: "boolean", description: "false if the store shows it as out of stock / unavailable" },
     kind: { type: "string", enum: ["online", "local", "service"], description: "online store, physical shop, or a service" },
     piEvidence: { type: "string", description: "How you know this store accepts Pi (e.g. 'Pi price shown, Pi SDK checkout on mall.salla-shop.com')" },
+    reviews: {
+      type: "array",
+      items: { type: "string" },
+      description: "Up to 3 short customer review quotes copied WORD FOR WORD from a page you read (never invent or translate; quotes not found on the page are dropped)",
+    },
   },
   required: ["title", "store", "price", "currency"],
 };
@@ -478,7 +484,17 @@ async function execTool(
         // Images the server read from the product page win over whatever the model wrote (often a site logo).
         return f ? { ...o, image: f.image || o.image, rating: o.rating ?? f.rating, reviewCount: o.reviewCount ?? f.reviewCount } : o;
       });
-      const ranked = prepareOffers(rankOffers(raw, ctx.locale.country, ctx.piUsd).map(ground));
+      const quotes = new Map(raw.map((o) => [o, (Array.isArray(o?.reviews) ? o.reviews : []).filter((q) => typeof q === "string" && q.length <= 240 && ctx.evidence.hasQuote(q)).slice(0, 3)]));
+      const rankedRaw = rankOffers(raw, ctx.locale.country, ctx.piUsd).map(ground);
+      rankedRaw.forEach((o) => {
+        const src = raw.find((r) => r.title === o.title && r.store === o.store);
+        const q = src ? quotes.get(src) : undefined;
+        if (q?.length) o.reviews = q;
+      });
+      const scored = await scoreTrust(rankedRaw);
+      // Low-trust stores sink below the rest (stable order otherwise).
+      scored.sort((a, b) => Number((a.trustScore ?? 50) < MIN_ORDER_TRUST) - Number((b.trustScore ?? 50) < MIN_ORDER_TRUST));
+      const ranked = prepareOffers(scored);
       if (!ranked.length) throw new Error("no valid offers");
       ctx.state.offersShown = true;
       ctx.emit({ type: "block", block: { type: "products", offers: ranked } });
@@ -492,6 +508,7 @@ async function execTool(
           approx_usd: o.totalUsd,
           score: o.score,
           trust: o.trust,
+          trust_score: o.trustScore,
           badges: o.badges,
           flags: o.flags,
         })),

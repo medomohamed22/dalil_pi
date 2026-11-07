@@ -1,4 +1,5 @@
 import "server-only";
+import { MIN_ORDER_TRUST } from "./trust";
 import { getAddress, listAddresses, NotFound } from "./addresses";
 import { piUsdPrice } from "./price";
 import { verifyOffer } from "./sign";
@@ -91,6 +92,7 @@ export async function createOrder(uid: string, offer: Offer, addressId?: string,
   if (!verifyOffer(offer)) throw new BadOffer("This offer expired or was changed. Search again to get a fresh price.");
   if (offer.flags?.includes("price_unverified")) throw new BadOffer("This price wasn't confirmed on the store page.");
   if (offer.trust === "suspicious") throw new BadOffer("This store looks suspicious, so Dalil Pi won't place the order.");
+  if (offer.trustScore != null && offer.trustScore < MIN_ORDER_TRUST) throw new BadOffer(`This store's trust score is ${offer.trustScore}/100, so Dalil Pi won't place the order.`);
   if (!offer.url) throw new BadOffer("This offer has no store link.");
   const address = addressId ? await getAddress(uid, addressId) : (await listAddresses(uid)).find((a) => a.isDefault) ?? null;
   const price = await piUsdPrice();

@@ -560,23 +560,53 @@ export function BrowserCard({ block, lang, live }: { block: Extract<Block, { typ
 
 /* ---------- Product offers ---------- */
 
-function TrustPill({ offer, s }: { offer: Offer; s: Strings }) {
-  if (offer.trust === "verified")
+function trustTone(n: number) {
+  return n >= 60 ? "text-emerald-700 dark:text-emerald-400" : n >= 40 ? "text-amber-700 dark:text-amber-400" : "text-danger";
+}
+
+/** 🛡️ trust number (0–100). Tap for the breakdown. */
+function TrustPill({ offer, s, open, onToggle }: { offer: Offer; s: Strings; open: boolean; onToggle: () => void }) {
+  const n = offer.trustScore;
+  if (n == null) {
+    const Icon = offer.trust === "verified" ? ShieldCheck : offer.trust === "suspicious" ? ShieldAlert : Shield;
     return (
-      <span className="inline-flex items-center gap-1 text-[11px] text-fg-soft">
-        <ShieldCheck className="size-3" /> {s.verified}
+      <span className={`inline-flex items-center gap-1 text-[11px] ${offer.trust === "suspicious" ? "font-medium text-danger" : "text-fg-muted"}`}>
+        <Icon className="size-3" /> {offer.trust === "verified" ? s.verified : offer.trust === "suspicious" ? s.suspicious : s.unknownStore}
       </span>
     );
-  if (offer.trust === "suspicious")
-    return (
-      <span className="inline-flex items-center gap-1 text-[11px] font-medium text-danger">
-        <ShieldAlert className="size-3" /> {s.suspicious}
-      </span>
-    );
+  }
+  const Icon = n >= 60 ? ShieldCheck : n >= 40 ? Shield : ShieldAlert;
   return (
-    <span className="inline-flex items-center gap-1 text-[11px] text-fg-muted">
-      <Shield className="size-3" /> {s.unknownStore}
-    </span>
+    <button
+      type="button"
+      onClick={onToggle}
+      aria-expanded={open}
+      title={`${s.trust} ${n}/100 · ${s.trustLevel(n)}`}
+      data-testid="trust"
+      className={`inline-flex shrink-0 items-center gap-1 rounded-full border border-line px-1.5 py-0.5 text-[11px] font-semibold tabular-nums ${trustTone(n)}`}
+    >
+      <Icon className="size-3" /> {n}
+    </button>
+  );
+}
+
+function TrustBreakdown({ offer, s }: { offer: Offer; s: Strings }) {
+  const p = offer.trustParts;
+  if (!p || offer.trustScore == null) return null;
+  return (
+    <div className="rounded-xl bg-bg-soft p-2 text-[11px]" data-testid="trust-breakdown">
+      <div className={`mb-1 font-semibold ${trustTone(offer.trustScore)}`}>
+        {s.trust} {offer.trustScore}/100 · {s.trustLevel(offer.trustScore)}
+      </div>
+      {(Object.keys(p) as (keyof typeof p)[]).map((k) => (
+        <div key={k} className="flex items-center gap-2">
+          <span className="w-28 shrink-0 truncate text-fg-muted">{s.trustParts[k]}</span>
+          <span className="h-1 flex-1 overflow-hidden rounded-full bg-bg-muted">
+            <span className="block h-full rounded-full bg-fg" style={{ width: `${Math.round(p[k] * 100)}%` }} />
+          </span>
+        </div>
+      ))}
+    </div>
   );
 }
 
@@ -588,6 +618,7 @@ const FLAG_TEXT: Record<string, { ar: string; en: string }> = {
   out_of_stock: { ar: "خلصان حاليًا", en: "Out of stock" },
   price_unverified: { ar: "السعر ده متأكدناش منه من صفحة المتجر", en: "Price not confirmed on the store page" },
   not_priced_in_pi: { ar: "السعر مش بالباي — اتأكد إن المتجر بيقبل باي", en: "Not priced in Pi — check the store accepts Pi" },
+  new_domain: { ar: "الموقع جديد (أقل من 6 شهور)", en: "Very new website (under 6 months)" },
 };
 
 export function ProductCards({
@@ -612,6 +643,7 @@ export function ProductCards({
     bestValue: s.bestValue,
     nearest: s.nearest,
   };
+  const [why, setWhy] = useState<string | null>(null);
   return (
     <div className="-mx-4 w-[calc(100%+2rem)] sm:mx-0 sm:w-full">
       <div className="no-scrollbar flex snap-x snap-mandatory gap-3 overflow-x-auto px-4 pb-2 pt-1 sm:px-0">
@@ -644,17 +676,13 @@ export function ProductCards({
                     </span>
                   ))}
                 </div>
-                {o.score != null && (
-                  <span className="absolute end-2 top-2 rounded-full bg-bg/90 px-2 py-0.5 text-[10px] font-semibold tabular-nums backdrop-blur">
-                    {o.score}
-                  </span>
-                )}
               </div>
               <div className="flex flex-1 flex-col gap-1.5 p-3">
                 <div className="flex items-center justify-between gap-2">
                   <span className="truncate text-xs font-semibold">{o.store}</span>
-                  <TrustPill offer={o} s={s} />
+                  <TrustPill offer={o} s={s} open={why === o.id} onToggle={() => setWhy((w) => (w === o.id ? null : o.id))} />
                 </div>
+                {why === o.id && <TrustBreakdown offer={o} s={s} />}
                 <div className="line-clamp-2 min-h-[2.5rem] text-[13px] leading-snug text-fg-soft" dir="auto">
                   {o.title}
                 </div>
@@ -720,6 +748,16 @@ export function ProductCards({
                     {o.reason}
                   </div>
                 )}
+                {!!o.reviews?.length && (
+                  <div className="space-y-1 rounded-xl bg-bg-soft p-2" data-testid="reviews">
+                    <div className="text-[10px] font-semibold uppercase tracking-wider text-fg-muted">{s.realReviews}</div>
+                    {o.reviews.map((q, k) => (
+                      <p key={k} className="line-clamp-2 text-[11px] italic leading-snug text-fg-soft" dir="auto">
+                        “{q}”
+                      </p>
+                    ))}
+                  </div>
+                )}
                 {o.piEvidence && (
                   <div className="line-clamp-2 text-[11px] text-fg-muted" dir="auto" title={o.piEvidence}>
                     π {o.piEvidence}
@@ -727,7 +765,8 @@ export function ProductCards({
                 )}
                 <div className="mt-auto flex flex-col gap-1.5 pt-2">
                   {(() => {
-                    const orderable = !!(onOrder && o.url && o.sig && o.trust !== "suspicious" && !o.flags.includes("price_unverified") && !o.flags.includes("not_priced_in_pi"));
+                    const lowTrust = o.trustScore != null && o.trustScore < 40;
+                    const orderable = !!(onOrder && o.url && o.sig && o.trust !== "suspicious" && !lowTrust && !o.flags.includes("price_unverified") && !o.flags.includes("not_priced_in_pi"));
                     if (orderable) {
                       const out = ordersLeft != null && ordersLeft <= 0;
                       return (
@@ -735,7 +774,11 @@ export function ProductCards({
                           <motion.button
                             whileTap={{ scale: 0.96 }}
                             disabled={out}
-                            onClick={() => onOrder!(o)}
+                            onClick={() => {
+                              // 40–59: ask once more before sending the user to a less-known store.
+                              if (o.trustScore != null && o.trustScore < 60 && !window.confirm(s.cautionConfirm(o.trustScore))) return;
+                              onOrder!(o);
+                            }}
                             title={s.payInStore}
                             className="flex w-full items-center justify-center gap-1.5 rounded-xl bg-inv-bg py-2 text-xs font-semibold text-inv-fg transition-opacity hover:opacity-90 disabled:opacity-40"
                           >
@@ -746,7 +789,9 @@ export function ProductCards({
                       );
                     }
                     return o.url ? (
-                      <a
+                      <>
+                        {lowTrust && <span className="text-center text-[10.5px] text-danger">{s.lowTrustNoOrder}</span>}
+                        <a
                         href={o.url}
                         target="_blank"
                         rel="noopener noreferrer"
@@ -754,6 +799,7 @@ export function ProductCards({
                       >
                         {s.view} <ExternalLink className="size-3" />
                       </a>
+                      </>
                     ) : null;
                   })()}
                 </div>

@@ -21,7 +21,7 @@ function secret(): string {
 function payload(o: Offer, exp: number): string {
   return JSON.stringify([
     o.id, o.title, o.store, o.url ?? "", o.image ?? "", o.price, o.shipping ?? 0,
-    o.total, o.currency, o.trust, o.country ?? "", exp,
+    o.total, o.currency, o.trust, o.trustScore ?? -1, o.country ?? "", exp,
     [...(o.flags ?? [])].sort().join(","),
   ]);
 }

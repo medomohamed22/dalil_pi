@@ -23,6 +23,14 @@ function normText(s: string): string {
     .replace(/٫/g, ".");
 }
 
+function quoteNorm(s: string): string {
+  return normText(s)
+    .toLowerCase()
+    .replace(/["'“”‘’«»]/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
 export function normUrl(u: string): string | null {
   try {
     const x = new URL(u);
@@ -37,6 +45,8 @@ const close = (a: number, b: number, tol: number) => a > 0 && b > 0 && Math.abs(
 export class PriceEvidence {
   private observed = new Map<string, number[]>();
   private amounts: number[] = [];
+  /** Normalized text of everything trusted tools returned (for quote checks). */
+  private corpus = "";
 
   /** A structured price for a URL (catalog item, parsed product page, signed offer). */
   addObserved(url: string | undefined, price: unknown) {
@@ -51,6 +61,7 @@ export class PriceEvidence {
   /** Free text / JSON from a trusted tool result: every amount next to a currency counts. */
   addText(text: string | undefined) {
     if (!text) return;
+    if (this.corpus.length < 600_000) this.corpus += " " + quoteNorm(text);
     for (const m of normText(text).matchAll(AMOUNT_RE)) {
       const raw = m[1] ?? m[2] ?? m[3];
       if (raw) this.pushAmount(Number(raw.replace(/[,\s]/g, "")));
@@ -59,6 +70,12 @@ export class PriceEvidence {
 
   private pushAmount(n: number) {
     if (n > 0 && Number.isFinite(n) && this.amounts.length < MAX_AMOUNTS) this.amounts.push(n);
+  }
+
+  /** True when a review quote really appeared in a page/search result we read. */
+  hasQuote(q: string): boolean {
+    const n = quoteNorm(q);
+    return n.length >= 8 && this.corpus.includes(n.slice(0, 80));
   }
 
   isGrounded(o: { url?: string; price: number }): boolean {

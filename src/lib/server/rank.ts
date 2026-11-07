@@ -35,6 +35,7 @@ export interface RawOffer {
   inStock?: boolean;
   kind?: "online" | "local" | "service";
   piEvidence?: string;
+  reviews?: string[];
 }
 
 /** Only plain web links reach the UI (no javascript:, data:, file: …). */

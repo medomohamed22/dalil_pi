@@ -19,6 +19,16 @@ export type TrustLevel = "verified" | "unknown" | "suspicious";
 /** Where the offer comes from: an online store, a physical shop, or a service. */
 export type OfferKind = "online" | "local" | "service";
 
+/** The six parts of the trust score, each 0..1 (see src/lib/server/trust.ts). */
+export interface TrustParts {
+  official: number;
+  reviews: number;
+  wallet: number;
+  price: number;
+  site: number;
+  record: number;
+}
+
 export interface Offer {
   id: string;
   title: string;
@@ -44,6 +54,11 @@ export interface Offer {
   /** How we know the store accepts Pi (short, factual). */
   piEvidence?: string;
   trust: TrustLevel;
+  /** Store trust score 0–100 (server-computed). Under 40 = no Order button. */
+  trustScore?: number;
+  trustParts?: TrustParts;
+  /** Up to 3 short review quotes, kept only if they appear verbatim on a page we read. */
+  reviews?: string[];
   flags: string[];
   badges: string[];
   reason?: string;
