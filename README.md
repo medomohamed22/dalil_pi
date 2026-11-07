@@ -1,4 +1,4 @@
-# Pi Dalil (دليل باي)
+# Dalil Pi (دليل باي)
 
 AI shopping agent for Pi Network: finds products and services in stores that officially accept Pi, scores every store with a transparent trust formula, shows store and product ratings, fills the shipping details and sends the buyer straight to the store's own Pi checkout.
 
