@@ -2,7 +2,7 @@
 
 import { AnimatePresence, motion } from "framer-motion";
 import { useLiveQuery } from "dexie-react-hooks";
-import { Camera, Check, Globe2, Loader2, LogOut, Menu, Moon, PanelLeft, Plus, Search, Sun, Trash2, UserRound, X } from "lucide-react";
+import { Camera, Check, Globe2, Loader2, LogOut, MapPin, Menu, Moon, PanelLeft, Plus, Search, ShieldCheck, Sun, Trash2, UserRound, Wallet, X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { db, delKV, getKV, loadSettings, requestPersistence, saveSettings, setKV, uid } from "@/lib/db";
 import { countryLabel, flag, t, type Strings } from "@/lib/i18n";
@@ -854,6 +854,42 @@ function SignIn({
         )}
         {sandbox && <p className="mt-3 text-[11px] text-fg-muted">Pi Sandbox · Testnet</p>}
       </div>
+      <section className="mt-10 w-full max-w-xl text-start" aria-labelledby="how-title" data-testid="how">
+        <h2 id="how-title" className="mb-3 text-center text-sm font-semibold">
+          {s.howTitle}
+        </h2>
+        <div className="grid gap-2 sm:grid-cols-2">
+          {s.how.map((x, i) => {
+            const Icon = [Search, ShieldCheck, Wallet, MapPin][i] ?? Search;
+            return (
+              <motion.div
+                key={x.t}
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.15 + i * 0.06 }}
+                className="flex gap-3 rounded-2xl border border-line p-3.5"
+              >
+                <span className="flex size-8 shrink-0 items-center justify-center rounded-full bg-inv-bg text-inv-fg">
+                  <Icon className="size-4" />
+                </span>
+                <span>
+                  <span className="block text-[13px] font-semibold">{x.t}</span>
+                  <span className="mt-0.5 block text-[12px] leading-relaxed text-fg-muted">{x.d}</span>
+                </span>
+              </motion.div>
+            );
+          })}
+        </div>
+        <p className="mt-6 text-center text-[11px] text-fg-muted">
+          <a href="/privacy" className="underline underline-offset-2 hover:text-fg">
+            {s.privacy}
+          </a>
+          {" · "}
+          <a href="/terms" className="underline underline-offset-2 hover:text-fg">
+            {s.terms}
+          </a>
+        </p>
+      </section>
     </div>
   );
 }
