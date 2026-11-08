@@ -42,6 +42,11 @@ production API base URL, an API key if they want one, and their rate limit.
 
 ## 2. Salla Shop — "Dalil Pi Partner API v1"
 
+> **Ready-to-deploy version:** [`docs/salla-partner/`](salla-partner/) — a read-only Supabase Edge
+> Function for Salla's own project (no DB changes): `GET /catalog` (whole catalog, paged — Dalil
+> Index reads it hourly) and `GET /products?q=` (search). Set `SALLA_API_URL` to
+> `https://<project-ref>.supabase.co/functions/v1/dalil-partner` and `SALLA_API_KEY` to its key.
+
 Salla Shop doesn't publish a public API, so this is the contract Dalil Pi is built for. If Salla
 already has an API with a different shape, send their docs and an adapter is a small change.
 

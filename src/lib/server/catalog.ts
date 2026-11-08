@@ -190,6 +190,58 @@ export function parseSalla(raw: SallaCatalogRaw): { items: CatalogItem[]; meta: 
   return { items, meta: { usd_rate: num(s.usd_rate) ?? undefined, profit_percentage: num(s.profit_percentage) ?? undefined, pi_price_cache: num(s.pi_price_cache) ?? undefined } };
 }
 
+/**
+ * Salla Shop's partner API (docs/salla-partner): the same catalog as JSON in ~1 s, no browser.
+ * Used when SALLA_API_URL + SALLA_API_KEY are set; the headless page read stays the fallback.
+ */
+export async function fetchSallaApi(): Promise<{ items: CatalogItem[]; meta: SourceState["meta"] }> {
+  const api = base(process.env.SALLA_API_URL);
+  const key = process.env.SALLA_API_KEY;
+  if (!api || !key) throw new Error("Salla API not configured");
+  const rows: Array<Record<string, unknown>> = [];
+  let meta: SourceState["meta"] = {};
+  for (let page = 1, pages = 1; page <= Math.min(pages, 50); page++) {
+    const url = `${api}/catalog?page=${page}&limit=200`;
+    if (!allowPrivate()) await assertPublicUrl(url);
+    const res = await fetchWithTimeout(url, { headers: { Accept: "application/json", Authorization: `Bearer ${key}`, "User-Agent": UA }, redirect: "error", timeoutMs: 10000 });
+    if (!res.ok) throw new Error(`Salla API answered ${res.status}`);
+    const j = (await res.json()) as { products?: Array<Record<string, unknown>>; pages?: number; rates?: Record<string, unknown> };
+    pages = Number(j.pages) || 1;
+    if (j.rates) meta = { usd_rate: num(j.rates.usd_rate) ?? undefined, pi_price_cache: num(j.rates.pi_price_cache) ?? undefined, profit_percentage: num(j.rates.profit_percentage) ?? undefined };
+    const list = Array.isArray(j.products) ? j.products : [];
+    rows.push(...list);
+    if (!list.length) break;
+  }
+  const items: CatalogItem[] = [];
+  for (const p of rows) {
+    const id = str(p.id, 64);
+    const title = str(p.title, 200);
+    const egp = num(p.price_egp);
+    const url = str(p.url, 300);
+    if (!id || !/^[0-9a-f-]{36}$/i.test(id) || !title || !(egp && egp > 0) || p.in_stock === false) continue;
+    if (url !== `https://mall.salla-shop.com/product/${id}`) continue; // only real Salla product links
+    const pics = [p.image, ...(Array.isArray(p.images) ? p.images : [])].map(httpsImg).filter(Boolean) as string[];
+    items.push({
+      id: `salla:${id}`,
+      source: "salla",
+      title,
+      title_ar: str(p.title_ar, 200),
+      description: [str(p.description, 300), str(p.description_ar, 300)].filter(Boolean).join(" — ") || null,
+      url,
+      price_egp: egp,
+      list_price_egp: (num(p.list_price_egp) ?? 0) > egp ? num(p.list_price_egp) : null,
+      image: pics[0] ?? null,
+      images: [...new Set(pics)].slice(0, 8),
+      category: [str(p.category, 60), str(p.category_ar, 60)].filter(Boolean).join(" / ") || null,
+      tags: (Array.isArray(p.tags) ? p.tags : []).map((x) => str(x, 40)).filter(Boolean).slice(0, 10) as string[],
+      in_stock: true,
+      stock: num(p.stock),
+      digital: false,
+    });
+  }
+  return { items, meta };
+}
+
 /** Salla's own formula (checked against its pages): Pi = EGP ÷ usd_rate ÷ Pi price × (1 + profit %). */
 export function sallaPi(egp: number, meta: SourceState["meta"]): number | null {
   const { usd_rate, pi_price_cache, profit_percentage } = meta;
@@ -284,15 +336,22 @@ export async function refreshCatalog(opts: { force?: boolean; sources?: CatalogS
       want.map(async (source): Promise<RefreshResult> => {
         const started = Date.now();
         try {
-          if (source === "salla" && !browserAvailable()) return { source, status: "skipped", error: "no browser" };
+          const sallaApi = !!(process.env.SALLA_API_URL && process.env.SALLA_API_KEY);
+          if (source === "salla" && !sallaApi && !browserAvailable()) return { source, status: "skipped", error: "no browser" };
           if (!(await claim(source))) return { source, status: "locked" };
           let items: CatalogItem[];
           let meta: SourceState["meta"] = {};
           if (source === "pcm") items = await fetchPcm();
           else if (source === "gtp") items = await fetchGtp();
           else {
-            browser ??= new BrowserSession();
-            const parsed = parseSalla(await browser.sallaCatalog());
+            // Partner API first (fast, no browser); the public page read is the fallback.
+            const viaApi = sallaApi ? await fetchSallaApi().catch(() => null) : null;
+            let parsed = viaApi?.items.length ? viaApi : null;
+            if (!parsed) {
+              if (!browserAvailable()) throw new Error("Salla API failed and no browser");
+              browser ??= new BrowserSession();
+              parsed = parseSalla(await browser.sallaCatalog());
+            }
             if (!parsed.meta.usd_rate || !parsed.meta.pi_price_cache) throw new Error("Salla prices settings not found");
             ({ items, meta } = parsed);
           }
