@@ -18,6 +18,7 @@ import Logo from "./Logo";
 
 import { AnimatedCheck } from "./cards";
 import { Deals } from "./Extras";
+import { track } from "@/lib/track";
 import { AskFab, BottomNav, ShopViews, useScrollTopOn, viewFromUrl, viewKey, viewToUrl, type NavTab, type View } from "./Shop";
 
 // The AI chat loads when "Ask Dalil" opens (the shop is the first screen now).
@@ -470,7 +471,8 @@ export default function App() {
   /* ---------- UI pieces ---------- */
   const usage = me?.usage;
   const left = usage ? Math.max(0, usage.searchLimit - usage.searchesUsed) : null;
-  const ordersLeft = usage ? Math.max(0, usage.orderLimit - usage.ordersUsed) : null;
+  // Orders are free (only AI requests use credit): never block the Order button.
+  const ordersLeft = null;
 
   /**
    * "Order" on a product card: open the product page in the store right away
@@ -575,6 +577,7 @@ export default function App() {
       return;
     }
     window.open(o.url, "_blank", "noopener,noreferrer");
+    track("order", o, token);
     setNotice("");
     void authFetch("/api/orders", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ offer: o }), keepalive: true })
       .then(async (r) => {
@@ -808,6 +811,11 @@ export default function App() {
                   if (view.v === "ask") go({ v: "home" });
                 }}
               />
+            ) : view.v !== "ask" && !settings.country && !config ? (
+              // Wait for the visitor's country before searching (no wasted US search first).
+              <div className="mt-24 flex justify-center" aria-busy="true">
+                <Loader2 className="size-6 animate-spin text-fg-muted" />
+              </div>
             ) : view.v !== "ask" ? (
               <ShopViews
                 view={view}
@@ -1015,6 +1023,7 @@ export default function App() {
         api={authFetch}
         country={country}
         onDone={(r) => {
+          if (autoOffer) track("order", autoOffer, token);
           setMe((cur) => (cur ? { ...cur, usage: r.usage ?? cur.usage, email: r.email } : cur));
           setNotice(s.autoDone);
         }}

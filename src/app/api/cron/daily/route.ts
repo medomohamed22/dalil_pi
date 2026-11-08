@@ -26,7 +26,7 @@ export async function GET(req: Request) {
   const telegram = await sendDigest().catch((e: Error) => ({ users: 0, sent: 0, error: e.message }));
   if (!supabaseEnabled) return Response.json({ ok: true, database: false, watches, telegram });
   const db = supabase();
-  const [counters, packs] = await Promise.all([db.rpc("purge_counters"), db.rpc("expire_packs")]);
+  const [counters, packs] = await Promise.all([db.rpc("purge_counters"), db.rpc("expire_packs"), db.rpc("purge_clicks")]);
   const errors = [counters.error?.message, packs.error?.message].filter(Boolean);
   return Response.json({ ok: !errors.length, expiredPacks: packs.data ?? 0, watches, telegram, errors }, { status: errors.length ? 500 : 200 });
 }

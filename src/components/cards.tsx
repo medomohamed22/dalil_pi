@@ -30,6 +30,7 @@ import { useEffect, useState } from "react";
 import { formatMoney, type Strings } from "@/lib/i18n";
 import type { Block, Lang, LinkPreview, Offer, Step } from "@/lib/types";
 import { PiBagMark } from "./Logo";
+import { track } from "@/lib/track";
 
 /* ---------- Image with graceful fallback ---------- */
 
@@ -1036,6 +1037,7 @@ export function OfferDetail({
   onCart,
   inCart,
   onAskShop,
+  hideImage,
 }: {
   o: Offer;
   s: Strings;
@@ -1049,6 +1051,8 @@ export function OfferDetail({
   onCart?: (o: Offer) => void;
   inCart?: (id: string) => boolean;
   onAskShop?: (merchantId: string, question: string) => Promise<boolean>;
+  /** The product page shows its own gallery. */
+  hideImage?: boolean;
 }) {
   const [watched, setWatched] = useState<"idle" | "busy" | "done">("idle");
   const [target, setTarget] = useState("");
@@ -1062,7 +1066,7 @@ export function OfferDetail({
   const orderable = !!(onOrder && o.url && o.sig && o.trust !== "suspicious" && !lowTrust && !o.flags.includes("price_unverified") && !o.flags.includes("not_priced_in_pi"));
   return (
     <div className="space-y-3" data-testid="offer-detail">
-      <SmartImage src={o.image} alt={o.title} fallbackLabel={o.store} className="h-56 w-full rounded-2xl" />
+      {!hideImage && <SmartImage src={o.image} alt={o.title} fallbackLabel={o.store} className="h-56 w-full rounded-2xl" />}
       <div className="text-[15px] font-semibold leading-snug" dir="auto">
         {o.title}
       </div>
@@ -1070,6 +1074,7 @@ export function OfferDetail({
         <div>
           <div className="text-2xl font-semibold tabular-nums" dir="ltr">
             {formatMoney(o.total, o.currency, lang)}
+            {o.listPrice && o.listPrice > o.price ? <span className="ms-2 text-[15px] font-normal text-fg-muted line-through">{o.listPrice.toLocaleString("en-US", { maximumFractionDigits: 2 })}</span> : null}
           </div>
           {o.totalUsd != null && <div className="text-[12px] text-fg-muted" dir="ltr">≈ {formatMoney(o.totalUsd, "USD", lang)}</div>}
         </div>
@@ -1244,7 +1249,7 @@ export function OfferDetail({
           <Package className="size-4" /> {o.checkout === "woo_pi" ? s.autoOrder : s.order}
         </button>
       ) : o.url ? (
-        <a href={o.url} target="_blank" rel="noopener noreferrer" className="flex w-full items-center justify-center gap-1 rounded-2xl border border-line py-3 text-sm font-medium">
+        <a href={o.url} target="_blank" rel="noopener noreferrer" onClick={() => track("visit", o)} className="flex w-full items-center justify-center gap-1 rounded-2xl border border-line py-3 text-sm font-medium">
           {s.view} <ExternalLink className="size-3.5" />
         </a>
       ) : null}

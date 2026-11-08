@@ -332,7 +332,6 @@ export function AccountSheet({
           </div>
           {[
             { label: s.searchesUsed, used: u.searchesUsed, limit: u.searchLimit },
-            { label: s.ordersUsed, used: u.ordersUsed, limit: u.orderLimit },
           ].map((x) => (
             <div key={x.label}>
               <div className="flex justify-between text-xs">

@@ -3,6 +3,8 @@ import { refreshCatalog, SOURCES, type CatalogSource } from "@/lib/server/catalo
 import { geoFromRequest, isCountryCode } from "@/lib/server/geo";
 import { rateLimit } from "@/lib/server/ratelimit";
 import { searchShop, type ShopSort } from "@/lib/server/shop";
+import { recordMiss } from "@/lib/server/stats";
+import { enrichPending } from "@/lib/server/enrich";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -26,6 +28,7 @@ export async function GET(req: Request) {
   try {
     const result = await searchShop({
       q: (u.searchParams.get("q") ?? "").slice(0, 120),
+      cats: (u.searchParams.get("cat") ?? "").split(",").map((x) => x.trim()).filter((x) => /^[a-z_]{2,20}$/.test(x)).slice(0, 4),
       any: (u.searchParams.get("any") ?? "").split("|").map((x) => x.trim().slice(0, 60)).filter(Boolean).slice(0, 14),
       country,
       store: store && SOURCES.includes(store) ? store : undefined,
@@ -39,7 +42,13 @@ export async function GET(req: Request) {
       limit: n(u.searchParams.get("limit")),
     });
     // Keep the index fresh without making anyone wait (the JSON stores; Salla is refreshed elsewhere).
-    after(() => refreshCatalog({ sources: ["pcm", "gtp", "pkt"] }).catch(() => {}));
+    after(async () => {
+      await refreshCatalog({ sources: ["pcm", "gtp", "pkt"] }).catch(() => {});
+      await enrichPending(20, 10 * 60_000).catch(() => {}); // a few new products, at most every 10 min
+    });
+    // Nothing found for a typed search (no narrowing filters): record the demand gap.
+    const typed = result.parsed.text;
+    if (typed && result.total === 0 && !store && !u.searchParams.get("category") && !u.searchParams.get("offset")) after(() => recordMiss(typed, country).catch(() => {}));
     return Response.json({ country, ...result }, { headers: { "Cache-Control": "public, s-maxage=120, stale-while-revalidate=600" } });
   } catch (err) {
     return Response.json({ error: (err as Error).message }, { status: 500 });

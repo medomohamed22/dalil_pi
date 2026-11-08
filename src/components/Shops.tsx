@@ -5,6 +5,7 @@ import { MapPin, MessageCircle, Navigation, Phone, Store } from "lucide-react";
 import type { Strings } from "@/lib/i18n";
 import type { LocalShop } from "@/lib/types";
 import { SmartImage } from "./cards";
+import { track } from "@/lib/track";
 
 /** Salla Local shops: pay in Pi at the counter (no price list, so not product cards). */
 export function ShopCards({ shops, s, locatedBy }: { shops: LocalShop[]; s: Strings; locatedBy?: "gps" | "ip" }) {
@@ -86,6 +87,7 @@ export function ShopCards({ shops, s, locatedBy }: { shops: LocalShop[]; s: Stri
                   href={sh.payUrl}
                   target="_blank"
                   rel="noopener noreferrer"
+                  onClick={() => track("order", { store: "Salla Local", url: sh.payUrl, title: sh.name })}
                   className="flex items-center justify-center gap-1 rounded-xl bg-inv-bg py-2 text-[12px] font-semibold text-inv-fg"
                   data-testid="shop-pay"
                 >

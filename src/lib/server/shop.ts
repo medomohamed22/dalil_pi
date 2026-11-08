@@ -1,6 +1,6 @@
 import "server-only";
 import { cached, norm } from "./cache";
-import { catalogCategories, searchCatalog, SOURCES, type CatalogSource, type IndexHit } from "./catalog";
+import { catalogCategories, catalogItem, searchCatalog, SOURCES, twinsOf, type CatalogSource, type IndexHit } from "./catalog";
 import { priceStats } from "./community";
 import { normUrl } from "./evidence";
 import { piUsdPrice } from "./price";
@@ -59,6 +59,8 @@ export interface ShopFilters {
   q?: string;
   /** Several phrasings at once (category tiles: ["perfume", "عطر", "fragrance"]). */
   any?: string[];
+  /** AI-normalized categories (enrich.ts), e.g. ["phones"]. */
+  cats?: string[];
   country: string;
   store?: CatalogSource;
   category?: string;
@@ -101,6 +103,66 @@ function toRaw(h: IndexHit, country: string): RawOffer {
   };
 }
 
+export interface ProductPage {
+  offer: Offer;
+  images: string[];
+  description?: string;
+  title_ar?: string;
+  title_en?: string;
+  brand?: string;
+  model?: string;
+  category?: string;
+  stock?: number;
+  similar: Offer[];
+}
+
+/** One product of Dalil Index as a full page: signed offer + photos + same product elsewhere + similar. */
+export async function productPage(id: string, country: string): Promise<ProductPage | null> {
+  const hit = await catalogItem(id, country);
+  if (!hit) return null;
+  const piUsd = await piUsdPrice().catch(() => null);
+  const ranked = rankOffers([toRaw(hit, country)], country, piUsd?.usd).map((o) => ({ ...o, badges: [] as string[] }));
+  const [scored] = await scoreTrust(ranked, { neutralPrice: true });
+  if (!scored) return null;
+  const stats = await priceStats([scored.url ?? ""]).catch(() => new Map());
+  const st = scored.url ? stats.get(normUrl(scored.url) ?? "") : undefined;
+  if (st) scored.priceStats = st;
+  if (hit.listPrice && hit.listPrice > scored.price) scored.listPrice = Math.round(hit.listPrice * 100) / 100;
+  scored.ref = hit.item.id;
+  const tw = await twinsOf(hit.item.id, country);
+  if (tw.length) scored.twins = tw.map((t) => ({ store: t.item.seller && t.item.source !== "salla" ? `${t.store} · ${t.item.seller}` : t.store, title: t.item.title, url: t.item.url, total: t.price, ref: t.item.id }));
+  const [offer] = prepareOffers([scored]);
+  // Similar: the same AI category, else words from the title; never itself or its twins.
+  const it = hit.item;
+  const skip = new Set([it.id, ...tw.map((t) => t.item.id)]);
+  const STOPW = /^(offer|offers|featuring|products?|based|original|quality|premium|new|best|with|from|pack|set|piece|pieces|size|color|colour|for|and|the|عرض|منتج|منتجات|اصلي|جديد|مع|من|على|جودة|عالية|خامة)$/i;
+  const words = (it.title_en || it.title)
+    .split(/[\s\-_/|,.()]+/)
+    .filter((w) => w.length > 3 && !STOPW.test(w) && !/\d/.test(w))
+    .sort((a, b) => b.length - a.length)
+    .slice(0, 3);
+  // Best: the AI category; else the store's own category; else the product's meaningful words.
+  const simQuery: ShopFilters =
+    it.norm_category && it.norm_category !== "other"
+      ? { country, cats: [it.norm_category], limit: 12 }
+      : it.category
+        ? { country, store: it.source, category: it.category, limit: 12 }
+        : { country, any: words, limit: 12 };
+  const sim = await searchShop(simQuery).catch(() => null);
+  return {
+    offer,
+    images: it.images?.length ? it.images : it.image ? [it.image] : [],
+    description: it.description ?? undefined,
+    title_ar: it.title_ar ?? undefined,
+    title_en: it.title_en ?? undefined,
+    brand: it.brand ?? undefined,
+    model: it.model ?? undefined,
+    category: it.norm_category ?? it.category ?? undefined,
+    stock: it.stock ?? undefined,
+    similar: (sim?.offers ?? []).filter((o) => !o.ref || !skip.has(o.ref)).slice(0, 8),
+  };
+}
+
 export async function searchShop(f: ShopFilters): Promise<ShopResult> {
   const t0 = Date.now();
   const parsed = parseQuery(f.q ?? "");
@@ -111,9 +173,9 @@ export async function searchShop(f: ShopFilters): Promise<ShopResult> {
   const browse = !queries.length;
 
   // The heavy part (match + trust + sign) depends only on the words, country and store → cached.
-  const base = await cached("shop", `${f.country}|${f.store ?? "*"}|${norm(f.category ?? "")}|${queries.map(norm).join("+")}`, 5 * 60_000, async () => {
+  const base = await cached("shop", `${f.country}|${f.store ?? "*"}|${norm(f.category ?? "")}|${(f.cats ?? []).join(",")}|${queries.map(norm).join("+")}`, 5 * 60_000, async () => {
     const [{ hits }, piUsd] = await Promise.all([
-      searchCatalog(queries, { country: f.country, limit: 400, browse, category: f.category }),
+      searchCatalog(queries, { country: f.country, limit: 400, browse: browse && !f.cats?.length, category: f.category, cats: f.cats }),
       piUsdPrice().catch(() => null),
     ]);
     const relevance = new Map(hits.map((h, i) => [h.item.url, { score: h.score, rank: i, ageMin: h.ageMin, source: h.item.source, listPrice: h.listPrice }]));
@@ -126,10 +188,19 @@ export async function searchShop(f: ShopFilters): Promise<ShopResult> {
       const st = o.url ? stats.get(normUrl(o.url) ?? "") : undefined;
       if (st) o.priceStats = st;
     }
-    for (const o of scored) {
-      const lp = relevance.get(o.url ?? "")?.listPrice;
-      if (lp && lp > o.price) o.listPrice = Math.round(lp * 100) / 100;
-    }
+    const byUrl = new Map(hits.map((h) => [h.item.url, h.item]));
+    await Promise.all(
+      scored.map(async (o) => {
+        const lp = relevance.get(o.url ?? "")?.listPrice;
+        if (lp && lp > o.price) o.listPrice = Math.round(lp * 100) / 100;
+        const it = byUrl.get(o.url ?? "");
+        if (!it) return;
+        o.ref = it.id;
+        // Same brand + model elsewhere (from the AI enrichment), cheapest first.
+        const tw = it.twin_key ? await twinsOf(it.id, f.country) : [];
+        if (tw.length) o.twins = tw.map((t) => ({ store: t.item.seller && t.item.source !== "salla" ? `${t.store} · ${t.item.seller}` : t.store, title: t.item.title, url: t.item.url, total: t.price, ref: t.item.id }));
+      }),
+    );
     const signed = prepareOffers(scored);
     return signed.map((o) => ({ o, ...(relevance.get(o.url ?? "") ?? { score: 0, rank: 9999, ageMin: -1, source: "pcm" as CatalogSource, listPrice: undefined }) }));
   });

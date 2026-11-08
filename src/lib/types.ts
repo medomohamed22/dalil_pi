@@ -42,6 +42,10 @@ export interface Offer {
   shipping?: number;
   /** "Was" price shown by the store (display only). */
   listPrice?: number;
+  /** Dalil Index id (product page link); display only. */
+  ref?: string;
+  /** The same product in other Pi stores (cheapest first); display only. */
+  twins?: Array<{ store: string; title: string; url: string; total: number; ref: string }>;
   total: number;
   /** ≈ total in USD at the live OKX Pi price (Pi offers only). */
   totalUsd?: number;

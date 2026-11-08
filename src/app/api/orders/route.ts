@@ -2,7 +2,7 @@ import { z } from "zod";
 import { errorJson, requireSession } from "@/lib/server/api";
 import { createOrder, listOrders } from "@/lib/server/orders";
 import { rateLimit } from "@/lib/server/ratelimit";
-import { assertCanOrder, recordOrder, updateProfile } from "@/lib/server/users";
+import { getUsage, updateProfile } from "@/lib/server/users";
 import type { Offer } from "@/lib/types";
 
 export const runtime = "nodejs";
@@ -32,8 +32,8 @@ const Body = z.object({
 });
 
 /**
- * "Order" on a product card: checks the monthly order quota, saves the order
- * (product + default address if any) and counts it. The client then opens the
+ * "Order" on a product card: saves the order (product + default address if any) — free, no
+ * credit used. The client then opens the
  * product page in the store, where the user pays the store directly.
  */
 export async function POST(req: Request) {
@@ -43,11 +43,11 @@ export async function POST(req: Request) {
   if (s instanceof Response) return s;
   try {
     const body = Body.parse(await req.json());
-    await assertCanOrder(s.uid);
     if (body.auto && !body.email) return Response.json({ error: "An email is needed for the store's receipt.", code: "EMAIL_REQUIRED" }, { status: 400 });
     if (body.auto && body.email) await updateProfile(s.uid, { email: body.email });
     const order = await createOrder(s.uid, body.offer as unknown as Offer, body.addressId, body.quantity ?? 1, body.auto ? { email: body.email! } : undefined);
-    const usage = await recordOrder(s.uid);
+    // Orders are free (only AI requests use credit); the order is still saved for the user and stats.
+    const usage = await getUsage(s.uid).catch(() => undefined);
     return Response.json({ order, usage }, { status: 201 });
   } catch (err) {
     return errorJson(err);

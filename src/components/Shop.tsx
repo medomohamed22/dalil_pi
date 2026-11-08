@@ -21,6 +21,7 @@ import {
   Search,
   Shirt,
   ShieldCheck,
+  Share2,
   ShoppingBasket,
   Smartphone,
   Sofa,
@@ -36,6 +37,7 @@ import {
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { countryLabel, type Strings } from "@/lib/i18n";
 import { STORE_DIRECTORY, type StoreEntry } from "@/lib/stores";
+import { track } from "@/lib/track";
 import type { Lang, LocalShop, Offer } from "@/lib/types";
 import { BottomSheet, OfferDetail, SmartImage } from "./cards";
 import { ShopCards } from "./Shops";
@@ -46,23 +48,26 @@ import { ShopCards } from "./Shops";
 
 export type View =
   | { v: "home" }
-  | { v: "search"; q: string; any?: string; title?: string; store?: string }
+  | { v: "search"; q: string; any?: string; cat?: string; title?: string; store?: string }
   | { v: "stores"; tab?: string }
   | { v: "store"; id: string }
   | { v: "services" }
+  | { v: "p"; id: string }
   | { v: "ask" };
 
 export function viewFromUrl(search: string): View {
   const p = new URLSearchParams(search);
   switch (p.get("v")) {
     case "search":
-      return { v: "search", q: p.get("q") ?? "", any: p.get("any") ?? undefined, title: p.get("t") ?? undefined, store: p.get("store") ?? undefined };
+      return { v: "search", q: p.get("q") ?? "", any: p.get("any") ?? undefined, cat: p.get("cat") ?? undefined, title: p.get("t") ?? undefined, store: p.get("store") ?? undefined };
     case "stores":
       return { v: "stores", tab: p.get("tab") ?? undefined };
     case "store":
       return p.get("id") ? { v: "store", id: p.get("id")! } : { v: "stores" };
     case "services":
       return { v: "services" };
+    case "p":
+      return p.get("id") ? { v: "p", id: p.get("id")! } : { v: "home" };
     case "ask":
       return { v: "ask" };
     default:
@@ -76,11 +81,12 @@ export function viewToUrl(view: View): string {
   if (view.v === "search") {
     if (view.q) p.set("q", view.q);
     if (view.any) p.set("any", view.any);
+    if (view.cat) p.set("cat", view.cat);
     if (view.title) p.set("t", view.title);
     if (view.store) p.set("store", view.store);
   }
   if (view.v === "stores" && view.tab) p.set("tab", view.tab);
-  if (view.v === "store") p.set("id", view.id);
+  if (view.v === "store" || view.v === "p") p.set("id", view.id);
   const q = p.toString();
   return q ? `/?${q}` : "/";
 }
@@ -381,7 +387,8 @@ export function ShopViews({
   onLocate: () => void;
 }) {
   const [detail, setDetail] = useState<Offer | null>(null);
-  const open = useCallback((o: Offer) => setDetail(o), []);
+  // Products from Dalil Index open their own page (shareable link); others the quick sheet.
+  const open = useCallback((o: Offer) => (o.ref ? go({ v: "p", id: o.ref }) : setDetail(o)), [go]);
   const common = { s, lang, country, go, back, onOpen: open, onAsk };
   return (
     <>
@@ -392,6 +399,7 @@ export function ShopViews({
           {view.v === "stores" && <StoresView {...common} tab={view.tab} />}
           {view.v === "store" && <StoreView {...common} id={view.id} />}
           {view.v === "services" && <ServicesView {...common} coords={coords} onLocate={onLocate} />}
+          {view.v === "p" && <ProductView {...common} id={view.id} actions={actions} />}
         </m.div>
       </AnimatePresence>
       <BottomSheet open={!!detail} title={detail?.store ?? ""} onClose={() => setDetail(null)}>
@@ -429,14 +437,14 @@ interface CommonProps {
 
 /* ---------- Home ---------- */
 
-export const CATEGORIES: Array<{ id: keyof Strings["cat"]; Icon: typeof House; any: string }> = [
-  { id: "phones", Icon: Smartphone, any: "phone|mobile|smartphone|موبايل|هاتف|جوال|iphone|samsung|redmi|infinix" },
-  { id: "headphones", Icon: Headphones, any: "headphones|earbuds|earphones|سماعة|سماعات|buds" },
-  { id: "perfume", Icon: SprayCan, any: "perfume|fragrance|cologne|عطر|برفان" },
-  { id: "supermarket", Icon: ShoppingBasket, any: "tea|coffee|honey|rice|oil|sugar|شاي|قهوة|عسل|رز|سوبر ماركت" },
-  { id: "fashion", Icon: Shirt, any: "shirt|shoes|dress|jacket|clothes|sneakers|ملابس|حذاء|تيشيرت|فستان" },
-  { id: "topup", Icon: CreditCard, any: "top up|recharge|gift card|شحن رصيد|كارت|رصيد" },
-  { id: "home", Icon: Sofa, any: "kitchen|cleaning|vacuum|منزلية|مطبخ|منظفات|ادوات منزلية" },
+export const CATEGORIES: Array<{ id: keyof Strings["cat"]; Icon: typeof House; any: string; cat?: string }> = [
+  { id: "phones", Icon: Smartphone, cat: "phones", any: "phone|mobile|smartphone|موبايل|هاتف|جوال|iphone|samsung|redmi|infinix" },
+  { id: "headphones", Icon: Headphones, cat: "headphones", any: "headphones|earbuds|earphones|سماعة|سماعات|buds" },
+  { id: "perfume", Icon: SprayCan, cat: "perfume,beauty", any: "perfume|fragrance|cologne|عطر|برفان" },
+  { id: "supermarket", Icon: ShoppingBasket, cat: "grocery", any: "tea|coffee|honey|rice|oil|sugar|شاي|قهوة|عسل|رز|سوبر ماركت" },
+  { id: "fashion", Icon: Shirt, cat: "fashion,shoes", any: "shirt|shoes|dress|jacket|clothes|sneakers|ملابس|حذاء|تيشيرت|فستان" },
+  { id: "topup", Icon: CreditCard, cat: "topup,gift_cards", any: "top up|recharge|gift card|شحن رصيد|كارت|رصيد" },
+  { id: "home", Icon: Sofa, cat: "home,appliances", any: "kitchen|cleaning|vacuum|منزلية|مطبخ|منظفات|ادوات منزلية" },
   { id: "services", Icon: Wrench, any: "" },
 ];
 
@@ -450,14 +458,14 @@ function HomeView({ s, lang, country, go, onOpen }: CommonProps) {
     <div className="pb-24 pt-1" data-testid="home">
       <SearchBox s={s} onSubmit={(q) => go({ v: "search", q })} />
       <div className="no-scrollbar -mx-4 mt-4 flex gap-3 overflow-x-auto px-4" data-testid="categories">
-        {CATEGORIES.map(({ id, Icon, any }, i) => (
+        {CATEGORIES.map(({ id, Icon, any, cat }, i) => (
           <m.button
             key={id}
             initial={{ opacity: 0, y: 6 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: i * 0.03 }}
             whileTap={{ scale: 0.92 }}
-            onClick={() => (id === "services" ? go({ v: "services" }) : go({ v: "search", q: "", any, title: s.cat[id] }))}
+            onClick={() => (id === "services" ? go({ v: "services" }) : go({ v: "search", q: "", any, cat, title: s.cat[id] }))}
             className="flex w-[4.4rem] shrink-0 flex-col items-center gap-1.5"
             data-testid={`cat-${id}`}
           >
@@ -529,13 +537,14 @@ function SearchView({ s, lang, country, go, back, onOpen, onAsk, view }: CommonP
     const p = new URLSearchParams({ country, limit: String(24 * pages) });
     if (view.q) p.set("q", view.q);
     if (view.any) p.set("any", view.any);
+    if (view.cat) p.set("cat", view.cat);
     if (sort !== "best") p.set("sort", sort);
     if (store) p.set("store", store);
     if (stock) p.set("stock", "1");
     if (price.min != null) p.set("min", String(price.min));
     if (price.max != null) p.set("max", String(price.max));
     return p.toString();
-  }, [country, view.q, view.any, sort, store, stock, price, pages]);
+  }, [country, view.q, view.any, view.cat, sort, store, stock, price, pages]);
   const { data, loading } = useJson<SearchResponse>(`/api/search?${params}`);
   const [last, setLast] = useState<SearchResponse | undefined>();
   useEffect(() => {
@@ -793,7 +802,7 @@ function StoreView({ s, lang, country, go, back, onOpen, onAsk, id }: CommonProp
             {st.products != null ? ` · ${s.products(st.products)}` : ""}
             {st.ageMin != null ? ` · ${s.updatedAgo(st.ageMin)}` : ""}
           </p>
-          <a href={st.url} target="_blank" rel="noopener noreferrer" className="mt-3 flex items-center justify-center gap-1.5 rounded-xl bg-inv-bg py-3 text-[14px] font-semibold text-inv-fg">
+          <a href={st.url} target="_blank" rel="noopener noreferrer" onClick={() => track("visit", { store: st.name, url: st.url })} className="mt-3 flex items-center justify-center gap-1.5 rounded-xl bg-inv-bg py-3 text-[14px] font-semibold text-inv-fg" data-testid="visit-store">
             {s.visitStore} <ExternalLink className="size-4" />
           </a>
           {st.source ? (
@@ -891,6 +900,174 @@ function ServicesView({ s, country, go, back, coords, onLocate }: CommonProps & 
         <ShopCards shops={shops.data.shops} s={s} locatedBy={shops.data.locatedBy ?? undefined} />
       ) : (
         <p className="rounded-2xl bg-bg-soft p-4 text-[13.5px] text-fg-soft">{s.noShopsHere}</p>
+      )}
+    </div>
+  );
+}
+
+/* ---------- Product page ---------- */
+
+interface ProductResponse {
+  offer: Offer;
+  images: string[];
+  description?: string;
+  title_ar?: string;
+  title_en?: string;
+  brand?: string;
+  model?: string;
+  category?: string;
+  stock?: number;
+  similar: Offer[];
+}
+
+function Gallery({ images, alt, store }: { images: string[]; alt: string; store: string }) {
+  const [at, setAt] = useState(0);
+  const ref = useRef<HTMLDivElement>(null);
+  const list = images.length ? images : [""];
+  return (
+    <div className="relative -mx-4">
+      <div
+        ref={ref}
+        onScroll={(e) => {
+          const el = e.currentTarget;
+          setAt(Math.round(Math.abs(el.scrollLeft) / Math.max(1, el.clientWidth)));
+        }}
+        className="no-scrollbar flex snap-x snap-mandatory overflow-x-auto"
+        data-testid="gallery"
+      >
+        {list.map((src, i) => (
+          <div key={i} className="aspect-square w-full shrink-0 snap-center bg-white">
+            <SmartImage src={src || undefined} alt={`${alt} ${i + 1}`} className="size-full p-4" fallbackLabel={store} />
+          </div>
+        ))}
+      </div>
+      {list.length > 1 && (
+        <div className="absolute inset-x-0 bottom-2 flex justify-center gap-1.5" aria-hidden>
+          {list.map((_, i) => (
+            <span key={i} className={`h-1.5 rounded-full transition-all ${i === at ? "w-4 bg-fg" : "w-1.5 bg-fg/30"}`} />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ProductView({ s, lang, country, go, back, onAsk, id, actions }: CommonProps & { id: string; actions: ShopActions }) {
+  const { data, loading, error } = useJson<ProductResponse>(`/api/product?id=${encodeURIComponent(id)}&country=${country}`);
+  const [copied, setCopied] = useState(false);
+  const [more, setMore] = useState(false);
+  const o = data?.offer;
+  const share = async () => {
+    const url = `${window.location.origin}/?v=p&id=${encodeURIComponent(id)}`;
+    try {
+      if (navigator.share) {
+        await navigator.share({ title: o?.title ?? "Dalil Pi", text: o ? `${o.title} · ${fmt(o.total)} π` : undefined, url });
+        return;
+      }
+    } catch {
+      /* fall back to copy */
+    }
+    await navigator.clipboard?.writeText(url).catch(() => {});
+    setCopied(true);
+    setTimeout(() => setCopied(false), 1600);
+  };
+  const store = o ? o.store.split(" · ")[0] : "";
+  return (
+    <div className="pb-24" data-testid="product-view">
+      <div className="sticky top-0 z-10 -mx-4 flex items-center justify-between bg-bg/90 px-2 py-1.5 backdrop-blur">
+        <button onClick={back} className="rounded-full p-2 hover:bg-bg-soft" aria-label={s.back}>
+          <ArrowLeft className="size-5 rtl:-scale-x-100" />
+        </button>
+        <span className="truncate px-2 text-[14px] font-semibold">{store}</span>
+        <button onClick={share} className="flex items-center gap-1 rounded-full px-3 py-2 text-[13px] font-medium hover:bg-bg-soft" data-testid="share">
+          <Share2 className="size-4" /> {copied ? s.linkCopied : s.share}
+        </button>
+      </div>
+      {loading && !data ? (
+        <div className="space-y-3">
+          <div className="skeleton -mx-4 aspect-square" />
+          <div className="skeleton h-5 w-3/4 rounded" />
+          <div className="skeleton h-8 w-1/3 rounded" />
+        </div>
+      ) : !o ? (
+        <div className="mt-16 text-center text-[14px] text-fg-muted" data-testid="product-gone">
+          {error ? s.gone : null}
+        </div>
+      ) : (
+        <>
+          <Gallery images={data!.images} alt={o.title} store={store} />
+          <div className="mt-3 flex flex-wrap items-center gap-1.5 text-[12px]">
+            {LOGO_BY_NAME[store] && (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={LOGO_BY_NAME[store]} alt="" className="size-5 rounded-md bg-white object-contain ring-1 ring-line" />
+            )}
+            <span className="font-semibold">{o.store}</span>
+            {data!.brand && <span className="rounded-full bg-bg-muted px-2 py-0.5">{data!.brand}{data!.model ? ` · ${data!.model}` : ""}</span>}
+            {data!.stock != null && data!.stock > 0 && <span className="rounded-full bg-ok-soft px-2 py-0.5 font-medium text-ok">{s.inStockLeft(data!.stock)}</span>}
+            <span className="rounded-full border border-line px-2 py-0.5">✓ {s.shipsTo(countryLabel(country, lang))}</span>
+          </div>
+          <div className="mt-3">
+            <OfferDetail
+              o={o}
+              s={s}
+              lang={lang}
+              hideImage
+              onOrder={actions.onOrder}
+              ordersLeft={actions.ordersLeft}
+              onWatch={actions.onWatch}
+              onCart={actions.onCart}
+              inCart={actions.inCart}
+              onAskShop={actions.onAskShop}
+              onAsk={onAsk}
+            />
+          </div>
+
+          {!!o.twins?.length && (
+            <section className="mt-5 rounded-2xl bg-bg-soft p-3" data-testid="twins">
+              <h2 className="mb-1.5 text-[15px] font-semibold">{s.sameElsewhere}</h2>
+              {o.twins.map((tw) => {
+                const st = tw.store.split(" · ")[0];
+                const diff = o.total - tw.total;
+                return (
+                  <button key={tw.ref} onClick={() => go({ v: "p", id: tw.ref })} className="flex w-full items-center gap-2 border-t border-line py-2 text-start first:border-0">
+                    {LOGO_BY_NAME[st] && (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img src={LOGO_BY_NAME[st]} alt="" className="size-6 rounded-md bg-white object-contain" />
+                    )}
+                    <span className="min-w-0 flex-1 truncate text-[13.5px]">{tw.store}</span>
+                    {diff > 0.5 && <span className="rounded-full bg-ok px-1.5 py-0.5 text-[10.5px] font-bold text-white">{s.cheaperBy(`${fmt(diff)} π`)}</span>}
+                    <PiPrice value={tw.total} className="text-[14px]" />
+                  </button>
+                );
+              })}
+            </section>
+          )}
+
+          {data!.description && (
+            <section className="mt-5">
+              <h2 className="mb-1 text-[15px] font-semibold">{s.description}</h2>
+              <p className={`whitespace-pre-line text-[13.5px] leading-relaxed text-fg-soft ${more ? "" : "line-clamp-4"}`} dir="auto">
+                {data!.description}
+              </p>
+              {data!.description.length > 220 && !more && (
+                <button onClick={() => setMore(true)} className="mt-1 text-[13px] font-medium text-accent">
+                  {s.readMore}
+                </button>
+              )}
+            </section>
+          )}
+
+          {!!data!.similar.length && (
+            <section className="mt-6">
+              <h2 className="mb-2.5 text-[17px] font-bold tracking-tight">{s.similar}</h2>
+              <div className="no-scrollbar -mx-4 flex snap-x gap-3 overflow-x-auto px-4 pb-1" data-testid="similar">
+                {data!.similar.map((x, i) => (
+                  <ProductTile key={x.id} o={x} s={s} i={i} wide onOpen={(y) => (y.ref ? go({ v: "p", id: y.ref }) : undefined)} />
+                ))}
+              </div>
+            </section>
+          )}
+        </>
       )}
     </div>
   );

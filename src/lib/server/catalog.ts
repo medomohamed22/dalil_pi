@@ -3,6 +3,7 @@ import { createHash } from "node:crypto";
 import { BrowserSession, browserAvailable, type SallaCatalogRaw } from "./browser";
 import { expandQuery, synonymGroups } from "./lexicon";
 import { fetchWithTimeout, assertPublicUrl } from "./net";
+import { attachMemoryCatalog, type MemCatalogRow } from "./enrich";
 import { countryCode, PCM_COUNTRY_IDS } from "./partners";
 import { supabase, supabaseEnabled } from "./supabase";
 
@@ -53,6 +54,14 @@ export interface CatalogItem {
   ships_global?: boolean;
   /** Countries it ships to → fee in Pi (0 = free). Empty = only `country` (local / pickup). */
   shipping?: Record<string, number> | null;
+  /** Filled once per product by AI (enrich.ts). */
+  brand?: string | null;
+  model?: string | null;
+  norm_category?: string | null;
+  title_en?: string | null;
+  keywords?: string[] | null;
+  /** brand|model — the same product in other stores shares it. */
+  twin_key?: string | null;
 }
 
 interface SourceState {
@@ -61,7 +70,7 @@ interface SourceState {
   items: number;
   ok: boolean | null;
   error: string | null;
-  meta: { usd_rate?: number; profit_percentage?: number; pi_price_cache?: number };
+  meta: { usd_rate?: number; profit_percentage?: number; pi_price_cache?: number; enriched_at?: string };
 }
 
 /* ------------------------------------------------------------------ */
@@ -346,6 +355,14 @@ export function sallaPi(egp: number, meta: SourceState["meta"]): number | null {
 
 const mem = { items: new Map<string, CatalogItem & { active: boolean }>(), sources: new Map<CatalogSource, SourceState & { lock_until?: number }>() };
 
+// Without a database, the enrichment job works on the in-memory rows (tests, local runs).
+attachMemoryCatalog(
+  () => [...mem.items.values()] as unknown as MemCatalogRow[],
+  () => {
+    version++;
+  },
+);
+
 const fingerprint = (it: CatalogItem) =>
   createHash("sha1")
     .update(JSON.stringify([it.title, it.title_ar, it.description, it.price, it.price_egp, it.list_price_egp, it.image, it.images, it.in_stock, it.stock, it.category, it.tags, it.country, it.ships_global, it.shipping]))
@@ -376,7 +393,12 @@ async function save(source: CatalogSource, items: CatalogItem[], meta: SourceSta
   if (!supabaseEnabled) {
     const ids = new Set(items.map((i) => i.id));
     for (const [id, it] of mem.items) if (it.source === source && !ids.has(id)) it.active = false;
-    for (const it of items) mem.items.set(it.id, { ...it, active: true });
+    for (const it of items) {
+      const hash = fingerprint(it);
+      const old = mem.items.get(it.id) as (CatalogItem & { hash?: string; enriched_hash?: string | null }) | undefined;
+      const keep = old && old.hash === hash ? { brand: old.brand, model: old.model, norm_category: old.norm_category, title_en: old.title_en, keywords: old.keywords, twin_key: old.twin_key, enriched_hash: old.enriched_hash, title_ar: it.title_ar ?? old.title_ar } : {};
+      mem.items.set(it.id, { ...it, ...keep, hash, active: true } as unknown as CatalogItem & { active: boolean });
+    }
     mem.sources.set(source, { source, refreshed_at: now, items: items.length, ok: true, error: null, meta, lock_until: 0 });
     version++;
     return;
@@ -553,14 +575,15 @@ interface Indexed {
 }
 
 let version = 0;
-let loaded: { at: number; checkedAt: number; key: string; rows: Indexed[]; states: Map<CatalogSource, SourceState> } | null = null;
+let loaded: { at: number; checkedAt: number; key: string; rows: Indexed[]; states: Map<CatalogSource, SourceState>; twins: Map<string, Indexed[]> } | null = null;
 
 /** The in-memory index; reloaded only when a store was refreshed (checked at most once a minute). */
 async function index(): Promise<NonNullable<typeof loaded>> {
   const now = Date.now();
   if (loaded && now - loaded.checkedAt < 60_000 && (supabaseEnabled || loaded.key === `mem${version}`)) return loaded;
   const states = await sourceStates();
-  const key = supabaseEnabled ? SOURCES.map((s) => states.get(s)?.refreshed_at ?? "-").join("|") : `mem${version}`;
+  // Reload when a store was re-read or products were enriched.
+  const key = supabaseEnabled ? SOURCES.map((s) => `${states.get(s)?.refreshed_at ?? "-"}/${states.get(s)?.meta?.enriched_at ?? "-"}`).join("|") : `mem${version}`;
   if (loaded && loaded.key === key) {
     loaded.checkedAt = now;
     loaded.states = states;
@@ -571,7 +594,7 @@ async function index(): Promise<NonNullable<typeof loaded>> {
   else {
     const { data, error } = await supabase()
       .from("catalog_items")
-      .select("id, source, title, title_ar, description, price, price_egp, list_price_egp, url, image, images, seller, country, category, tags, in_stock, stock, digital, ships_global, shipping")
+      .select("id, source, title, title_ar, description, price, price_egp, list_price_egp, url, image, images, seller, country, category, tags, in_stock, stock, digital, ships_global, shipping, brand, model, norm_category, title_en, keywords, twin_key")
       .eq("active", true)
       .limit(20000);
     if (error) throw new Error(`catalog load: ${error.message}`);
@@ -579,10 +602,12 @@ async function index(): Promise<NonNullable<typeof loaded>> {
   }
   const rows = items.map((item) => ({
     item,
-    title: words(`${item.title} ${item.title_ar ?? ""}`),
-    body: new Set(words(`${item.category ?? ""} ${(item.tags ?? []).join(" ")} ${item.seller ?? ""} ${item.description ?? ""}`)),
+    title: words(`${item.title} ${item.title_ar ?? ""} ${item.title_en ?? ""} ${item.brand ?? ""} ${item.model ?? ""}`),
+    body: new Set(words(`${item.category ?? ""} ${(item.tags ?? []).join(" ")} ${(item.keywords ?? []).join(" ")} ${item.seller ?? ""} ${item.description ?? ""}`)),
   }));
-  loaded = { at: now, checkedAt: now, key, rows, states };
+  const twins = new Map<string, Indexed[]>();
+  for (const r of rows) if (r.item.twin_key) twins.set(r.item.twin_key, [...(twins.get(r.item.twin_key) ?? []), r]);
+  loaded = { at: now, checkedAt: now, key, rows, states, twins };
   return loaded;
 }
 
@@ -669,6 +694,8 @@ export async function searchCatalog(
     category?: string;
     /** No query → list everything that matches the filters (newest first) instead of nothing. */
     browse?: boolean;
+    /** AI-normalized categories (enrich.ts); a product in one of them matches even without the words. */
+    cats?: string[];
   },
 ): Promise<{ hits: IndexHit[]; sources: Record<string, { items: number; ageMin: number | null; ok: boolean | null }> }> {
   const idx = await index();
@@ -680,13 +707,15 @@ export async function searchCatalog(
     ages.set(s, at ? Math.round((Date.now() - Date.parse(at)) / 60_000) : -1);
   }
   const cat = opts.category ? normText(opts.category) : "";
-  if (phrases.length || opts.browse) {
+  if (phrases.length || opts.browse || opts.cats?.length) {
     for (const row of idx.rows) {
       const it = row.item;
       if (!reaches(it, opts.country)) continue;
       if (opts.sources && !opts.sources.includes(it.source)) continue;
       if (cat && !normText(it.category ?? "").includes(cat)) continue;
-      let best = phrases.length ? 0 : 1;
+      const inCat = !!opts.cats?.length && !!it.norm_category && opts.cats.includes(it.norm_category);
+      if (opts.cats?.length && !phrases.length && !inCat) continue;
+      let best = phrases.length ? (inCat ? 0.9 : 0) : 1;
       for (const ws of phrases) {
         // A word counts through any of its synonyms (a synonym is a bit weaker than the word itself).
         const scores = ws.map((w) => Math.max(wordScore(w, row), ...synonymsOf(w).map((s) => wordScore(s, row) * 0.95)));
@@ -728,6 +757,36 @@ export async function indexedPrice(url: string): Promise<number | undefined> {
   const st = idx.states.get(row.item.source);
   if (!st?.refreshed_at || Date.now() - Date.parse(st.refreshed_at) > 2 * TTL_MIN[row.item.source] * 60_000) return;
   return row.item.source === "salla" ? (sallaPi(Number(row.item.price_egp), st.meta ?? {}) ?? undefined) : (row.item.price ?? undefined);
+}
+
+/** The same product (brand + model) in OTHER stores that reach the country, cheapest first. */
+export async function twinsOf(itemId: string, country: string): Promise<IndexHit[]> {
+  const idx = await index();
+  const me = idx.rows.find((r) => r.item.id === itemId)?.item;
+  if (!me?.twin_key) return [];
+  const out: IndexHit[] = [];
+  for (const r of idx.twins.get(me.twin_key) ?? []) {
+    const it = r.item;
+    if (it.id === me.id || it.source === me.source || !reaches(it, country)) continue;
+    const price = it.source === "salla" ? sallaPi(Number(it.price_egp), idx.states.get("salla")?.meta ?? {}) : (it.price ?? null);
+    if (!price) continue;
+    const ship = it.shipping && country in it.shipping ? it.shipping[country] : 0;
+    out.push({ item: it, score: 1, price: Math.round((price + (ship || 0)) * 100) / 100, store: STORE_NAME[it.source], ageMin: -1 });
+  }
+  return out.sort((a, b) => a.price - b.price).slice(0, 4);
+}
+
+/** One indexed product by id (product page). */
+export async function catalogItem(id: string, country: string): Promise<IndexHit | null> {
+  const idx = await index();
+  const it = idx.rows.find((r) => r.item.id === id)?.item;
+  if (!it || !reaches(it, country)) return null;
+  const meta = idx.states.get("salla")?.meta ?? {};
+  const price = it.source === "salla" ? sallaPi(Number(it.price_egp), meta) : (it.price ?? null);
+  if (!price) return null;
+  const listPrice = it.source === "salla" && it.list_price_egp ? (sallaPi(Number(it.list_price_egp), meta) ?? undefined) : undefined;
+  const at = idx.states.get(it.source)?.refreshed_at;
+  return { item: it, score: 1, price, listPrice, store: STORE_NAME[it.source], ageMin: at ? Math.round((Date.now() - Date.parse(at)) / 60_000) : -1 };
 }
 
 /** Tests: forget the in-memory copy. */
