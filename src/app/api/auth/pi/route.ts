@@ -40,8 +40,8 @@ export async function POST(req: Request) {
       uid = u.uid;
       username = u.username;
     }
-    const prefs = await upsertUser(uid, username);
-    const me: Me = { uid, username, usage: await getUsage(uid), country: prefs.country, lang: prefs.lang, email: prefs.email };
+    const [prefs, usage] = await Promise.all([upsertUser(uid, username), getUsage(uid)]);
+    const me: Me = { uid, username, usage, country: prefs.country, lang: prefs.lang, email: prefs.email };
     return Response.json({ token: issueSession({ uid, username, kind }), me });
   } catch (err) {
     if (err instanceof PiAuthError) return Response.json({ error: err.message, code: err.code }, { status: 401 });

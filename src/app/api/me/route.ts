@@ -12,8 +12,8 @@ export async function GET(req: Request) {
   const s = readSession(req);
   if (!s) return Response.json({ error: "Sign in with Pi to continue.", code: "SIGN_IN_REQUIRED" }, { status: 401 });
   try {
-    const prefs = await upsertUser(s.uid, s.username);
-    const me: Me = { uid: s.uid, username: s.username, usage: await getUsage(s.uid), country: prefs.country, lang: prefs.lang, email: prefs.email };
+    const [prefs, usage] = await Promise.all([upsertUser(s.uid, s.username), getUsage(s.uid)]);
+    const me: Me = { uid: s.uid, username: s.username, usage, country: prefs.country, lang: prefs.lang, email: prefs.email };
     return Response.json(me, { headers: { "Cache-Control": "no-store" } });
   } catch (err) {
     return Response.json({ error: err instanceof Error ? err.message : "Error" }, { status: 500 });

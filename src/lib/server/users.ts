@@ -49,12 +49,13 @@ export async function upsertUser(uid: string, username?: string): Promise<{ coun
     memUsers.set(uid, next);
     return { country: next.country, lang: next.lang, email: next.email ?? null };
   }
-  const db = supabase();
-  const { error } = await db
+  // One round trip: upsert and read the saved preferences back.
+  const { data, error } = await supabase()
     .from("users")
-    .upsert({ pi_uid: uid, username: username ?? null, last_seen_at: new Date().toISOString() }, { onConflict: "pi_uid", ignoreDuplicates: false });
+    .upsert({ pi_uid: uid, ...(username ? { username } : {}), last_seen_at: new Date().toISOString() }, { onConflict: "pi_uid", ignoreDuplicates: false })
+    .select("country, lang, email")
+    .single();
   if (error) throw new Error(`users: ${error.message}`);
-  const { data } = await db.from("users").select("country, lang, email").eq("pi_uid", uid).single();
   return { country: (data?.country as string | null) ?? null, lang: (data?.lang as Lang) ?? "en", email: (data?.email as string | null) ?? null };
 }
 
