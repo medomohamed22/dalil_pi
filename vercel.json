@@ -6,5 +6,31 @@
   "outputDirectory": ".next",
   "regions": [
     "lhr1"
+  ],
+  "crons": [
+    {
+      "path": "/api/cron/daily",
+      "schedule": "17 3 * * *"
+    }
+  ],
+  "headers": [
+    {
+      "source": "/stt-worker.js",
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "public, max-age=86400, stale-while-revalidate=604800"
+        }
+      ]
+    },
+    {
+      "source": "/(icon.svg|validation-key.txt|manifest.webmanifest)",
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "public, max-age=3600, stale-while-revalidate=86400"
+        }
+      ]
+    }
   ]
 }

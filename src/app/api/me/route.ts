@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { isCountryCode } from "@/lib/server/geo";
 import { readSession } from "@/lib/server/session";
-import { getUsage, updatePrefs, upsertUser } from "@/lib/server/users";
+import { meState, updatePrefs } from "@/lib/server/users";
 import type { Me } from "@/lib/types";
 
 export const runtime = "nodejs";
@@ -12,7 +12,7 @@ export async function GET(req: Request) {
   const s = readSession(req);
   if (!s) return Response.json({ error: "Sign in with Pi to continue.", code: "SIGN_IN_REQUIRED" }, { status: 401 });
   try {
-    const [prefs, usage] = await Promise.all([upsertUser(s.uid, s.username), getUsage(s.uid)]);
+    const { prefs, usage } = await meState(s.uid, s.username);
     const me: Me = { uid: s.uid, username: s.username, usage, country: prefs.country, lang: prefs.lang, email: prefs.email };
     return Response.json(me, { headers: { "Cache-Control": "no-store" } });
   } catch (err) {

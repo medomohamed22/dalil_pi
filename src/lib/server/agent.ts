@@ -8,6 +8,7 @@ import { prepareOffers } from "./sign";
 import { MIN_ORDER_TRUST, scoreTrust } from "./trust";
 import { detectWooPi } from "./woo";
 import { PriceEvidence } from "./evidence";
+import { cached, norm } from "./cache";
 import { mapOfPiConfigured, mapOfPiNearby, sallaApiConfigured, sallaApiSearch } from "./partners";
 import type { AgentEvent, Lang, Offer, Scope, Step, WireMessage } from "../types";
 
@@ -472,7 +473,7 @@ async function execTool(
       // Partner API first (exact, ~0.5 s); the headless browser is the fallback.
       if (sallaApiConfigured()) {
         try {
-          const lists = await Promise.all(qs.map((q) => sallaApiSearch(q, { country: ctx.locale.country, limit: 12 })));
+          const lists = await Promise.all(qs.map((q) => cached("salla-api", `${ctx.locale.country}|${norm(q)}`, 5 * 60_000, () => sallaApiSearch(q, { country: ctx.locale.country, limit: 12 }))));
           const seen = new Set<string>();
           const out: Array<Record<string, unknown>> = [];
           for (const p of lists.flat()) {
@@ -504,7 +505,8 @@ async function execTool(
       const seen = new Set<string>();
       const results: Array<Record<string, unknown>> = [];
       for (const q of qs) {
-        const items = await ctx.viaBrowser(() => ctx.browser!.sallaSearch(q));
+        // Cached 10 min: a repeat search skips the headless browser (the biggest Active CPU cost).
+        const items = await cached("salla-web", norm(q), 10 * 60_000, () => ctx.viaBrowser!(() => ctx.browser!.sallaSearch(q)));
         for (const it of items) {
           if (seen.has(it.url)) continue;
           seen.add(it.url);
@@ -522,7 +524,9 @@ async function execTool(
       if (!at) {
         throw Object.assign(new Error("The user's location is unknown."), { hint: "Ask the user to tap \"Near me\" to share their location, or to name their area." });
       }
-      const shops = await mapOfPiNearby({ lat: at.lat, lon: at.lon, radiusKm: Number(args.radius_km) || 10, query: String(args.query ?? "") });
+      const radiusKm = Number(args.radius_km) || 10;
+      const q = String(args.query ?? "");
+      const shops = await cached("mop", `${at.lat.toFixed(2)},${at.lon.toFixed(2)}|${radiusKm}|${norm(q)}`, 5 * 60_000, () => mapOfPiNearby({ lat: at.lat, lon: at.lon, radiusKm, query: q }));
       for (const sh of shops) {
         ctx.pages.set(sh.url, { image: sh.items[0]?.image ?? sh.image, rating: sh.rating });
         for (const it of sh.items) ctx.evidence.addObserved(sh.url, it.price);
@@ -554,7 +558,7 @@ async function execTool(
         .filter(Boolean)
         .slice(0, 3);
       if (!qs.length) throw new Error("empty query");
-      const results = await Promise.allSettled(qs.map((q) => webSearch(ctx.cfg, q, ctx.signal)));
+      const results = await Promise.allSettled(qs.map((q) => cached("web", `${ctx.locale.country}|${norm(q)}`, 10 * 60_000, () => webSearch(ctx.cfg, q))));
       if (ctx.trustedSearch) for (const r of results) if (r.status === "fulfilled") ctx.evidence.addText(JSON.stringify(r.value));
       return results.map((r, i) =>
         r.status === "fulfilled" ? { query: qs[i], ...r.value } : { query: qs[i], error: String(r.reason?.message ?? r.reason) },

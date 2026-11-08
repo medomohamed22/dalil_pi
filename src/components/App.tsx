@@ -1,6 +1,6 @@
 "use client";
 
-import { AnimatePresence, motion } from "framer-motion";
+import { AnimatePresence, m } from "framer-motion";
 import { useLiveQuery } from "dexie-react-hooks";
 import { Camera, Check, Globe2, Loader2, LogOut, MapPin, Menu, Moon, PanelLeft, Plus, Search, ShieldCheck, Sun, Trash2, UserRound, Wallet, X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -8,7 +8,11 @@ import { db, delKV, getKV, loadSettings, requestPersistence, saveSettings, setKV
 import { countryLabel, flag, t, type Strings } from "@/lib/i18n";
 import { inPiBrowser, loadPi, PI_SANDBOX, piAuthenticate } from "@/lib/pi-client";
 import { DEFAULT_SETTINGS, type AgentEvent, type Block, type ChatMessage, type Lang, type Me, type Offer, type Scope, type Settings, type Step, type Usage, type WireMessage } from "@/lib/types";
-import { AccountSheet, AutoOrderSheet } from "./Account";
+import dynamic from "next/dynamic";
+
+// Account / plans / order sheets load on first use, not with the first page.
+const AccountSheet = dynamic(() => import("./Account").then((x) => x.AccountSheet), { ssr: false });
+const AutoOrderSheet = dynamic(() => import("./Account").then((x) => x.AutoOrderSheet), { ssr: false });
 import Composer, { type ComposerPayload } from "./Composer";
 import Logo from "./Logo";
 import MessageView from "./MessageView";
@@ -446,19 +450,19 @@ export default function App() {
         </button>
       </div>
       <div className="px-3">
-        <motion.button
+        <m.button
           whileTap={{ scale: 0.98 }}
           onClick={newChat}
           className="flex w-full items-center gap-2 rounded-xl border border-line bg-bg px-3 py-2 text-sm font-medium shadow-card transition-colors hover:border-line-strong"
         >
           <Plus className="size-4" /> {s.newChat}
-        </motion.button>
+        </m.button>
       </div>
       <div className="mt-4 px-3 text-[11px] font-semibold uppercase tracking-widest text-fg-muted">{s.chats}</div>
       <nav className="mt-1 flex-1 space-y-0.5 overflow-y-auto px-2 pb-3">
         <AnimatePresence initial={false}>
           {conversations.map((c) => (
-            <motion.div
+            <m.div
               key={c.id}
               layout
               initial={{ opacity: 0, x: -6 }}
@@ -485,7 +489,7 @@ export default function App() {
               >
                 <Trash2 className="size-3.5" />
               </button>
-            </motion.div>
+            </m.div>
           ))}
         </AnimatePresence>
       </nav>
@@ -530,7 +534,7 @@ export default function App() {
     <div className="flex h-dvh overflow-hidden bg-bg">
       <AnimatePresence initial={false}>
         {desktopSidebar && (
-          <motion.aside
+          <m.aside
             initial={{ width: 0, opacity: 0 }}
             animate={{ width: 272, opacity: 1 }}
             exit={{ width: 0, opacity: 0 }}
@@ -538,15 +542,15 @@ export default function App() {
             className="hidden shrink-0 overflow-hidden border-e border-line bg-bg-soft md:block"
           >
             <div className="h-full w-[272px]">{sidebar}</div>
-          </motion.aside>
+          </m.aside>
         )}
       </AnimatePresence>
 
       <AnimatePresence>
         {sidebarOpen && (
           <>
-            <motion.div className="fixed inset-0 z-30 bg-black/30 md:hidden" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setSidebarOpen(false)} />
-            <motion.aside
+            <m.div className="fixed inset-0 z-30 bg-black/30 md:hidden" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setSidebarOpen(false)} />
+            <m.aside
               className="fixed inset-y-0 start-0 z-40 w-[82%] max-w-[300px] border-e border-line bg-bg-soft md:hidden"
               initial={{ x: ar ? "100%" : "-100%" }}
               animate={{ x: 0 }}
@@ -554,7 +558,7 @@ export default function App() {
               transition={{ type: "spring", stiffness: 320, damping: 34 }}
             >
               {sidebar}
-            </motion.aside>
+            </m.aside>
           </>
         )}
       </AnimatePresence>
@@ -768,8 +772,8 @@ function CountrySheet({
     <AnimatePresence>
       {open && (
         <>
-          <motion.div className="fixed inset-0 z-40 bg-black/30" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={onClose} />
-          <motion.div
+          <m.div className="fixed inset-0 z-40 bg-black/30" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={onClose} />
+          <m.div
             role="dialog"
             aria-label={s.country}
             initial={{ y: 40, opacity: 0 }}
@@ -804,7 +808,7 @@ function CountrySheet({
                 </button>
               ))}
             </div>
-          </motion.div>
+          </m.div>
         </>
       )}
     </AnimatePresence>
@@ -832,15 +836,15 @@ function SignIn({
 }) {
   return (
     <div className="flex min-h-[calc(100dvh-8rem)] flex-col items-center justify-center py-10 text-center">
-      <motion.div initial={{ scale: 0.6, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} transition={{ type: "spring", stiffness: 200, damping: 16 }}>
+      <m.div initial={{ scale: 0.6, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} transition={{ type: "spring", stiffness: 200, damping: 16 }}>
         <Logo size={56} />
-      </motion.div>
+      </m.div>
       <h1 className="mt-5 text-2xl font-semibold tracking-tight sm:text-3xl">{s.appName}</h1>
       <p className="mt-2 max-w-md text-sm leading-relaxed text-fg-muted">{s.tagline}</p>
       <div className="mt-8 w-full max-w-sm rounded-3xl border border-line bg-bg-soft p-5">
         <div className="text-base font-semibold">{s.signInTitle}</div>
         <p className="mt-1 text-sm text-fg-muted">{s.signInSub}</p>
-        <motion.button
+        <m.button
           whileTap={{ scale: 0.97 }}
           disabled={busy}
           onClick={onSignIn}
@@ -848,7 +852,7 @@ function SignIn({
         >
           {busy ? <Loader2 className="size-4 animate-spin" /> : <span className="text-base leading-none">π</span>}
           {busy ? s.signingIn : s.signInBtn}
-        </motion.button>
+        </m.button>
         {devLogin && (
           <button onClick={onDevSignIn} disabled={busy} className="mt-2 w-full rounded-2xl border border-line py-2.5 text-xs font-medium text-fg-soft hover:bg-bg">
             {s.devSignIn}
@@ -869,7 +873,7 @@ function SignIn({
           {s.how.map((x, i) => {
             const Icon = [Search, ShieldCheck, Wallet, MapPin][i] ?? Search;
             return (
-              <motion.div
+              <m.div
                 key={x.t}
                 initial={{ opacity: 0, y: 10 }}
                 animate={{ opacity: 1, y: 0 }}
@@ -883,7 +887,7 @@ function SignIn({
                   <span className="block text-[13px] font-semibold">{x.t}</span>
                   <span className="mt-0.5 block text-[12px] leading-relaxed text-fg-muted">{x.d}</span>
                 </span>
-              </motion.div>
+              </m.div>
             );
           })}
         </div>
@@ -904,19 +908,19 @@ function SignIn({
 function EmptyState({ s, needsKey, onPick }: { s: Strings; needsKey: boolean; onPick: (t: string) => void }) {
   return (
     <div className="flex min-h-[calc(100dvh-16rem)] flex-col items-center justify-center py-10 text-center">
-      <motion.div initial={{ scale: 0.6, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} transition={{ type: "spring", stiffness: 200, damping: 16 }}>
+      <m.div initial={{ scale: 0.6, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} transition={{ type: "spring", stiffness: 200, damping: 16 }}>
         <Logo size={56} />
-      </motion.div>
-      <motion.h1 initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.08 }} className="mt-5 text-2xl font-semibold tracking-tight sm:text-3xl">
+      </m.div>
+      <m.h1 initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.08 }} className="mt-5 text-2xl font-semibold tracking-tight sm:text-3xl">
         {s.emptyTitle}
-      </motion.h1>
-      <motion.p initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.14 }} className="mt-2 max-w-md text-sm leading-relaxed text-fg-muted">
+      </m.h1>
+      <m.p initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.14 }} className="mt-2 max-w-md text-sm leading-relaxed text-fg-muted">
         {s.emptySub}
-      </motion.p>
+      </m.p>
       {needsKey && <p className="mt-4 rounded-full border border-line px-3.5 py-1.5 text-xs font-medium text-danger">{s.needKey}</p>}
       <div className="mt-8 grid w-full max-w-xl gap-2 sm:grid-cols-2">
         {s.suggestions.map((q, i) => (
-          <motion.button
+          <m.button
             key={q}
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
@@ -927,7 +931,7 @@ function EmptyState({ s, needsKey, onPick }: { s: Strings; needsKey: boolean; on
             className="rounded-2xl border border-line bg-bg px-4 py-3 text-start text-sm text-fg-soft shadow-card transition-colors hover:border-line-strong hover:text-fg"
           >
             {q}
-          </motion.button>
+          </m.button>
         ))}
       </div>
     </div>

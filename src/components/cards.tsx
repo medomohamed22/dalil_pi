@@ -1,6 +1,6 @@
 "use client";
 
-import { motion, AnimatePresence } from "framer-motion";
+import { m, AnimatePresence } from "framer-motion";
 import {
   Check,
   ExternalLink,
@@ -77,7 +77,7 @@ export function LinkCard({ preview, lang }: { preview: LinkPreview; lang: Lang }
     host = new URL(preview.url).hostname.replace(/^www\./, "");
   } catch {}
   return (
-    <motion.a
+    <m.a
       href={preview.url}
       target="_blank"
       rel="noopener noreferrer"
@@ -107,7 +107,7 @@ export function LinkCard({ preview, lang }: { preview: LinkPreview; lang: Lang }
           <div className="line-clamp-1 text-xs text-fg-muted">{preview.description}</div>
         ) : null}
       </div>
-    </motion.a>
+    </m.a>
   );
 }
 
@@ -270,7 +270,7 @@ export function StepsTimeline({
   if (running) {
     const tips = TIPS[lang];
     return (
-      <motion.div
+      <m.div
         initial={{ opacity: 0, y: 6 }}
         animate={{ opacity: 1, y: 0 }}
         className="w-full max-w-xl overflow-hidden rounded-3xl border border-line bg-bg-soft"
@@ -279,7 +279,7 @@ export function StepsTimeline({
           <RadarMark />
           <div className="min-w-0 flex-1">
             <AnimatePresence mode="wait" initial={false}>
-              <motion.div
+              <m.div
                 key={current ? `${current.id}-${current.status}` : "start"}
                 initial={{ opacity: 0, y: 6 }}
                 animate={{ opacity: 1, y: 0 }}
@@ -293,11 +293,11 @@ export function StepsTimeline({
                   : ar
                     ? "بيفهم طلبك…"
                     : "Understanding your request…"}
-              </motion.div>
+              </m.div>
             </AnimatePresence>
             <AnimatePresence mode="wait" initial={false}>
               {note && (
-                <motion.p
+                <m.p
                   key={note}
                   initial={{ opacity: 0 }}
                   animate={{ opacity: 1 }}
@@ -306,7 +306,7 @@ export function StepsTimeline({
                   dir="auto"
                 >
                   {note}
-                </motion.p>
+                </m.p>
               )}
             </AnimatePresence>
           </div>
@@ -323,7 +323,7 @@ export function StepsTimeline({
             return (
               <div key={label} className="flex flex-1 flex-col gap-1">
                 <div className="relative h-1 overflow-hidden rounded-full bg-line">
-                  <motion.div
+                  <m.div
                     className="absolute inset-y-0 rounded-full bg-fg ltr:left-0 rtl:right-0"
                     initial={{ width: 0 }}
                     animate={{ width: done ? "100%" : active ? ["15%", "85%", "15%"] : "0%" }}
@@ -343,7 +343,7 @@ export function StepsTimeline({
               {allHosts.slice(-10).map((h) => {
                 const st = browsed.filter((b) => b.detail === h).pop()?.status;
                 return (
-                  <motion.span
+                  <m.span
                     key={h}
                     layout
                     initial={{ opacity: 0, scale: 0.7, y: 6 }}
@@ -356,7 +356,7 @@ export function StepsTimeline({
                     <Favicon host={h} className="size-4 border-0" />
                     <span dir="ltr">{h}</span>
                     {st === "running" && <Loader2 className="size-3 animate-spin text-fg-muted" />}
-                  </motion.span>
+                  </m.span>
                 );
               })}
             </AnimatePresence>
@@ -366,7 +366,7 @@ export function StepsTimeline({
         {/* Rotating tips */}
         <div className="mt-3 border-t border-line px-3.5 py-2.5">
           <AnimatePresence mode="wait" initial={false}>
-            <motion.p
+            <m.p
               key={tip % tips.length}
               initial={{ opacity: 0, y: 4 }}
               animate={{ opacity: 1, y: 0 }}
@@ -383,10 +383,10 @@ export function StepsTimeline({
                 );
               })()}
               <span className="min-w-0">{tips[tip % tips.length]}</span>
-            </motion.p>
+            </m.p>
           </AnimatePresence>
         </div>
-      </motion.div>
+      </m.div>
     );
   }
 
@@ -409,13 +409,13 @@ export function StepsTimeline({
             ))}
           </span>
         )}
-        <motion.span animate={{ rotate: open ? 180 : 0 }} className="shrink-0 text-[10px] text-fg-muted">
+        <m.span animate={{ rotate: open ? 180 : 0 }} className="shrink-0 text-[10px] text-fg-muted">
           ▾
-        </motion.span>
+        </m.span>
       </button>
       <AnimatePresence initial={false}>
         {open && (
-          <motion.ul
+          <m.ul
             initial={{ height: 0, opacity: 0 }}
             animate={{ height: "auto", opacity: 1 }}
             exit={{ height: 0, opacity: 0 }}
@@ -442,7 +442,7 @@ export function StepsTimeline({
                 {st.status === "error" && <span className="shrink-0 text-[11px]">{ar ? "محجوب" : "blocked"}</span>}
               </li>
             ))}
-          </motion.ul>
+          </m.ul>
         )}
       </AnimatePresence>
     </div>
@@ -455,7 +455,7 @@ export function OfferSkeletons() {
     <div className="-mx-4 w-[calc(100%+2rem)] sm:mx-0 sm:w-full">
       <div className="no-scrollbar flex gap-3 overflow-hidden px-4 pb-2 pt-1 sm:px-0">
         {[0, 1, 2].map((i) => (
-          <motion.div
+          <m.div
             key={i}
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
@@ -469,13 +469,13 @@ export function OfferSkeletons() {
               <div className="h-5 w-1/2 rounded bg-bg-muted" />
               <div className="h-8 rounded-xl bg-bg-muted" />
             </div>
-            <motion.div
+            <m.div
               className="absolute inset-0 bg-gradient-to-r from-transparent via-white/40 to-transparent dark:via-white/5"
               initial={{ x: "-100%" }}
               animate={{ x: "100%" }}
               transition={{ duration: 1.4, repeat: Infinity, ease: "easeInOut", delay: i * 0.15 }}
             />
-          </motion.div>
+          </m.div>
         ))}
       </div>
     </div>
@@ -502,7 +502,7 @@ export function BrowserCard({ block, lang, live }: { block: Extract<Block, { typ
   }
   const act = ACTION_LABEL[block.action ?? "open"];
   return (
-    <motion.div
+    <m.div
       initial={{ opacity: 0, y: 8 }}
       animate={{ opacity: 1, y: 0 }}
       className="w-full max-w-xl overflow-hidden rounded-2xl border border-line bg-bg shadow-card"
@@ -532,7 +532,7 @@ export function BrowserCard({ block, lang, live }: { block: Extract<Block, { typ
         <AnimatePresence initial={false}>
           {block.shot ? (
             // eslint-disable-next-line @next/next/no-img-element
-            <motion.img
+            <m.img
               key={block.shot.length + (block.action ?? "") + block.url}
               src={block.shot}
               alt={block.title ?? host}
@@ -558,7 +558,7 @@ export function BrowserCard({ block, lang, live }: { block: Extract<Block, { typ
           </span>
         ) : null}
       </div>
-    </motion.div>
+    </m.div>
   );
 }
 
@@ -614,6 +614,21 @@ function TrustBreakdown({ offer, s }: { offer: Offer; s: Strings }) {
   );
 }
 
+type SortKey = "best" | "cheapest" | "trust" | "rating" | "nearest";
+
+/** Client-side re-ordering of the cards; offers you can't order (low trust, not in Pi) stay last. */
+function sortOffers(offers: Offer[], k: SortKey): Offer[] {
+  if (k === "best") return offers;
+  const blocked = (o: Offer) => Number(o.trust === "suspicious" || (o.trustScore ?? 50) < 40 || o.flags.includes("not_priced_in_pi"));
+  const key: Record<Exclude<SortKey, "best">, (o: Offer) => number> = {
+    cheapest: (o) => o.totalUsd ?? o.total,
+    trust: (o) => -(o.trustScore ?? 0),
+    rating: (o) => -((o.rating ?? 0) * 1000 + Math.min(999, o.reviewCount ?? 0)),
+    nearest: (o) => o.distanceKm ?? Number.MAX_SAFE_INTEGER,
+  };
+  return [...offers].sort((a, b) => blocked(a) - blocked(b) || key[k](a) - key[k](b));
+}
+
 /** Google Maps link: exact pin when the shop's location is known, else name + address/city. */
 function mapsUrl(o: Offer, city?: string, directions = false): string {
   const dest = o.lat != null && o.lon != null ? `${o.lat},${o.lon}` : [o.store, o.address ?? city ?? ""].filter(Boolean).join(" ");
@@ -656,13 +671,31 @@ export function ProductCards({
     nearest: s.nearest,
   };
   const [why, setWhy] = useState<string | null>(null);
+  const [sort, setSort] = useState<SortKey>("best");
+  const sorts: SortKey[] = ["best", "cheapest", "trust", "rating", ...(offers.some((o) => o.distanceKm != null) ? (["nearest"] as SortKey[]) : [])];
+  const shown = sortOffers(offers, sort);
   return (
     <div className="-mx-4 w-[calc(100%+2rem)] sm:mx-0 sm:w-full">
+      {offers.length >= 3 && (
+        <div className="no-scrollbar mb-1 flex gap-1.5 overflow-x-auto px-4 sm:px-0" role="radiogroup" aria-label={s.sortBy} data-testid="sort">
+          {sorts.map((k) => (
+            <button
+              key={k}
+              role="radio"
+              aria-checked={sort === k}
+              onClick={() => setSort(k)}
+              className={`shrink-0 rounded-full border px-2.5 py-0.5 text-[11px] font-medium transition-colors ${sort === k ? "border-fg bg-inv-bg text-inv-fg" : "border-line text-fg-soft hover:bg-bg-soft"}`}
+            >
+              {s.sorts[k]}
+            </button>
+          ))}
+        </div>
+      )}
       <div className="no-scrollbar flex snap-x snap-mandatory gap-3 overflow-x-auto px-4 pb-2 pt-1 sm:px-0">
-        {offers.map((o, i) => {
-          const isTop = i === 0 && o.trust !== "suspicious";
+        {shown.map((o, i) => {
+          const isTop = i === 0 && sort === "best" && o.trust !== "suspicious";
           return (
-            <motion.div
+            <m.div
               key={o.id}
               data-offer-card={o.id}
               data-store={o.store}
@@ -806,7 +839,7 @@ export function ProductCards({
                       const out = ordersLeft != null && ordersLeft <= 0;
                       return (
                         <>
-                          <motion.button
+                          <m.button
                             whileTap={{ scale: 0.96 }}
                             disabled={out}
                             onClick={() => {
@@ -818,7 +851,7 @@ export function ProductCards({
                             className="flex w-full items-center justify-center gap-1.5 rounded-xl bg-inv-bg py-2 text-xs font-semibold text-inv-fg transition-opacity hover:opacity-90 disabled:opacity-40"
                           >
                             <Package className="size-3.5" /> {o.checkout === "woo_pi" ? s.autoOrder : s.order} <ExternalLink className="size-3" />
-                          </motion.button>
+                          </m.button>
                           {o.checkout === "woo_pi" && <span className="text-center text-[10.5px] font-medium text-fg-soft" data-testid="auto-tag">⚡ {s.autoTag}</span>}
                           {out && <span className="text-center text-[10.5px] text-danger">{s.noOrdersLeft}</span>}
                         </>
@@ -840,7 +873,7 @@ export function ProductCards({
                   })()}
                 </div>
               </div>
-            </motion.div>
+            </m.div>
           );
         })}
       </div>

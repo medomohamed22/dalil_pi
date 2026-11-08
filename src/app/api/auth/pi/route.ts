@@ -2,7 +2,7 @@ import { z } from "zod";
 import { PiAuthError, verifyAccessToken } from "@/lib/server/pi";
 import { rateLimit } from "@/lib/server/ratelimit";
 import { devLoginAllowed, issueSession } from "@/lib/server/session";
-import { getUsage, upsertUser } from "@/lib/server/users";
+import { meState } from "@/lib/server/users";
 import type { Me } from "@/lib/types";
 
 export const runtime = "nodejs";
@@ -40,7 +40,7 @@ export async function POST(req: Request) {
       uid = u.uid;
       username = u.username;
     }
-    const [prefs, usage] = await Promise.all([upsertUser(uid, username), getUsage(uid)]);
+    const { prefs, usage } = await meState(uid, username);
     const me: Me = { uid, username, usage, country: prefs.country, lang: prefs.lang, email: prefs.email };
     return Response.json({ token: issueSession({ uid, username, kind }), me });
   } catch (err) {

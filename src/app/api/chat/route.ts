@@ -1,12 +1,11 @@
 import { z } from "zod";
 import { runAgent } from "@/lib/server/agent";
 import { countryName, currencyOf, geoFromRequest, isCountryCode } from "@/lib/server/geo";
-import { hostedConfig, hostedEnabled, takeHostedQuota } from "@/lib/server/hosted";
+import { hostedConfig, hostedEnabled, hostedLimits, visitorId } from "@/lib/server/hosted";
 import { piUsdPrice } from "@/lib/server/price";
-import { rateLimit } from "@/lib/server/ratelimit";
 import { readSession } from "@/lib/server/session";
 import { verifyOffer } from "@/lib/server/sign";
-import { assertCanSearch, recordSearch } from "@/lib/server/users";
+import { beginSearch, recordSearch } from "@/lib/server/users";
 import type { AgentEvent, Offer } from "@/lib/types";
 
 export const runtime = "nodejs";
@@ -47,9 +46,6 @@ function errorResponse(err: unknown) {
 }
 
 export async function POST(req: Request) {
-  const limited = await rateLimit(req, "chat", 40, 600);
-  if (limited) return limited;
-
   const session = readSession(req);
   if (!session) return Response.json({ error: "Sign in with Pi to continue.", code: "SIGN_IN_REQUIRED" }, { status: 401 });
 
@@ -61,10 +57,9 @@ export async function POST(req: Request) {
   }
   if (!hostedEnabled()) return Response.json({ error: "The AI is not configured (META_API_KEY).", code: "NO_API_KEY" }, { status: 503 });
 
-  // Quota first: no AI call when the user has nothing left.
+  // Quota, rate limits and daily AI caps in one database call — no AI call when anything is over.
   try {
-    await assertCanSearch(session.uid);
-    await takeHostedQuota(req);
+    await beginSearch(session.uid, visitorId(req), hostedLimits());
   } catch (err) {
     return errorResponse(err);
   }

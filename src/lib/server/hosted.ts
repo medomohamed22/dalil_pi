@@ -1,7 +1,6 @@
 import "server-only";
 import { createHash } from "node:crypto";
 import type { MetaConfig } from "./meta";
-import { counters } from "./store";
 
 /**
  * Hosted AI: the agent always runs on the server's Meta key. The key lives only in the server env
@@ -41,15 +40,4 @@ export function visitorId(req: Request): string {
     (h.get("x-forwarded-for") ?? "").split(",").pop()?.trim() ||
     "unknown";
   return createHash("sha256").update(`dalil:${ip}`).digest("hex").slice(0, 24);
-}
-
-/** Counts one hosted request; throws HOSTED_LIMIT when a daily cap is hit. */
-export async function takeHostedQuota(req: Request): Promise<{ used: number; limit: number }> {
-  const day = new Date().toISOString().slice(0, 10);
-  const { perVisitor, global } = hostedLimits();
-  const all = await counters.incr(`hosted:all:${day}`, 26 * 3600);
-  if (all > global) throw new Error("HOSTED_LIMIT");
-  const used = await counters.incr(`hosted:v:${visitorId(req)}:${day}`, 26 * 3600);
-  if (used > perVisitor) throw new Error("HOSTED_LIMIT");
-  return { used, limit: perVisitor };
 }

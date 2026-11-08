@@ -55,6 +55,8 @@ const strings = {
     cautionConfirm: (n: number) => `This store's trust score is ${n}/100. Only continue if you know the store. Open it anyway?`,
     realReviews: "From real reviews",
     directions: "Directions",
+    sortBy: "Sort results",
+    sorts: { best: "Best match", cheapest: "Cheapest", trust: "Most trusted", rating: "Top rated", nearest: "Nearest" } as Record<string, string>,
     howTitle: "How Dalil Pi works",
     how: [
       { t: "Only stores that take Pi", d: "Tell it what you need. The AI searches Pi marketplaces and stores in your country — Salla Shop, Piketplace, WooCommerce shops with a Pi checkout." },
@@ -202,6 +204,8 @@ const strings = {
     cautionConfirm: (n: number) => `رقم ثقة المتجر ده ${n}/100. كمّل بس لو انت عارف المتجر. تفتحه برضو؟`,
     realReviews: "من تقييمات حقيقية",
     directions: "الاتجاهات",
+    sortBy: "ترتيب النتايج",
+    sorts: { best: "الأنسب", cheapest: "الأرخص", trust: "الأوثق", rating: "الأعلى تقييم", nearest: "الأقرب" } as Record<string, string>,
     howTitle: "دليل باي بيشتغل إزاي",
     how: [
       { t: "بس المتاجر اللي بتقبل باي", d: "قول اللي محتاجه، والذكاء الاصطناعي يدوّر في أسواق ومتاجر باي في بلدك — سلة شوب، بيكت بليس، ومتاجر ووكومرس بدفع باي." },

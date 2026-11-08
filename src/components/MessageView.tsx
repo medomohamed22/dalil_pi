@@ -1,6 +1,6 @@
 "use client";
 
-import { motion } from "framer-motion";
+import { m } from "framer-motion";
 import { AlertCircle, AlertTriangle } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -31,7 +31,7 @@ export default function MessageView({
     const imgs = msg.blocks.filter((b): b is Extract<Block, { type: "image" }> => b.type === "image");
     const links = msg.blocks.filter((b): b is Extract<Block, { type: "link" }> => b.type === "link");
     return (
-      <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="flex flex-col items-end gap-2">
+      <m.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="flex flex-col items-end gap-2">
         {imgs.length > 0 && (
           <div className={`grid gap-1.5 ${imgs.length > 1 ? "grid-cols-2" : ""} max-w-[18rem]`}>
             {imgs.map((im, i) => (
@@ -52,13 +52,13 @@ export default function MessageView({
             {tb.text}
           </div>
         ))}
-      </motion.div>
+      </m.div>
     );
   }
 
   const empty = msg.blocks.length === 0;
   return (
-    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex gap-3">
+    <m.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex gap-3">
       <div className="mt-0.5 shrink-0">
         <Logo size={28} spinning={live} />
       </div>
@@ -110,6 +110,6 @@ export default function MessageView({
           }
         })}
       </div>
-    </motion.div>
+    </m.div>
   );
 }

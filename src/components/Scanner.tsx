@@ -1,6 +1,6 @@
 "use client";
 
-import { AnimatePresence, motion } from "framer-motion";
+import { AnimatePresence, m } from "framer-motion";
 import { Check, ImageIcon, Loader2, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import type { Lang } from "@/lib/types";
@@ -154,14 +154,14 @@ export default function ScannerSheet({
   return (
     <AnimatePresence>
       {open && (
-        <motion.div
+        <m.div
           className="fixed inset-0 z-50 flex items-end justify-center bg-black/70 backdrop-blur-sm sm:items-center"
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
           onClick={onClose}
         >
-          <motion.div
+          <m.div
             role="dialog"
             aria-label={ar ? "مسح باركود" : "Scan barcode"}
             className="w-full max-w-md overflow-hidden rounded-t-3xl bg-bg sm:rounded-3xl"
@@ -194,26 +194,26 @@ export default function ScannerSheet({
               </div>
               <AnimatePresence>
                 {state === "found" && (
-                  <motion.div
+                  <m.div
                     initial={{ opacity: 0 }}
                     animate={{ opacity: 1 }}
                     className="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-black/60 text-white"
                   >
-                    <motion.span
+                    <m.span
                       initial={{ scale: 0 }}
                       animate={{ scale: 1 }}
                       transition={{ type: "spring", damping: 14, stiffness: 300 }}
                       className="flex size-12 items-center justify-center rounded-full bg-white text-black"
                     >
                       <Check className="size-6" strokeWidth={3} />
-                    </motion.span>
+                    </m.span>
                     <span className="font-mono text-lg tracking-widest" dir="ltr">{code}</span>
-                  </motion.div>
+                  </m.div>
                 )}
                 {(state === "starting" || state === "decoding") && (
-                  <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="absolute inset-0 flex items-center justify-center text-white/80">
+                  <m.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="absolute inset-0 flex items-center justify-center text-white/80">
                     <Loader2 className="size-6 animate-spin" />
-                  </motion.div>
+                  </m.div>
                 )}
               </AnimatePresence>
             </div>
@@ -239,8 +239,8 @@ export default function ScannerSheet({
                 {ar ? "أو ارفع صورة للباركود" : "Or upload a barcode photo"}
               </button>
             </div>
-          </motion.div>
-        </motion.div>
+          </m.div>
+        </m.div>
       )}
     </AnimatePresence>
   );

@@ -167,6 +167,9 @@ export async function getUsage(uid: string): Promise<Usage> {
   if (!supabaseEnabled) {
     return summarize(memUsage.get(`${uid}:${period}`) ?? { searches: 0, orders: 0, bonus: 0 }, await listPacks(uid));
   }
+  // One round trip (migration 0006); older schemas fall back to two.
+  const one = await supabase().rpc("user_state", { p_uid: uid, p_period: period });
+  if (!one.error && one.data) return stateToUsage(one.data as DbState);
   const [q, packs] = await Promise.all([supabase().rpc("user_quota", { p_uid: uid, p_period: period }), listPacks(uid)]);
   if (!q.error && Array.isArray(q.data) && q.data[0]) {
     const r = q.data[0] as { plan: PlanId; searches_quota: number; orders_quota: number; ends_at: string | null; searches_used: number; orders_used: number };
@@ -188,6 +191,117 @@ export async function getUsage(uid: string): Promise<Usage> {
   return summarize({ searches: data?.searches ?? 0, orders: data?.orders ?? 0, bonus: data?.bonus_searches ?? 0 }, []);
 }
 
+/** Shape returned by the SQL function public.user_state(). */
+interface DbState {
+  plan: PlanId;
+  searches_quota: number;
+  orders_quota: number;
+  ends_at: string | null;
+  searches_used: number;
+  orders_used: number;
+  packs?: { id: string; plan: PaidPlanId; searches_quota: number; orders_quota: number; searches_used: number; orders_used: number; starts_at: string; ends_at: string }[];
+}
+
+function stateToUsage(st: DbState): Usage {
+  return {
+    plan: st.plan,
+    planEndsAt: st.ends_at,
+    period: currentPeriod(),
+    renewsAt: renewsAt(),
+    searchesUsed: st.searches_used,
+    searchLimit: st.searches_quota,
+    ordersUsed: st.orders_used,
+    orderLimit: st.orders_quota,
+    packs: (st.packs ?? []).map((k) => ({
+      id: k.id,
+      plan: k.plan,
+      searchesQuota: k.searches_quota,
+      ordersQuota: k.orders_quota,
+      searchesLeft: Math.max(0, k.searches_quota - k.searches_used),
+      ordersLeft: Math.max(0, k.orders_quota - k.orders_used),
+      startsAt: k.starts_at,
+      endsAt: k.ends_at,
+    })),
+  };
+}
+
+const isMissingFn = (e: { message?: string; code?: string } | null) => !!e && (e.code === "PGRST202" || /function .* does not exist|Could not find the function/i.test(e.message ?? ""));
+
+/** Page load / sign-in: user upsert + saved prefs + credit — one round trip with migration 0006. */
+export async function meState(uid: string, username?: string): Promise<{ prefs: { country: string | null; lang: Lang; email: string | null }; usage: Usage }> {
+  if (supabaseEnabled) {
+    const r = await supabase().rpc("me_state", { p_uid: uid, p_username: username ?? null, p_period: currentPeriod() });
+    if (!r.error && r.data) {
+      const d = r.data as { country: string | null; lang: Lang | null; email: string | null; state: DbState };
+      return { prefs: { country: d.country ?? null, lang: d.lang ?? "en", email: d.email ?? null }, usage: stateToUsage(d.state) };
+    }
+    if (!isMissingFn(r.error)) throw new Error(`me: ${r.error?.message}`);
+  }
+  const [prefs, usage] = await Promise.all([upsertUser(uid, username), getUsage(uid)]);
+  return { prefs, usage };
+}
+
+export class RateLimited extends Error {
+  status = 429;
+  code = "RATE_LIMITED";
+  constructor() {
+    super("Too many requests — please slow down and try again shortly.");
+  }
+}
+
+export class HostedLimit extends Error {
+  status = 429;
+  code = "HOSTED_LIMIT";
+  constructor() {
+    super("HOSTED_LIMIT");
+  }
+}
+
+/**
+ * Everything checked before the AI runs, in ONE database call (migration 0006):
+ * search quota, per-visitor request rate, per-user hourly limit and the daily AI caps.
+ */
+export async function beginSearch(uid: string, visitor: string, daily: { perVisitor: number; global: number }): Promise<Usage> {
+  const day = new Date().toISOString().slice(0, 10);
+  const hour = Math.floor(Date.now() / 3_600_000);
+  const win = Math.floor(Date.now() / 600_000);
+  const items = [
+    { key: `rl:chat:${visitor}:${win}`, ttl: 605, limit: 40, code: "RATE_LIMITED" },
+    { key: `search-hour:${uid}:${hour}`, ttl: 3700, limit: HOURLY_SEARCH_LIMIT, code: "HOURLY_LIMIT" },
+    { key: `hosted:all:${day}`, ttl: 26 * 3600, limit: daily.global, code: "HOSTED_LIMIT" },
+    { key: `hosted:v:${visitor}:${day}`, ttl: 26 * 3600, limit: daily.perVisitor, code: "HOSTED_LIMIT" },
+  ];
+  let code: string | null = null;
+  let usage: Usage | null = null;
+  if (supabaseEnabled) {
+    const r = await supabase().rpc("begin_search", { p_uid: uid, p_period: currentPeriod(), p_counters: items });
+    if (!r.error && r.data) {
+      const d = r.data as { ok: boolean; code?: string; state: DbState };
+      usage = stateToUsage(d.state);
+      code = d.ok ? null : d.code ?? "LIMIT";
+    } else if (!isMissingFn(r.error)) {
+      throw new Error(`begin_search: ${r.error?.message}`);
+    }
+  }
+  if (!usage) {
+    // Local dev / older schema: same checks, several calls.
+    usage = await getUsage(uid);
+    if (usage.searchesUsed >= usage.searchLimit) code = "QUOTA_EXCEEDED";
+    else
+      for (const it of items) {
+        if ((await counters.incr(it.key, it.ttl)) > it.limit) {
+          code = it.code;
+          break;
+        }
+      }
+  }
+  if (code === "QUOTA_EXCEEDED") throw new QuotaExceeded(usage);
+  if (code === "HOURLY_LIMIT") throw new TooFast();
+  if (code === "RATE_LIMITED") throw new RateLimited();
+  if (code) throw new HostedLimit();
+  return usage;
+}
+
 export class QuotaExceeded extends Error {
   status = 402;
   code = "QUOTA_EXCEEDED";
@@ -202,16 +316,6 @@ export class TooFast extends Error {
   constructor() {
     super(`You can run up to ${HOURLY_SEARCH_LIMIT} searches per hour. Please try again a bit later.`);
   }
-}
-
-/** Throws when the user has no searches left (checked BEFORE the AI runs). */
-export async function assertCanSearch(uid: string): Promise<Usage> {
-  const usage = await getUsage(uid);
-  if (usage.searchesUsed >= usage.searchLimit) throw new QuotaExceeded(usage);
-  const hour = Math.floor(Date.now() / 3_600_000);
-  const n = await counters.incr(`search-hour:${uid}:${hour}`, 3700);
-  if (n > HOURLY_SEARCH_LIMIT) throw new TooFast();
-  return usage;
 }
 
 /** Takes one search/order from the credit that expires first (free month or a 30-day pack). */
@@ -242,10 +346,20 @@ async function consume(uid: string, kind: "search" | "order"): Promise<void> {
   }
 }
 
+/** Takes one credit and returns the fresh usage — one round trip with migration 0006. */
+async function spendCredit(uid: string, kind: "search" | "order"): Promise<Usage> {
+  if (supabaseEnabled) {
+    const r = await supabase().rpc("use_credit", { p_uid: uid, p_kind: kind, p_period: currentPeriod() });
+    if (!r.error && r.data) return stateToUsage(r.data as DbState);
+    if (!isMissingFn(r.error)) throw new Error(`usage: ${r.error?.message}`);
+  }
+  await consume(uid, kind);
+  return getUsage(uid);
+}
+
 /** Counts one search (called only after the search returned results). */
 export async function recordSearch(uid: string): Promise<Usage> {
-  await consume(uid, "search");
-  return getUsage(uid);
+  return spendCredit(uid, "search");
 }
 
 export class OrderQuotaExceeded extends Error {
@@ -265,8 +379,7 @@ export async function assertCanOrder(uid: string): Promise<Usage> {
 
 /** Counts one order. */
 export async function recordOrder(uid: string): Promise<Usage> {
-  await consume(uid, "order");
-  return getUsage(uid);
+  return spendCredit(uid, "order");
 }
 
 /** Saved profile fields (name/phone/email shown on orders). */

@@ -1,12 +1,15 @@
 "use client";
 
-import { AnimatePresence, motion } from "framer-motion";
+import { AnimatePresence, m } from "framer-motion";
 import { ArrowUp, ImageIcon, Link2, Loader2, Mic, Plus, ScanBarcode, Square, X } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { Strings } from "@/lib/i18n";
 import type { Lang, LinkPreview } from "@/lib/types";
 import { localSttSupported, preloadStt, startRecording, sttModelReady, transcribe, type Recording } from "@/lib/local-stt";
-import ScannerSheet from "./Scanner";
+import dynamic from "next/dynamic";
+
+// The barcode scanner (camera) loads only when opened.
+const ScannerSheet = dynamic(() => import("./Scanner"), { ssr: false });
 
 const URL_RE = /https?:\/\/[^\s<>"']+/g;
 
@@ -193,14 +196,14 @@ export default function Composer({
     >
       <AnimatePresence>
         {(images.length > 0 || urls.length > 0) && (
-          <motion.div
+          <m.div
             initial={{ height: 0, opacity: 0 }}
             animate={{ height: "auto", opacity: 1 }}
             exit={{ height: 0, opacity: 0 }}
             className="no-scrollbar flex gap-2 overflow-x-auto px-3 pt-3"
           >
             {images.map((src, i) => (
-              <motion.div key={i} layout initial={{ scale: 0.8, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} className="relative shrink-0">
+              <m.div key={i} initial={{ scale: 0.8, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} className="relative shrink-0">
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img src={src} alt="" className="size-16 rounded-xl border border-line object-cover" />
                 <button
@@ -210,7 +213,7 @@ export default function Composer({
                 >
                   <X className="size-3" />
                 </button>
-              </motion.div>
+              </m.div>
             ))}
             {urls.map((u) => {
               const p = previews[u];
@@ -220,7 +223,7 @@ export default function Composer({
                 host = new URL(u).hostname.replace(/^www\./, "");
               } catch {}
               return (
-                <motion.div
+                <m.div
                   key={u}
                   layout
                   initial={{ scale: 0.9, opacity: 0 }}
@@ -239,10 +242,10 @@ export default function Composer({
                     <div className="truncate text-[11px] text-fg-muted">{host}</div>
                     <div className="line-clamp-2 text-xs font-medium leading-tight">{pv?.title ?? u}</div>
                   </div>
-                </motion.div>
+                </m.div>
               );
             })}
-          </motion.div>
+          </m.div>
         )}
       </AnimatePresence>
 
@@ -259,7 +262,7 @@ export default function Composer({
           }}
         />
         <div className="relative mb-0.5 shrink-0">
-          <motion.button
+          <m.button
             onClick={() => setMenu((m) => !m)}
             animate={{ rotate: menu ? 45 : 0 }}
             className="rounded-full p-2.5 text-fg-muted transition-colors hover:bg-bg-soft hover:text-fg"
@@ -268,12 +271,12 @@ export default function Composer({
             title={s.attach}
           >
             <Plus className="size-5" strokeWidth={1.75} />
-          </motion.button>
+          </m.button>
           <AnimatePresence>
             {menu && (
               <>
                 <div className="fixed inset-0 z-10" onClick={() => setMenu(false)} />
-                <motion.div
+                <m.div
                   initial={{ opacity: 0, y: 8, scale: 0.96 }}
                   animate={{ opacity: 1, y: 0, scale: 1 }}
                   exit={{ opacity: 0, y: 8, scale: 0.96 }}
@@ -301,7 +304,7 @@ export default function Composer({
                       </span>
                     </button>
                   ))}
-                </motion.div>
+                </m.div>
               </>
             )}
           </AnimatePresence>
@@ -344,7 +347,7 @@ export default function Composer({
         />
         <AnimatePresence mode="wait" initial={false}>
           {busy ? (
-            <motion.button
+            <m.button
               key="stop"
               initial={{ scale: 0.6, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
@@ -354,9 +357,9 @@ export default function Composer({
               aria-label={s.stop}
             >
               <Square className="size-4 fill-current" />
-            </motion.button>
+            </m.button>
           ) : listening ? (
-            <motion.button
+            <m.button
               key="listening"
               initial={{ scale: 0.6, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
@@ -369,9 +372,9 @@ export default function Composer({
               {[0, 1, 2, 3, 4].map((i) => (
                 <span key={i} className="voice-bar w-[3px] rounded-full bg-current" style={{ animationDelay: `${i * 0.12}s` }} />
               ))}
-            </motion.button>
+            </m.button>
           ) : transcribing ? (
-            <motion.span
+            <m.span
               key="transcribing"
               initial={{ scale: 0.6, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
@@ -382,9 +385,9 @@ export default function Composer({
             >
               <Loader2 className="size-4 animate-spin" />
               {dlPct != null && <span className="text-[11px] tabular-nums">{dlPct}%</span>}
-            </motion.span>
+            </m.span>
           ) : !canSend && voiceOk ? (
-            <motion.button
+            <m.button
               key="mic"
               initial={{ scale: 0.6, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
@@ -396,9 +399,9 @@ export default function Composer({
               title={ar ? "اطلب بصوتك" : "Ask by voice"}
             >
               <Mic className="size-4" strokeWidth={2.25} />
-            </motion.button>
+            </m.button>
           ) : (
-            <motion.button
+            <m.button
               key="send"
               initial={{ scale: 0.6, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
@@ -410,13 +413,13 @@ export default function Composer({
               aria-label={s.send}
             >
               <ArrowUp className="size-4" strokeWidth={2.5} />
-            </motion.button>
+            </m.button>
           )}
         </AnimatePresence>
       </div>
       <AnimatePresence>
         {voiceErr && (
-          <motion.p
+          <m.p
             initial={{ opacity: 0, height: 0 }}
             animate={{ opacity: 1, height: "auto" }}
             exit={{ opacity: 0, height: 0 }}
@@ -424,7 +427,7 @@ export default function Composer({
             onClick={() => setVoiceErr("")}
           >
             {voiceErr}
-          </motion.p>
+          </m.p>
         )}
       </AnimatePresence>
       <ScannerSheet open={scan} lang={lang} onClose={() => setScan(false)} onCode={onCode} />

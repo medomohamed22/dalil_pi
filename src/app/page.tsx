@@ -1,5 +1,10 @@
 import App from "@/components/App";
+import MotionProvider from "@/components/MotionProvider";
 
 export default function Page() {
-  return <App />;
+  return (
+    <MotionProvider>
+      <App />
+    </MotionProvider>
+  );
 }

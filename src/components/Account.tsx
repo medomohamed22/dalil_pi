@@ -1,6 +1,6 @@
 "use client";
 
-import { AnimatePresence, motion } from "framer-motion";
+import { AnimatePresence, m } from "framer-motion";
 import { Check, ExternalLink, Loader2, MapPin, Package, Pencil, Plus, Sparkles, Trash2, X } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { countryLabel, flag, formatMoney, type Strings } from "@/lib/i18n";
@@ -200,8 +200,8 @@ function Sheet({ open, title, onClose, children }: { open: boolean; title: strin
     <AnimatePresence>
       {open && (
         <>
-          <motion.div className="fixed inset-0 z-40 bg-black/30" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={onClose} />
-          <motion.div
+          <m.div className="fixed inset-0 z-40 bg-black/30" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={onClose} />
+          <m.div
             role="dialog"
             aria-label={title}
             initial={{ y: 40, opacity: 0 }}
@@ -216,7 +216,7 @@ function Sheet({ open, title, onClose, children }: { open: boolean; title: strin
               </button>
             </div>
             <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-4">{children}</div>
-          </motion.div>
+          </m.div>
         </>
       )}
     </AnimatePresence>
