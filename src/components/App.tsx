@@ -2,7 +2,7 @@
 
 import { AnimatePresence, m } from "framer-motion";
 import { useLiveQuery } from "dexie-react-hooks";
-import { Camera, Check, Globe2, Loader2, LogOut, MapPin, Menu, Moon, PanelLeft, Plus, Search, ShieldCheck, Sun, Trash2, UserRound, Wallet, X } from "lucide-react";
+import { Camera, Check, Globe2, Loader2, LogOut, MapPin, Menu, Moon, PanelLeft, Plus, Search, ShieldCheck, ShoppingCart, Sun, Trash2, UserRound, Wallet, X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { db, delKV, getKV, loadSettings, requestPersistence, saveSettings, setKV, uid } from "@/lib/db";
 import { countryLabel, flag, t, type Strings } from "@/lib/i18n";
@@ -17,6 +17,10 @@ import Composer, { type ComposerPayload } from "./Composer";
 import Logo from "./Logo";
 import MessageView from "./MessageView";
 import { AnimatedCheck } from "./cards";
+import { Deals } from "./Extras";
+
+const CartSheet = dynamic(() => import("./Extras").then((x) => x.CartSheet), { ssr: false });
+const CheckSheet = dynamic(() => import("./Extras").then((x) => x.CheckSheet), { ssr: false });
 
 interface Config {
   ai: boolean;
@@ -421,6 +425,25 @@ export default function App() {
    */
   const [autoOffer, setAutoOffer] = useState<Offer | null>(null);
   const [accountTab, setAccountTab] = useState<"watch" | "shop" | undefined>();
+  // Universal cart across Pi stores (kept on this device).
+  const [cart, setCart] = useState<Offer[]>([]);
+  const [cartOpen, setCartOpen] = useState(false);
+  const [checkOpen, setCheckOpen] = useState(false);
+  useEffect(() => {
+    void getKV<Offer[]>("cart").then((c) => c && setCart(c));
+  }, []);
+  const saveCart = (next: Offer[]) => {
+    setCart(next);
+    void setKV("cart", next);
+  };
+  const addToCart = (o: Offer) => {
+    if (!cart.some((x) => x.id === o.id || (x.url === o.url && x.store === o.store))) saveCart([...cart, o].slice(-30));
+  };
+  const askShop = async (merchantId: string, question: string): Promise<boolean> => {
+    const r = await authFetch("/api/questions", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ merchantId, question }) });
+    if (!r.ok) setNotice((await r.json().catch(() => ({}))).error ?? `HTTP ${r.status}`);
+    return r.ok;
+  };
   // Link from the merchants page: /?shop=1 opens "My shop" once signed in.
   useEffect(() => {
     if (!me || typeof window === "undefined") return;
@@ -443,8 +466,8 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [me?.uid]);
   /** "Watch price" from a product: saved on the server with the signed price. */
-  const watch = async (o: Offer): Promise<boolean> => {
-    const r = await authFetch("/api/watches", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ offer: o }) });
+  const watch = async (o: Offer, targetPrice?: number | null): Promise<boolean> => {
+    const r = await authFetch("/api/watches", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ offer: o, targetPrice: targetPrice ?? null }) });
     if (!r.ok) setNotice((await r.json().catch(() => ({}))).error ?? `HTTP ${r.status}`);
     return r.ok;
   };
@@ -567,6 +590,18 @@ export default function App() {
         {me && (
           <button
             onClick={() => {
+              setCheckOpen(true);
+              setSidebarOpen(false);
+            }}
+            className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 hover:bg-bg-muted"
+          >
+            <ShieldCheck className="size-4" />
+            {s.checkStore}
+          </button>
+        )}
+        {me && (
+          <button
+            onClick={() => {
               setAccountOpen(true);
               setSidebarOpen(false);
             }}
@@ -662,6 +697,19 @@ export default function App() {
             >
               <span dir="ltr">{ar ? "EN" : "AR"}</span>
             </button>
+            {/* Cart */}
+            {me && (
+              <button
+                onClick={() => setCartOpen(true)}
+                className="relative flex size-9 items-center justify-center rounded-full border border-line hover:bg-bg-soft"
+                aria-label={s.cart}
+                title={s.cart}
+                data-testid="cart-btn"
+              >
+                <ShoppingCart className="size-[17px]" />
+                {cart.length > 0 && <span className="absolute -end-1 -top-1 flex size-4 items-center justify-center rounded-full bg-danger text-[9px] font-bold text-white">{cart.length}</span>}
+              </button>
+            )}
             {/* Account */}
             {me && (
               <button
@@ -693,7 +741,15 @@ export default function App() {
                 onDevSignIn={devSignIn}
               />
             ) : messages.length === 0 ? (
-              <EmptyState s={s} needsKey={config ? !config.ai : false} onPick={(text) => setPrefill({ text, n: Date.now() })} />
+              <EmptyState
+                s={s}
+                lang={lang}
+                needsKey={config ? !config.ai : false}
+                onPick={(text) => setPrefill({ text, n: Date.now() })}
+                onCheck={() => setCheckOpen(true)}
+                country={country}
+                forYou={[...new Set([...conversations.map((c) => c.title), ...(settings.prefs?.brands ? settings.prefs.brands.split(",").map((b) => b.trim()) : [])].filter((t) => t && t.length < 60))].slice(0, 4)}
+              />
             ) : (
               <div className="space-y-7 pt-4">
                 {messages.map((m, idx) => (
@@ -710,6 +766,9 @@ export default function App() {
                       onRetry={idx === messages.length - 1 && !busy ? retry : undefined}
                       onWatch={watch}
                       onAsk={busy ? undefined : followUp}
+                      onCart={addToCart}
+                      inCart={(id) => cart.some((x) => x.id === id)}
+                      onAskShop={askShop}
                     />
                   </div>
                 ))}
@@ -821,6 +880,20 @@ export default function App() {
           </m.div>
         )}
       </AnimatePresence>
+      <CartSheet
+        open={cartOpen}
+        onClose={() => setCartOpen(false)}
+        s={s}
+        lang={lang}
+        items={cart}
+        onRemove={(id) => saveCart(cart.filter((x) => x.id !== id))}
+        onOrder={(o) => {
+          setCartOpen(false);
+          order(o);
+          saveCart(cart.filter((x) => x.id !== o.id));
+        }}
+      />
+      <CheckSheet open={checkOpen} onClose={() => setCheckOpen(false)} s={s} api={authFetch} />
       <AutoOrderSheet
         offer={autoOffer}
         onClose={() => setAutoOffer(null)}
@@ -1068,7 +1141,23 @@ function SignIn({
   );
 }
 
-function EmptyState({ s, needsKey, onPick }: { s: Strings; needsKey: boolean; onPick: (t: string) => void }) {
+function EmptyState({
+  s,
+  lang,
+  needsKey,
+  onPick,
+  onCheck,
+  country,
+  forYou,
+}: {
+  s: Strings;
+  lang: Lang;
+  needsKey: boolean;
+  onPick: (t: string) => void;
+  onCheck: () => void;
+  country?: string;
+  forYou: string[];
+}) {
   return (
     <div className="flex min-h-[calc(100dvh-16rem)] flex-col items-center justify-center py-10 text-center">
       <m.div initial={{ scale: 0.6, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} transition={{ type: "spring", stiffness: 200, damping: 16 }}>
@@ -1097,6 +1186,22 @@ function EmptyState({ s, needsKey, onPick }: { s: Strings; needsKey: boolean; on
           </m.button>
         ))}
       </div>
+      {forYou.length > 0 && (
+        <div className="mt-6 w-full max-w-xl text-start" data-testid="for-you">
+          <div className="mb-2 text-[11px] font-semibold uppercase tracking-widest text-fg-muted">✨ {s.forYou}</div>
+          <div className="flex flex-wrap gap-1.5">
+            {forYou.map((q) => (
+              <button key={q} onClick={() => onPick(q)} className="rounded-full border border-line px-3 py-1 text-[12px] text-fg-soft hover:bg-bg-soft" dir="auto">
+                {s.searchAgain(q)}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+      <button onClick={onCheck} className="mt-6 inline-flex items-center gap-1.5 rounded-full border border-line px-4 py-2 text-[13px] font-medium hover:bg-bg-soft" data-testid="check-open">
+        <ShieldCheck className="size-4" /> {s.checkStore}
+      </button>
+      <Deals s={s} lang={lang} country={country} />
     </div>
   );
 }

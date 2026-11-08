@@ -649,6 +649,7 @@ const FLAG_TEXT: Record<string, { ar: string; en: string }> = {
   price_unverified: { ar: "السعر ده متأكدناش منه من صفحة المتجر", en: "Price not confirmed on the store page" },
   not_priced_in_pi: { ar: "السعر مش بالباي — اتأكد إن المتجر بيقبل باي", en: "Not priced in Pi — check the store accepts Pi" },
   new_domain: { ar: "الموقع جديد (أقل من 6 شهور)", en: "Very new website (under 6 months)" },
+  many_complaints: { ar: "مشترين كتير اشتكوا من المتجر ده", en: "Many buyers reported problems with this store" },
 };
 
 export function ProductCards({
@@ -660,6 +661,9 @@ export function ProductCards({
   ordersLeft,
   onWatch,
   onAsk,
+  onCart,
+  inCart,
+  onAskShop,
 }: {
   offers: Offer[];
   s: Strings;
@@ -668,8 +672,11 @@ export function ProductCards({
   onOrder?: (o: Offer) => void;
   /** Orders left this month (null = unknown). */
   ordersLeft?: number | null;
-  onWatch?: (o: Offer) => Promise<boolean>;
+  onWatch?: (o: Offer, target?: number | null) => Promise<boolean>;
   onAsk?: (text: string) => void;
+  onCart?: (o: Offer) => void;
+  inCart?: (id: string) => boolean;
+  onAskShop?: (merchantId: string, question: string) => Promise<boolean>;
 }) {
   const badgeText: Record<string, string> = {
     cheapest: s.cheapest,
@@ -743,6 +750,7 @@ export function ProductCards({
                 <button type="button" onClick={() => setDetail(o)} className="line-clamp-2 min-h-[2.5rem] text-start text-[13px] leading-snug text-fg-soft hover:text-fg" dir="auto">
                   {o.title}
                 </button>
+                <PriceBadge o={o} s={s} />
                 {twins.get(o.id) && (
                   <div className="text-[11px] text-fg-muted" data-testid="twin">
                     {s.alsoAt(twins.get(o.id)!.store, formatMoney(twins.get(o.id)!.total, twins.get(o.id)!.currency, lang))}
@@ -926,6 +934,9 @@ export function ProductCards({
             ordersLeft={ordersLeft}
             twin={twins.get(detail.id)}
             onWatch={onWatch}
+            onCart={onCart}
+            inCart={inCart}
+            onAskShop={onAskShop}
             onAsk={
               onAsk
                 ? (t) => {
@@ -1021,6 +1032,9 @@ function OfferDetail({
   twin,
   onWatch,
   onAsk,
+  onCart,
+  inCart,
+  onAskShop,
 }: {
   o: Offer;
   s: Strings;
@@ -1029,10 +1043,19 @@ function OfferDetail({
   onOrder?: (o: Offer) => void;
   ordersLeft?: number | null;
   twin?: Offer;
-  onWatch?: (o: Offer) => Promise<boolean>;
+  onWatch?: (o: Offer, target?: number | null) => Promise<boolean>;
   onAsk?: (text: string) => void;
+  onCart?: (o: Offer) => void;
+  inCart?: (id: string) => boolean;
+  onAskShop?: (merchantId: string, question: string) => Promise<boolean>;
 }) {
   const [watched, setWatched] = useState<"idle" | "busy" | "done">("idle");
+  const [target, setTarget] = useState("");
+  const [carted, setCarted] = useState(() => !!inCart?.(o.id));
+  const [askOpen, setAskOpen] = useState(false);
+  const [question, setQuestion] = useState("");
+  const [asked, setAsked] = useState<"idle" | "busy" | "done">("idle");
+  const wa = o.phone ? `https://wa.me/${o.phone.replace(/\D/g, "")}?text=${encodeURIComponent(s.waText(o.title))}` : null;
   const nf = (n: number) => n.toLocaleString(lang === "ar" ? "ar-EG-u-nu-latn" : "en-US");
   const lowTrust = o.trustScore != null && o.trustScore < 40;
   const orderable = !!(onOrder && o.url && o.sig && o.trust !== "suspicious" && !lowTrust && !o.flags.includes("price_unverified") && !o.flags.includes("not_priced_in_pi"));
@@ -1067,6 +1090,30 @@ function OfferDetail({
           <div className="font-medium">{o.distanceKm != null ? nf(o.distanceKm) : o.deliveryDays != null ? nf(o.deliveryDays) : "—"}</div>
         </div>
       </div>
+      {o.priceStats && o.priceStats.days >= 2 && (
+        <div className="rounded-xl border border-line p-3" data-testid="price-history">
+          <div className="mb-1 flex items-center justify-between text-[12px]">
+            {/* history + today's price */}
+            <span className="text-fg-muted">{s.priceHistory(o.priceStats.days + 1, formatMoney(Math.min(o.priceStats.min, o.price), o.currency, lang))}</span>
+            <PriceBadge o={o} s={s} />
+          </div>
+          <Sparkline points={[...o.priceStats.points.map((p) => p.price), o.price]} />
+        </div>
+      )}
+      {o.dalilReviews && (
+        <div className="flex flex-wrap gap-x-3 text-[12px]" data-testid="dalil-reviews">
+          {o.dalilReviews.count > 0 && (
+            <span className="inline-flex items-center gap-1">
+              <Star className="size-3.5 fill-current" /> {s.dalilBuyers(String(o.dalilReviews.avg ?? "—"), o.dalilReviews.count)}
+            </span>
+          )}
+          {o.dalilReviews.disputes > 0 && (
+            <span className="inline-flex items-center gap-1 text-danger">
+              <AlertTriangle className="size-3.5" /> {s.complaints(o.dalilReviews.disputes)}
+            </span>
+          )}
+        </div>
+      )}
       <TrustBreakdown offer={o} s={s} />
       {!!o.reviews?.length && (
         <div className="space-y-1 rounded-xl bg-bg-soft p-3">
@@ -1089,13 +1136,27 @@ function OfferDetail({
           <Navigation className="size-3.5" /> {o.address}
         </a>
       )}
+      {onWatch && o.url && o.sig && !o.flags.includes("price_unverified") && watched === "idle" && (
+        <label className="flex items-center gap-2 text-[12px] text-fg-muted">
+          <span className="shrink-0">{s.targetPrice}</span>
+          <input
+            inputMode="decimal"
+            value={target}
+            onChange={(e) => setTarget(e.target.value.replace(/[^\d.]/g, ""))}
+            dir="ltr"
+            placeholder={String(Math.floor(o.price * 0.9))}
+            className="w-24 rounded-lg border border-line bg-bg px-2 py-1 text-sm outline-none focus:border-fg"
+            data-testid="target-input"
+          />
+        </label>
+      )}
       <div className="flex gap-2">
         {onWatch && o.url && o.sig && !o.flags.includes("price_unverified") && (
           <button
             disabled={watched !== "idle"}
             onClick={async () => {
               setWatched("busy");
-              setWatched((await onWatch(o)) ? "done" : "idle");
+              setWatched((await onWatch(o, Number(target) > 0 ? Number(target) : null)) ? "done" : "idle");
             }}
             className="flex flex-1 items-center justify-center gap-1.5 rounded-2xl border border-line py-2.5 text-[12px] font-medium disabled:opacity-80"
             data-testid="watch-btn"
@@ -1111,6 +1172,57 @@ function OfferDetail({
             )}
           </button>
         )}
+        {onCart && o.url && o.sig && (
+          <button
+            onClick={() => {
+              if (!carted) onCart(o);
+              setCarted(true);
+            }}
+            className="flex flex-1 items-center justify-center gap-1 rounded-2xl border border-line py-2.5 text-[12px] font-medium"
+            data-testid="add-to-cart"
+          >
+            {carted ? <>✓ {s.inCart}</> : <>🛒 {s.addToCart}</>}
+          </button>
+        )}
+      </div>
+      {(o.merchantId && onAskShop) || wa ? (
+        <div className="flex gap-2">
+          {o.merchantId && onAskShop && (
+            <button onClick={() => setAskOpen((x) => !x)} className="flex flex-1 items-center justify-center gap-1 rounded-2xl border border-line py-2.5 text-[12px] font-medium" data-testid="ask-shop">
+              💬 {s.askShop}
+            </button>
+          )}
+          {wa && (
+            <a href={wa} target="_blank" rel="noopener noreferrer" className="flex flex-1 items-center justify-center gap-1 rounded-2xl border border-line py-2.5 text-[12px] font-medium" data-testid="whatsapp">
+              <Phone className="size-3.5" /> {s.whatsapp}
+            </a>
+          )}
+        </div>
+      ) : null}
+      {askOpen && o.merchantId && onAskShop && (
+        <div className="space-y-2 rounded-xl bg-bg-soft p-3">
+          {asked === "done" ? (
+            <p className="flex items-center gap-1.5 text-[12px] text-emerald-700 dark:text-emerald-400">
+              <AnimatedCheck size={16} /> {s.askSent}
+            </p>
+          ) : (
+            <>
+              <textarea value={question} onChange={(e) => setQuestion(e.target.value)} maxLength={500} rows={2} placeholder={s.askPlaceholder} className="w-full rounded-lg border border-line bg-bg px-2 py-1.5 text-sm outline-none" dir="auto" data-testid="ask-input" />
+              <button
+                disabled={question.trim().length < 3 || asked === "busy"}
+                onClick={async () => {
+                  setAsked("busy");
+                  setAsked((await onAskShop(o.merchantId!, question)) ? "done" : "idle");
+                }}
+                className="w-full rounded-lg bg-inv-bg py-1.5 text-[12px] font-semibold text-inv-fg disabled:opacity-50"
+              >
+                {s.send}
+              </button>
+            </>
+          )}
+        </div>
+      )}
+      <div className="flex gap-2">
         {onAsk && (
           <button onClick={() => onAsk(s.moreFromStore(o.store))} className="flex flex-1 items-center justify-center rounded-2xl border border-line py-2.5 text-[12px] font-medium" data-testid="more-from-store">
             {s.moreFromStoreBtn}
@@ -1197,4 +1309,47 @@ function useTwins(offers: Offer[]): Map<string, Offer> {
     if (best) out.set(a.id, best);
   });
   return out;
+}
+
+/** "12% below its usual price" — from the prices Dalil Pi has seen (needs 2+ days of history). */
+function PriceBadge({ o, s }: { o: Offer; s: Strings }) {
+  const st = o.priceStats;
+  if (!st || st.days < 2 || !st.avg) return null;
+  const pct = Math.round(((o.price - st.avg) / st.avg) * 100);
+  if (pct <= -5)
+    return (
+      <span className="inline-flex w-fit items-center rounded-full bg-emerald-600/10 px-2 py-0.5 text-[10.5px] font-semibold text-emerald-700 dark:text-emerald-400" data-testid="price-badge">
+        ↓ {s.belowUsual(-pct)}
+      </span>
+    );
+  if (pct >= 5)
+    return (
+      <span className="inline-flex w-fit items-center rounded-full bg-amber-500/10 px-2 py-0.5 text-[10.5px] font-semibold text-amber-700 dark:text-amber-400" data-testid="price-badge">
+        ↑ {s.aboveUsual(pct)}
+      </span>
+    );
+  return (
+    <span className="text-[10.5px] text-fg-muted" data-testid="price-badge">
+      ≈ {s.usualPrice}
+    </span>
+  );
+}
+
+/** Tiny price chart (oldest → newest). */
+function Sparkline({ points }: { points: number[] }) {
+  if (points.length < 2) return null;
+  const w = 280;
+  const h = 44;
+  const min = Math.min(...points);
+  const max = Math.max(...points);
+  const span = max - min || 1;
+  const xy = points.map((p, i) => [(i / (points.length - 1)) * (w - 8) + 4, h - 6 - ((p - min) / span) * (h - 12)]);
+  const d = xy.map(([x, y], i) => `${i ? "L" : "M"}${x.toFixed(1)},${y.toFixed(1)}`).join(" ");
+  const [lx, ly] = xy.at(-1)!;
+  return (
+    <svg viewBox={`0 0 ${w} ${h}`} className="h-11 w-full text-fg" aria-hidden>
+      <m.path d={d} fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round" strokeLinecap="round" initial={{ pathLength: 0 }} animate={{ pathLength: 1 }} transition={{ duration: 0.6 }} />
+      <circle cx={lx} cy={ly} r="3" className="fill-current" />
+    </svg>
+  );
 }

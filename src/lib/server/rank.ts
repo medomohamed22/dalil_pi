@@ -40,6 +40,7 @@ export interface RawOffer {
   phone?: string;
   lat?: number;
   lon?: number;
+  merchantId?: string;
 }
 
 /** Great-circle distance in km. */
@@ -175,6 +176,7 @@ export function rankOffers(raw: RawOffer[], country: string, piUsd?: number, coo
       reviewCount: r.reviewCount,
       distanceKm: r.distanceKm,
       address: typeof r.address === "string" ? r.address.slice(0, 160) : undefined,
+      merchantId: typeof r.merchantId === "string" && /^[0-9a-f-]{36}$/i.test(r.merchantId) ? r.merchantId : undefined,
       phone: cleanPhone(r.phone),
       lat: okCoord(r.lat, r.lon) ? r.lat : undefined,
       lon: okCoord(r.lat, r.lon) ? r.lon : undefined,

@@ -5,6 +5,8 @@ import { BrowserSession, browserAvailable, type PageState } from "./browser";
 import { streamChat, webSearch, type ChatMsg, type FunctionTool, type MetaConfig } from "./meta";
 import { haversineKm, rankOffers, type RawOffer } from "./rank";
 import { searchMerchants } from "./merchants";
+import { priceStats, recordPrices } from "./community";
+import { normUrl } from "./evidence";
 import { prepareOffers } from "./sign";
 import { MIN_ORDER_TRUST, scoreTrust } from "./trust";
 import { detectWooPi } from "./woo";
@@ -32,6 +34,7 @@ const OFFER_SCHEMA = {
     phone: { type: "string", description: "Physical shop or service: public phone number, if published" },
     lat: { type: "number", description: "Physical shop latitude, only if published (e.g. on Map of Pi / a maps link)" },
     lon: { type: "number", description: "Physical shop longitude, only if published" },
+    merchantId: { type: "string", description: "For results from dalil_merchants: copy its merchant_id (enables 'Ask the shop')" },
     pickup: { type: "boolean" },
     deliveryDays: { type: "number" },
     notes: { type: "string", description: "One short factual line, e.g. 'In stock, official warranty'" },
@@ -566,6 +569,7 @@ async function execTool(
           ctx.evidence.addText(m.items.map((it) => `${it.title} ${it.price} Pi`).join("\n"));
           const distanceKm = here && m.lat != null && m.lon != null ? Math.round(haversineKm(here, { lat: m.lat, lon: m.lon }) * 10) / 10 : undefined;
           return {
+            merchant_id: m.id,
             store: m.name,
             kind: m.kind,
             url: m.website ?? undefined,
@@ -681,6 +685,13 @@ async function execTool(
         const c = [...okOffers].sort((a, b) => a.total - b.total)[0];
         if (c && !c.badges.includes("cheapest")) c.badges.push("cheapest");
       }
+      // Price history: attach 90-day stats, then record today's confirmed prices.
+      const stats = await priceStats(scored.map((o) => o.url ?? "").filter(Boolean)).catch(() => new Map());
+      for (const o of scored) {
+        const st = o.url ? stats.get(normUrl(o.url) ?? "") : undefined;
+        if (st) o.priceStats = st;
+      }
+      await recordPrices(scored, ctx.locale.country);
       const ranked = prepareOffers(scored);
       if (!ranked.length) throw new Error("no valid offers");
       ctx.state.offersShown = true;

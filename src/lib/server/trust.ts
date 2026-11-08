@@ -100,9 +100,11 @@ export function trustFrom(parts: TrustParts, flags: string[]): number {
 /** Adds trustScore + trustParts to every offer (and the low_trust flag under 40). */
 export async function scoreTrust(offers: Offer[], opts: { lookupAge?: boolean } = {}): Promise<Offer[]> {
   const domains = [...new Set(offers.map((o) => o.storeDomain).filter(Boolean) as string[])];
-  const [ages, record] = await Promise.all([
+  const { storeSignals } = await import("./community"); // lazy: avoids an import cycle with orders
+  const [ages, record, signals] = await Promise.all([
     opts.lookupAge === false ? Promise.resolve(new Map<string, number | null>()) : Promise.all(domains.slice(0, 8).map(async (d) => [d, await domainAgeYears(d)] as const)).then((x) => new Map(x)),
     fulfilment(domains),
+    storeSignals(offers.map((o) => ({ domain: o.storeDomain, name: o.store }))).catch(() => new Map()),
   ]);
   const pi = offers.filter((o) => o.currency === "PI").map((o) => o.total);
   const med = median(pi.length ? pi : offers.map((o) => o.total));
@@ -111,8 +113,12 @@ export async function scoreTrust(offers: Offer[], opts: { lookupAge?: boolean } 
     const d = o.storeDomain;
     // A Pi payment method in the store's own checkout is first-hand evidence it takes Pi.
     const official = o.trust === "verified" ? 1 : o.checkout === "woo_pi" ? 0.8 : o.piEvidence ? 0.5 : 0;
-    const n = o.reviewCount ?? 0;
-    const bayes = o.rating ? (o.rating * n + 3.6 * 20) / (n + 20) : 3.4;
+    const sig = signals.get(o.storeDomain ?? o.store.toLowerCase());
+    // Verified Dalil Pi buyer reviews count 3× a store-page review.
+    const dn = (sig?.reviews ?? 0) * 3;
+    const n = (o.reviewCount ?? 0) + dn;
+    const sum = (o.rating ?? 0) * (o.reviewCount ?? 0) + (sig?.avg ?? 0) * dn;
+    const bayes = n ? (sum + 3.6 * 20) / (n + 20) : o.rating ? o.rating : 3.4;
     const reviews = clamp01((bayes - 2.5) / 2.5);
     const wallet = onDomain(d, ESCROW) ? 0.9 : o.trust === "verified" ? 0.7 : o.checkout === "woo_pi" ? 0.6 : 0.35;
     const ratio = med > 0 ? o.total / med : 1;
@@ -137,8 +143,16 @@ export async function scoreTrust(offers: Offer[], opts: { lookupAge?: boolean } 
     if (age != null && age < 0.5 && !flags.includes("new_domain")) flags.push("new_domain");
     let trustScore = trustFrom(parts, flags);
     if (flags.includes("new_domain")) trustScore = Math.max(0, trustScore - 10);
+    // Problems reported by Dalil Pi buyers: −10 each (max −40); 3+ = not recommended.
+    if (sig?.disputes) {
+      trustScore = Math.max(0, trustScore - Math.min(40, sig.disputes * 10));
+      if (sig.disputes >= 3) {
+        trustScore = Math.min(trustScore, 35);
+        if (!flags.includes("many_complaints")) flags.push("many_complaints");
+      }
+    }
     if (o.trust === "suspicious") trustScore = Math.min(trustScore, 30);
     if (trustScore < MIN_ORDER_TRUST && !flags.includes("low_trust")) flags.push("low_trust");
-    return { ...o, flags, trustScore, trustParts: parts };
+    return { ...o, flags, trustScore, trustParts: parts, ...(sig && (sig.reviews || sig.disputes) ? { dalilReviews: { count: sig.reviews, avg: sig.avg, disputes: sig.disputes } } : {}) };
   });
 }

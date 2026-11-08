@@ -61,6 +61,12 @@ export interface Offer {
   trust: TrustLevel;
   /** Store trust score 0–100 (server-computed). Under 40 = no Order button. */
   trustScore?: number;
+  /** Price history (not signed — display only). */
+  priceStats?: PriceStats;
+  /** Dalil Pi buyer reviews / reported problems for this store. */
+  dalilReviews?: { count: number; avg: number | null; disputes: number };
+  /** Registered Dalil Pi merchant (for "Ask the shop"). */
+  merchantId?: string;
   /** "woo_pi": the store's own checkout takes Pi — Dalil Pi can place the order for you. */
   checkout?: "woo_pi";
   trustParts?: TrustParts;
@@ -169,6 +175,34 @@ export interface Merchant {
   status: "pending" | "approved" | "rejected";
 }
 
+/** Result of "Is this store safe?". */
+export interface StoreCheck {
+  name: string;
+  url?: string;
+  score: number;
+  verdict: "safe" | "caution" | "risky" | "scam";
+  reasons: { ok: boolean; key: string; value?: number; avg?: number }[];
+}
+
+/** 90-day price history of a product (from prices Dalil Pi has seen). */
+export interface PriceStats {
+  points: { day: string; price: number }[];
+  min: number;
+  max: number;
+  avg: number;
+  days: number;
+}
+
+/** A question to a registered shop ("Ask the shop"). */
+export interface ShopQuestion {
+  id: string;
+  shop: string;
+  question: string;
+  answer?: string | null;
+  answeredAt?: string | null;
+  createdAt: string;
+}
+
 /** A product on the user's watchlist (price-drop alerts). */
 export interface Watch {
   id: string;
@@ -185,6 +219,9 @@ export interface Watch {
   droppedAt: string | null;
   /** A drop the user hasn't seen yet. */
   newDrop: boolean;
+  /** Alert when the price reaches this (optional). */
+  targetPrice?: number | null;
+  targetHit?: boolean;
 }
 
 /** A plan in the shop, priced live in Pi from the OKX rate. */

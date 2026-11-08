@@ -21,6 +21,9 @@ export default function MessageView({
   onRetry,
   onWatch,
   onAsk,
+  onCart,
+  inCart,
+  onAskShop,
 }: {
   msg: ChatMessage;
   live: boolean;
@@ -32,8 +35,11 @@ export default function MessageView({
   /** Only on the latest finished answer: quick follow-up chips / retry. */
   onFollowUp?: (text: string) => void;
   onRetry?: () => void;
-  onWatch?: (o: Offer) => Promise<boolean>;
+  onWatch?: (o: Offer, target?: number | null) => Promise<boolean>;
   onAsk?: (text: string) => void;
+  onCart?: (o: Offer) => void;
+  inCart?: (id: string) => boolean;
+  onAskShop?: (merchantId: string, question: string) => Promise<boolean>;
 }) {
   if (msg.role === "user") {
     const texts = msg.blocks.filter((b): b is Extract<Block, { type: "text" }> => b.type === "text");
@@ -102,7 +108,7 @@ export default function MessageView({
                 </div>
               );
             case "products":
-              return <ProductCards key={i} offers={b.offers} s={s} lang={lang} city={city} onOrder={onOrder} ordersLeft={ordersLeft} onWatch={onWatch} onAsk={onAsk} />;
+              return <ProductCards key={i} offers={b.offers} s={s} lang={lang} city={city} onOrder={onOrder} ordersLeft={ordersLeft} onWatch={onWatch} onAsk={onAsk} onCart={onCart} inCart={inCart} onAskShop={onAskShop} />;
             case "link":
               return <LinkCard key={i} preview={b.preview} lang={lang} />;
             case "browser":

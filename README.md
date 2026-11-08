@@ -23,14 +23,16 @@ AI shopping agent for Pi Network. Tell it what you need; it searches stores that
 PayPal features from Dalil (holds, refunds, watches, family, group buy, demo tour) were removed.
 
 ## Setup
-1. **Supabase**: create a project → SQL editor → run the files in [`supabase/migrations`](supabase/migrations) in order (`0001` … `0008`). Plan quotas live in the `plans` table. Every paid plan or top-up is a 30-day pack in `subscriptions`; unused searches/orders expire with it. Copy the project URL and the **service-role** key.
+1. **Supabase**: create a project → SQL editor → run the files in [`supabase/migrations`](supabase/migrations) in order (`0001` … `0009`). Plan quotas live in the `plans` table. Every paid plan or top-up is a 30-day pack in `subscriptions`; unused searches/orders expire with it. Copy the project URL and the **service-role** key.
 2. **Pi Developer Portal** (open `develop.pi` in the Pi Browser): create a **Testnet** app, set its URL to your Vercel URL, copy the **Server API Key**. To test in a desktop browser, open the app's sandbox link (`https://sandbox.minepi.com/...`) and authorize the sandbox from the Pi app.
 3. **Vercel**: create a **new** project from this repository (not the PayPal one) and add the variables from [`.env.example`](.env.example):
    `META_API_KEY`, `PI_API_KEY`, `PI_NETWORK=testnet`, `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `OFFER_SIGNING_SECRET` (new: `openssl rand -hex 32`). Add `NEXT_PUBLIC_PI_SANDBOX=true` (as a config value, not a secret) only if you test through the desktop Pi Sandbox; leave it out to test in the Pi Browser. Tick every environment (Production, Preview, Development) so branch deployments get the variables too.
 4. Deploy, then check `GET /api/config` → `ai: true`, `pi.configured: true`, `database: true`.
 5. Add `CRON_SECRET` (any long random string) so the daily job (`/api/cron/daily`: cleanup, keeps the free Supabase project awake, price-drop checks) runs. Enable **Speed Insights** and **Web Analytics** in the Vercel dashboard.
 6. Merchants who register on `/merchants` start as `pending` — approve them in Supabase → Table editor → `merchants` → `status = approved` (or set `MERCHANTS_AUTO_APPROVE=1`).
-7. Optional, once the partners give access: Map of Pi and Salla Shop data APIs (`MAPOFPI_API_URL`, `SALLA_API_URL`, …) — see [`docs/PARTNER_APIS.md`](docs/PARTNER_APIS.md), including the request messages to send them. `/api/config` then shows `partners.mapOfPi` / `partners.sallaApi` = `true`.
+7. Telegram notifications: create a bot with @BotFather, add `TELEGRAM_BOT_TOKEN`, `TELEGRAM_BOT_USERNAME`, `TELEGRAM_WEBHOOK_SECRET` in Vercel, redeploy, then run once:
+   `curl -H "Authorization: Bearer $CRON_SECRET" https://<your-domain>/api/telegram/setup` (registers the webhook). Users connect in My account → Preferences → "Connect Telegram"; the daily cron sends each one a digest.
+8. Optional, once the partners give access: Map of Pi and Salla Shop data APIs (`MAPOFPI_API_URL`, `SALLA_API_URL`, …) — see [`docs/PARTNER_APIS.md`](docs/PARTNER_APIS.md), including the request messages to send them. `/api/config` then shows `partners.mapOfPi` / `partners.sallaApi` = `true`.
 
 ## Run locally
 ```bash

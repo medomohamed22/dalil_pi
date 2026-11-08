@@ -6,10 +6,10 @@ import { useCallback, useEffect, useState } from "react";
 import { countryLabel, flag, formatMoney, type Strings } from "@/lib/i18n";
 import { piPay } from "@/lib/pi-client";
 import { AnimatedCheck } from "./cards";
-import type { Address, Lang, Me, Merchant, Offer, Order, PaidPlanId, PlanOffer, Settings, Usage, Watch } from "@/lib/types";
+import type { Address, Lang, Me, Merchant, Offer, Order, PaidPlanId, PlanOffer, Settings, ShopQuestion, Usage, Watch } from "@/lib/types";
 
-type Tab = "plan" | "addresses" | "orders" | "watch" | "prefs" | "shop";
-const TABS: Tab[] = ["plan", "watch", "orders", "addresses", "prefs", "shop"];
+type Tab = "plan" | "addresses" | "orders" | "watch" | "prefs" | "shop" | "messages";
+const TABS: Tab[] = ["plan", "watch", "orders", "messages", "addresses", "prefs", "shop"];
 
 type Fetch = (url: string, init?: RequestInit) => Promise<Response>;
 
@@ -263,7 +263,16 @@ export function AccountSheet({
   const { addresses, reload } = useAddresses(api, open && !!me);
   const [editing, setEditing] = useState<Address | "new" | null>(null);
   const [orders, setOrders] = useState<Order[] | null>(null);
+  const [fb, setFb] = useState<{ reviewed: string[]; reported: string[] }>({ reviewed: [], reported: [] });
+  const loadFeedback = useCallback(async () => {
+    try {
+      setFb(await json<{ reviewed: string[]; reported: string[] }>(await api("/api/feedback")));
+    } catch {
+      /* ignore */
+    }
+  }, [api]);
   const loadOrders = useCallback(async () => {
+    void loadFeedback();
     try {
       setOrders((await json<{ orders: Order[] }>(await api("/api/orders"))).orders);
     } catch {
@@ -299,7 +308,7 @@ export function AccountSheet({
             }}
             className={`rounded-full border px-3 py-1 text-[12px] font-medium ${tab === k ? "border-fg bg-inv-bg text-inv-fg" : "border-line text-fg-soft"}`}
           >
-            {k === "plan" ? s.plan : k === "addresses" ? s.addresses : k === "orders" ? s.orders : k === "watch" ? s.watchlist : k === "shop" ? s.myShop : s.prefs}
+            {k === "plan" ? s.plan : k === "addresses" ? s.addresses : k === "orders" ? s.orders : k === "watch" ? s.watchlist : k === "shop" ? s.myShop : k === "messages" ? s.messages : s.prefs}
           </button>
         ))}
       </div>
@@ -371,7 +380,13 @@ export function AccountSheet({
         ))}
 
       {tab === "watch" && <WatchList s={s} lang={lang} api={api} onSeen={onWatchesSeen} />}
-      {tab === "prefs" && <Prefs s={s} settings={settings} onSettings={onSettings} />}
+      {tab === "prefs" && (
+        <>
+          <Telegram s={s} api={api} />
+          <Prefs s={s} settings={settings} onSettings={onSettings} />
+        </>
+      )}
+      {tab === "messages" && <Messages s={s} api={api} lang={lang} />}
       {tab === "shop" && <MyShop s={s} api={api} country={country} />}
 
       {tab === "orders" && (
@@ -417,6 +432,7 @@ export function AccountSheet({
                     </button>
                   )}
                 </div>
+                <OrderFeedback o={o} s={s} api={api} fb={fb} onDone={loadFeedback} />
               </div>
             ))
           )}
@@ -695,7 +711,13 @@ function WatchList({ s, lang, api, onSeen }: { s: Strings; lang: Lang; api: Fetc
                   </span>
                 )}
               </div>
-              {(down || w.newDrop) && <span className="mt-0.5 inline-block rounded-full bg-emerald-600/10 px-2 py-0.5 text-[10px] font-semibold text-emerald-700 dark:text-emerald-400">{s.dropBadge}</span>}
+              {(down || w.newDrop) && !w.targetHit && <span className="mt-0.5 inline-block rounded-full bg-emerald-600/10 px-2 py-0.5 text-[10px] font-semibold text-emerald-700 dark:text-emerald-400">{s.dropBadge}</span>}
+              {w.targetHit && <span className="mt-0.5 inline-block rounded-full bg-emerald-600 px-2 py-0.5 text-[10px] font-semibold text-white" data-testid="target-hit">🎯 {s.targetHit}</span>}
+              {w.targetPrice != null && !w.targetHit && (
+                <span className="ms-1 mt-0.5 inline-block rounded-full bg-bg-muted px-2 py-0.5 text-[10px] font-semibold" dir="ltr">
+                  🎯 {s.targetBadge(formatMoney(w.targetPrice, w.currency, lang))}
+                </span>
+              )}
             </div>
             <button onClick={() => remove(w)} aria-label={s.delete} className="rounded-full p-1.5 text-fg-muted hover:bg-bg-soft">
               <Trash2 className="size-4" />
@@ -873,6 +895,197 @@ function MyShop({ s, api, country }: { s: Strings; api: Fetch; country: string }
       <button onClick={save} disabled={busy || f.name.trim().length < 2} className="flex w-full items-center justify-center gap-1.5 rounded-xl bg-inv-bg py-2.5 text-sm font-semibold text-inv-fg disabled:opacity-50">
         {busy ? <Loader2 className="size-4 animate-spin" /> : m ? s.shopUpdate : s.shopSubmit}
       </button>
+    </div>
+  );
+}
+
+/* ---------------- Order feedback: review the store / report a problem ---------------- */
+
+function OrderFeedback({ o, s, api, fb, onDone }: { o: Order; s: Strings; api: Fetch; fb: { reviewed: string[]; reported: string[] }; onDone: () => void }) {
+  const [mode, setMode] = useState<"" | "review" | "report">("");
+  const [rating, setRating] = useState(5);
+  const [kind, setKind] = useState("not_delivered");
+  const [text, setText] = useState("");
+  const [msg, setMsg] = useState("");
+  const canReview = ["paid", "shipped", "delivered"].includes(o.status) && !fb.reviewed.includes(o.id);
+  const canReport = o.status !== "draft" && o.status !== "cancelled" && !fb.reported.includes(o.id);
+  if (msg) return <p className="mt-2 flex items-center gap-1.5 text-[11px] text-emerald-700 dark:text-emerald-400"><AnimatedCheck size={14} /> {msg}</p>;
+  if (!canReview && !canReport) return null;
+  const send = async () => {
+    const r =
+      mode === "review"
+        ? await api("/api/reviews", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ orderId: o.id, rating, comment: text || null }) })
+        : await api("/api/disputes", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ orderId: o.id, kind, details: text || null }) });
+    if (r.ok) {
+      setMsg(mode === "review" ? s.reviewThanks : s.reportThanks);
+      onDone();
+    } else setMsg(((await r.json().catch(() => ({}))) as { error?: string }).error ?? `HTTP ${r.status}`);
+  };
+  return (
+    <div className="mt-2 space-y-2" data-testid="order-feedback">
+      <div className="flex gap-1.5">
+        {canReview && (
+          <button onClick={() => setMode(mode === "review" ? "" : "review")} className="rounded-lg border border-line px-2.5 py-1 text-[11px] font-medium" data-testid="rate-store">
+            ⭐ {s.rateStore}
+          </button>
+        )}
+        {canReport && (
+          <button onClick={() => setMode(mode === "report" ? "" : "report")} className="rounded-lg border border-danger/40 px-2.5 py-1 text-[11px] font-medium text-danger" data-testid="report-problem">
+            ⚠️ {s.reportProblem}
+          </button>
+        )}
+      </div>
+      {mode && (
+        <div className="space-y-2 rounded-xl bg-bg-soft p-2.5">
+          {mode === "review" ? (
+            <div className="flex gap-1" role="radiogroup" aria-label={s.rateStore}>
+              {[1, 2, 3, 4, 5].map((n) => (
+                <button key={n} role="radio" aria-checked={rating === n} onClick={() => setRating(n)} className={`text-xl ${n <= rating ? "" : "opacity-25"}`} aria-label={`${n}`}>
+                  ★
+                </button>
+              ))}
+            </div>
+          ) : (
+            <select value={kind} onChange={(e) => setKind(e.target.value)} className="w-full rounded-lg border border-line bg-bg px-2 py-1.5 text-sm" data-testid="problem-kind">
+              {Object.entries(s.problemKinds).map(([k, v]) => (
+                <option key={k} value={k}>
+                  {v}
+                </option>
+              ))}
+            </select>
+          )}
+          <textarea value={text} onChange={(e) => setText(e.target.value)} rows={2} maxLength={500} placeholder={s.commentOptional} className="w-full rounded-lg border border-line bg-bg px-2 py-1.5 text-sm outline-none" dir="auto" />
+          <button onClick={send} className="w-full rounded-lg bg-inv-bg py-1.5 text-[12px] font-semibold text-inv-fg" data-testid="feedback-send">
+            {s.send}
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ---------------- Messages: my questions + my shop's inbox ---------------- */
+
+function Messages({ s, api, lang }: { s: Strings; api: Fetch; lang: Lang }) {
+  const [mine, setMine] = useState<ShopQuestion[] | null>(null);
+  const [inbox, setInbox] = useState<ShopQuestion[]>([]);
+  const [draft, setDraft] = useState<Record<string, string>>({});
+  const load = useCallback(async () => {
+    const [a, b] = await Promise.all([
+      json<{ questions: ShopQuestion[] }>(await api("/api/questions")).catch(() => ({ questions: [] })),
+      json<{ questions: ShopQuestion[] }>(await api("/api/merchants/inbox")).catch(() => ({ questions: [] })),
+    ]);
+    setMine(a.questions);
+    setInbox(b.questions);
+  }, [api]);
+  useEffect(() => {
+    void load();
+  }, [load]);
+  const answer = async (id: string) => {
+    await api("/api/merchants/inbox", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id, answer: draft[id] }) });
+    await load();
+  };
+  const day = (iso: string) => new Date(iso).toLocaleDateString(lang === "ar" ? "ar-EG-u-nu-latn" : "en-US", { day: "numeric", month: "short" });
+  if (mine === null) return <Loader2 className="mx-auto size-5 animate-spin text-fg-muted" />;
+  return (
+    <div className="space-y-3" data-testid="messages">
+      {inbox.length > 0 && (
+        <div className="space-y-2">
+          <div className="text-[11px] font-semibold uppercase tracking-widest text-fg-muted">{s.shopInbox}</div>
+          {inbox.map((q) => (
+            <div key={q.id} className="rounded-2xl border border-line p-3 text-[13px]" data-testid="inbox-row">
+              <div dir="auto">❓ {q.question}</div>
+              {q.answer ? (
+                <div className="mt-1 text-fg-soft" dir="auto">
+                  ↳ {q.answer}
+                </div>
+              ) : (
+                <div className="mt-2 flex gap-2">
+                  <input value={draft[q.id] ?? ""} onChange={(e) => setDraft((d) => ({ ...d, [q.id]: e.target.value }))} className="min-w-0 flex-1 rounded-lg border border-line bg-bg px-2 py-1 text-sm" dir="auto" data-testid="answer-input" />
+                  <button onClick={() => answer(q.id)} disabled={!draft[q.id]?.trim()} className="rounded-lg bg-inv-bg px-3 text-[12px] font-semibold text-inv-fg disabled:opacity-50">
+                    {s.answer}
+                  </button>
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+      {!mine.length && !inbox.length && <p className="py-4 text-center text-sm text-fg-muted">{s.noMessages}</p>}
+      {mine.map((q) => (
+        <div key={q.id} className="rounded-2xl border border-line p-3 text-[13px]" data-testid="question-row">
+          <div className="text-[11px] text-fg-muted">
+            {q.shop} · {day(q.createdAt)}
+          </div>
+          <div dir="auto">❓ {q.question}</div>
+          <div className={`mt-1 ${q.answer ? "text-fg" : "text-fg-muted"}`} dir="auto">
+            {q.answer ? `💬 ${q.answer}` : `⏳ ${s.waiting}`}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/* ---------------- Telegram notifications ---------------- */
+
+function Telegram({ s, api }: { s: Strings; api: Fetch }) {
+  const [st, setSt] = useState<{ configured: boolean; linked: boolean } | null>(null);
+  const [opened, setOpened] = useState(false);
+  const load = useCallback(async () => {
+    try {
+      setSt(await json<{ configured: boolean; linked: boolean }>(await api("/api/telegram/link")));
+    } catch {
+      setSt({ configured: false, linked: false });
+    }
+  }, [api]);
+  useEffect(() => {
+    void load();
+    const again = () => document.visibilityState === "visible" && void load();
+    document.addEventListener("visibilitychange", again);
+    return () => document.removeEventListener("visibilitychange", again);
+  }, [load]);
+  const connect = async () => {
+    const w = window.open("about:blank", "_blank");
+    try {
+      const { url } = await json<{ url: string }>(await api("/api/telegram/link", { method: "POST" }));
+      if (w) w.location.href = url;
+      else window.location.href = url;
+      setOpened(true);
+    } catch {
+      w?.close();
+    }
+  };
+  if (!st) return null;
+  return (
+    <div className="mb-4 space-y-2 rounded-2xl border border-line p-3" data-testid="telegram">
+      <div className="text-[13px] font-semibold">🔔 {s.notifications}</div>
+      <p className="text-[12px] leading-relaxed text-fg-muted">{s.tgIntro}</p>
+      {!st.configured ? (
+        <p className="text-[12px] text-fg-muted">{s.tgNotReady}</p>
+      ) : st.linked ? (
+        <div className="flex items-center justify-between">
+          <span className="text-[12px] font-medium text-emerald-700 dark:text-emerald-400" data-testid="tg-linked">
+            {s.tgConnected}
+          </span>
+          <button
+            onClick={async () => {
+              await api("/api/telegram/link", { method: "DELETE" });
+              await load();
+            }}
+            className="text-[12px] text-fg-muted underline"
+          >
+            {s.tgDisconnect}
+          </button>
+        </div>
+      ) : (
+        <>
+          <button onClick={connect} className="w-full rounded-xl bg-[#229ED9] py-2 text-sm font-semibold text-white" data-testid="tg-connect">
+            ✈️ {s.tgConnect}
+          </button>
+          {opened && <p className="text-[11px] text-fg-muted">{s.tgOpened}</p>}
+        </>
+      )}
     </div>
   );
 }

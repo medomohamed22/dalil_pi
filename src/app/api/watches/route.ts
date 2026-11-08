@@ -20,7 +20,10 @@ export async function GET(req: Request) {
   }
 }
 
-const Body = z.object({ offer: z.object({ sig: z.string(), title: z.string(), store: z.string(), price: z.number(), currency: z.string() }).passthrough() });
+const Body = z.object({
+  offer: z.object({ sig: z.string(), title: z.string(), store: z.string(), price: z.number(), currency: z.string() }).passthrough(),
+  targetPrice: z.number().positive().max(10_000_000).nullish(),
+});
 
 /** Watch a product from a (server-signed) card. */
 export async function POST(req: Request) {
@@ -30,7 +33,7 @@ export async function POST(req: Request) {
   if (s instanceof Response) return s;
   try {
     const body = Body.parse(await req.json());
-    return Response.json({ watch: await addWatch(s.uid, body.offer as unknown as Offer) }, { status: 201 });
+    return Response.json({ watch: await addWatch(s.uid, body.offer as unknown as Offer, body.targetPrice) }, { status: 201 });
   } catch (err) {
     return errorJson(err);
   }

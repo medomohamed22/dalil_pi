@@ -146,3 +146,10 @@ export async function searchMerchants(opts: { country: string; query?: string; k
   }
   return rows.filter((m) => (!opts.kind || m.kind === opts.kind) && match(m)).slice(0, opts.limit ?? 8).map(toMerchant);
 }
+
+/** Shop name by id (approved or not) — used for question lists. */
+export async function getMerchantName(id: string): Promise<string | null> {
+  if (!supabaseEnabled) return mem.find((m) => m.id === id)?.name ?? null;
+  const { data } = await supabase().from("merchants").select("name").eq("id", id).maybeSingle();
+  return (data?.name as string) ?? null;
+}
