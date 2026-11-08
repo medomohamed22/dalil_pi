@@ -13,7 +13,9 @@ export interface StoreEntry {
   /** Brand colours for the monogram logo (no third-party logos are hot-linked). */
   color: string;
   mono: string;
-  source?: "pcm" | "salla" | "gtp";
+  /** The store's own logo (from its site/app icon), served from /public/stores. */
+  logo?: string;
+  source?: "pcm" | "salla" | "gtp" | "pkt";
   partner?: boolean;
   regions: { en: string; ar: string };
   about: { en: string; ar: string };
@@ -30,6 +32,7 @@ export const STORE_DIRECTORY: StoreEntry[] = [
     kind: "marketplace",
     color: "#5B2A86",
     mono: "π",
+    logo: "/stores/pcm.webp",
     source: "pcm",
     regions: { en: "Worldwide · global sale", ar: "كل الدول · بيع دولي" },
     about: { en: "Pi Network's global marketplace — Pi Hackathon winner.", ar: "سوق باي العالمي — فايز في هاكاثون باي." },
@@ -41,6 +44,7 @@ export const STORE_DIRECTORY: StoreEntry[] = [
     kind: "marketplace",
     color: "#0E7C66",
     mono: "S",
+    logo: "/stores/salla.webp",
     source: "salla",
     regions: { en: "Egypt · Middle East · Africa", ar: "مصر · الشرق الأوسط · أفريقيا" },
     about: { en: "Multi-vendor Pi mall with Pi SDK checkout and buyer protection.", ar: "مول متعدد البائعين بدفع باي وحماية للمشتري." },
@@ -52,6 +56,7 @@ export const STORE_DIRECTORY: StoreEntry[] = [
     kind: "marketplace",
     color: "#1D4E89",
     mono: "G",
+    logo: "/stores/gtp.webp",
     source: "gtp",
     regions: { en: "Sellers worldwide", ar: "بائعين من كل الدول" },
     about: { en: "Small global Pi marketplace — goods and digital items.", ar: "سوق باي عالمي صغير — منتجات وحاجات رقمية." },
@@ -59,12 +64,14 @@ export const STORE_DIRECTORY: StoreEntry[] = [
   {
     id: "piketplace",
     name: "Piketplace",
-    url: "https://piketplace.com",
+    url: "https://mpiket.pinet.com",
     kind: "marketplace",
     color: "#E4572E",
     mono: "P",
-    regions: { en: "Worldwide", ar: "كل الدول" },
-    about: { en: "Peer-to-peer Pi marketplace. Search it with Ask Dalil.", ar: "سوق باي بين الأفراد. دوّر فيه من «اسأل دليل»." },
+    logo: "/stores/piketplace.webp",
+    source: "pkt",
+    regions: { en: "Many countries · shipping in Pi", ar: "دول كتير · شحن بالباي" },
+    about: { en: "Pi marketplace with thousands of sellers' products.", ar: "سوق باي فيه منتجات آلاف البائعين." },
   },
   {
     id: "salla-local",
@@ -73,6 +80,7 @@ export const STORE_DIRECTORY: StoreEntry[] = [
     kind: "local",
     color: "#0E7C66",
     mono: "SL",
+    logo: "/stores/salla.webp",
     nearMe: true,
     countries: ["EG"],
     regions: { en: "Egypt · pay in shops", ar: "مصر · ادفع في المحلات" },
@@ -85,6 +93,7 @@ export const STORE_DIRECTORY: StoreEntry[] = [
     kind: "local",
     color: "#2E7D32",
     mono: "M",
+    logo: "/stores/mapofpi.webp",
     nearMe: true,
     regions: { en: "Local shops worldwide", ar: "محلات في كل الدول" },
     about: { en: "Map of shops that accept Pi.", ar: "خريطة المحلات اللي بتقبل باي." },
@@ -96,6 +105,7 @@ export const STORE_DIRECTORY: StoreEntry[] = [
     kind: "services",
     color: "#7B3FE4",
     mono: "S",
+    logo: "/stores/servara.webp",
     countries: ["PH", "JP", "IN", "US"],
     regions: { en: "Philippines · Japan · India · USA", ar: "الفلبين · اليابان · الهند · أمريكا" },
     about: { en: "Local and remote services paid in Pi.", ar: "خدمات محلية وأونلاين بالباي." },
@@ -107,6 +117,7 @@ export const STORE_DIRECTORY: StoreEntry[] = [
     kind: "marketplace",
     color: "#C62828",
     mono: "H",
+    logo: "/stores/hupi.webp",
     countries: ["VN"],
     regions: { en: "Vietnam · Pi cashback", ar: "فيتنام · استرداد باي" },
     about: { en: "Buy on Shopee/TikTok Shop/Lazada and get Pi cashback.", ar: "اشتري من شوبي وتيك توك شوب ولازادا واسترد باي." },
@@ -118,6 +129,7 @@ export const STORE_DIRECTORY: StoreEntry[] = [
     kind: "marketplace",
     color: "#AD1457",
     mono: "U",
+    logo: "/stores/314159u.webp",
     countries: ["CN"],
     regions: { en: "China", ar: "الصين" },
     about: { en: "Chinese Pi marketplace.", ar: "سوق باي صيني." },

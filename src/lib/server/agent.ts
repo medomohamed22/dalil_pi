@@ -73,7 +73,7 @@ const INDEX_TOOL: FunctionTool = {
   function: {
     name: "search_dalil_index",
     description:
-      "INSTANT search (<1 s) across Dalil Index: our own up-to-date copy of the whole catalogs of the trusted Pi stores — Pi Chain Mall (pipcm.com), Salla Shop Mall (mall.salla-shop.com) and Global Trade Pi. Returns exact product links, Pi prices (current), images, stock and descriptions; Arabic and English both match, typos are tolerated. ALWAYS call it FIRST, alone, for any product request. Pass 1-3 short keyword queries (e.g. [\"wireless headphones\", \"سماعة\"]).",
+      "INSTANT search (<1 s) across Dalil Index: our own up-to-date copy of the whole catalogs of the trusted Pi stores — Pi Chain Mall (pipcm.com), Salla Shop Mall (mall.salla-shop.com), Piketplace (mpiket.pinet.com) and Global Trade Pi. Returns exact product links, Pi prices (current), images, stock and descriptions; Arabic and English both match, typos are tolerated. ALWAYS call it FIRST, alone, for any product request. Pass 1-3 short keyword queries (e.g. [\"wireless headphones\", \"سماعة\"]).",
     parameters: {
       type: "object",
       properties: {
@@ -310,7 +310,7 @@ Where Pi is accepted (check these first; they take payment in Pi):
 - Salla Shop Mall — https://mall.salla-shop.com (multi-vendor Pi marketplace from Egypt; ships across Egypt, the Middle East and Africa; also services: Telegram Stars/Premium, Salla Care, Salla Go, food, Salla Swap). Its whole catalog is in search_dalil_index; the live search_salla tool is the fallback (and covers merchant products and services) — never guess Salla URLs.
 - Shops registered with Dalil Pi: search them with the dalil_merchants tool in your first turn (approved merchants that accept Pi, with Pi prices).
 - Stores using the Sallanet Pay gateway (WooCommerce stores that accept Pi at checkout).
-- Smaller Pi marketplaces: search them with search_pi_marketplaces (Global Trade Pi). Piketplace (https://piketplace.com — global incl. Egypt; slow, some π prices are inflated, compare before recommending), and Pi Mainnet commerce apps on *.pinet.com.${regionalMarkets(loc.country)}
+- Smaller Pi marketplaces: search them with search_pi_marketplaces (Global Trade Pi). Piketplace (https://mpiket.pinet.com — many sellers incl. Egypt; it is in search_dalil_index with shipping fees; some π prices are inflated, compare before recommending), and Pi Mainnet commerce apps on *.pinet.com.${regionalMarkets(loc.country)}
 - Not usable: ZINMART (prices in ZYN, not Pi), CarPiZone (testnet demo listings), Pimoon, Bazarpi, LoveonPi (sites down). Never present them as Pi stores.
 - Local physical shops (only when the user asks for local / near-me / in-store): in Egypt call the salla_local tool (Salla Local shops that take Pi at the counter; their cards appear automatically). Also Map of Pi — ${mapOfPi ? "Call the map_of_pi tool FIRST for any local request (in Egypt together with salla_local, in parallel): it returns real nearby shops with exact location, rating and Pi prices in 1-3 s. Turn its shops/items into offers (kind \"local\", with address, lat, lon, distanceKm and the shop url)." : "Find them with web_search (e.g. \"<item> accept Pi <city> Map of Pi\")."}
 - NEVER open mapofpi.com, *.pinet.com or *.minepi.com pages with browse_url/browser_open: they are interactive Pi apps (maps, wallets) that can't be read and only waste time.
@@ -685,7 +685,8 @@ async function execTool(
           category: it.category ?? undefined,
           about: it.description ? it.description.slice(0, 160) : undefined,
           sellerCountry: it.country ?? undefined,
-          shipping: it.source === "pcm" ? (it.ships_global ? "global sale (ships internationally)" : `sold in ${ctx.locale.countryName}`) : undefined,
+          shipping: it.source === "pcm" ? (it.ships_global ? "global sale (ships internationally)" : `sold in ${ctx.locale.countryName}`) : it.shipping && ctx.locale.country in it.shipping ? (it.shipping[ctx.locale.country] ? `${it.shipping[ctx.locale.country]} PI to ${ctx.locale.countryName}` : "free shipping") : undefined,
+          ...(it.shipping && ctx.locale.country in it.shipping ? { shippingPi: it.shipping[ctx.locale.country] } : {}),
           piEvidence: `Pi price from ${h.store}'s catalog (Dalil Index, ${h.ageMin >= 0 ? `${h.ageMin} min old` : "fresh"})`,
           match: h.score,
         };
@@ -694,7 +695,7 @@ async function execTool(
         results,
         index: sources,
         hint: results.length
-          ? "Show the good matches with show_offers right away (copy title/store/url/image/price/currency/listPrice/inStock/kind/piEvidence). Only search elsewhere if these don't fit the request."
+          ? "Show the good matches with show_offers right away (copy title/store/url/image/price/currency/listPrice/inStock/kind/piEvidence, and shipping = shippingPi when given). Only search elsewhere if these don't fit the request."
           : "Nothing in the trusted stores' catalogs matches — now try the live tools (search_pi_chain_mall, search_salla, search_pi_marketplaces) and web_search.",
       };
     }
@@ -887,7 +888,7 @@ async function execTool(
         if (q?.length) o.reviews = q;
       });
       // Stores whose own checkout takes Pi (WooCommerce + Sallanet Pay …): Dalil Pi can place the order.
-      const probe = rankedRaw.filter((o) => o.url && o.currency === "PI" && o.trust !== "suspicious" && !/salla-shop\.com$|piketplace\.com$|pipcm\.com$/.test(o.storeDomain ?? ""));
+      const probe = rankedRaw.filter((o) => o.url && o.currency === "PI" && o.trust !== "suspicious" && !/salla-shop\.com$|piketplace\.com$|pipcm\.com$|pinet\.com$/.test(o.storeDomain ?? ""));
       const seen = new Map<string, Promise<string | null>>();
       await Promise.all(
         probe.slice(0, 6).map(async (o) => {

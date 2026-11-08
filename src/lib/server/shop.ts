@@ -82,8 +82,9 @@ export interface ShopResult {
   ms: number;
 }
 
-function toRaw(h: IndexHit): RawOffer {
+function toRaw(h: IndexHit, country: string): RawOffer {
   const it = h.item;
+  const ship = it.shipping && country in it.shipping ? it.shipping[country] : undefined;
   return {
     title: it.title,
     store: it.seller && it.source !== "salla" ? `${h.store} · ${it.seller}` : h.store,
@@ -92,6 +93,7 @@ function toRaw(h: IndexHit): RawOffer {
     price: h.price,
     currency: "PI",
     listPrice: h.listPrice,
+    shipping: ship,
     inStock: it.in_stock,
     kind: it.digital ? "service" : "online",
     notes: it.source === "pcm" ? (it.ships_global ? "Global sale" : undefined) : undefined,
@@ -117,7 +119,7 @@ export async function searchShop(f: ShopFilters): Promise<ShopResult> {
     const relevance = new Map(hits.map((h, i) => [h.item.url, { score: h.score, rank: i, ageMin: h.ageMin, source: h.item.source, listPrice: h.listPrice }]));
     // Each product on its own: a shop list mixes tea and phones, so no "price far below the
     // others" judgement between them (that check is for the same product in several stores).
-    const ranked = hits.flatMap((h) => rankOffers([toRaw(h)], f.country, piUsd?.usd)).map((o) => ({ ...o, badges: [] as string[] }));
+    const ranked = hits.flatMap((h) => rankOffers([toRaw(h, f.country)], f.country, piUsd?.usd)).map((o) => ({ ...o, badges: [] as string[] }));
     const scored = await scoreTrust(ranked, { neutralPrice: true });
     const stats = await priceStats(scored.map((o) => o.url ?? "").filter(Boolean)).catch(() => new Map());
     for (const o of scored) {

@@ -35,7 +35,7 @@ import {
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { countryLabel, type Strings } from "@/lib/i18n";
-import type { StoreEntry } from "@/lib/stores";
+import { STORE_DIRECTORY, type StoreEntry } from "@/lib/stores";
 import type { Lang, LocalShop, Offer } from "@/lib/types";
 import { BottomSheet, OfferDetail, SmartImage } from "./cards";
 import { ShopCards } from "./Shops";
@@ -130,7 +130,7 @@ interface StoresResponse {
 }
 type DirStore = StoresResponse["stores"][number];
 
-const STORE_NAMES: Record<string, string> = { pcm: "Pi Chain Mall", salla: "Salla Shop Mall", gtp: "Global Trade Pi" };
+const STORE_NAMES: Record<string, string> = { pcm: "Pi Chain Mall", salla: "Salla Shop Mall", pkt: "Piketplace", gtp: "Global Trade Pi" };
 
 /* ------------------------------------------------------------------ */
 /* Small pieces                                                         */
@@ -157,7 +157,13 @@ function TrustChip({ n, s, compact }: { n?: number | null; s: Strings; compact?:
   );
 }
 
-function StoreLogo({ st, size = 44 }: { st: Pick<StoreEntry, "color" | "mono" | "name">; size?: number }) {
+function StoreLogo({ st, size = 44 }: { st: Pick<StoreEntry, "color" | "mono" | "name" | "logo">; size?: number }) {
+  const [broken, setBroken] = useState(false);
+  if (st.logo && !broken)
+    return (
+      // eslint-disable-next-line @next/next/no-img-element
+      <img src={st.logo} alt={st.name} width={size} height={size} loading="lazy" decoding="async" onError={() => setBroken(true)} className="shrink-0 rounded-2xl bg-white object-contain shadow-sm ring-1 ring-line" style={{ width: size, height: size }} />
+    );
   return (
     <span
       className="flex shrink-0 items-center justify-center rounded-2xl font-bold text-white shadow-sm"
@@ -168,6 +174,8 @@ function StoreLogo({ st, size = 44 }: { st: Pick<StoreEntry, "color" | "mono" | 
     </span>
   );
 }
+
+const LOGO_BY_NAME: Record<string, string | undefined> = Object.fromEntries(STORE_DIRECTORY.filter((d) => d.source && d.logo).map((d) => [d.name, d.logo]));
 
 /** Product tile for grids (2 columns on phones). */
 export function ProductTile({ o, s, onOpen, i = 0, wide }: { o: Offer; s: Strings; onOpen: (o: Offer) => void; i?: number; wide?: boolean }) {
@@ -193,7 +201,13 @@ export function ProductTile({ o, s, onOpen, i = 0, wide }: { o: Offer; s: String
         {off >= 3 && <span className="absolute end-2 top-2 rounded-full bg-ok px-1.5 py-0.5 text-[10.5px] font-bold text-white">↓{off}%</span>}
       </div>
       <div className="flex flex-1 flex-col gap-1 p-2.5">
-        <span className="truncate text-[11px] text-fg-muted">{store}</span>
+        <span className="flex min-w-0 items-center gap-1 text-[11px] text-fg-muted">
+          {LOGO_BY_NAME[store] && (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src={LOGO_BY_NAME[store]} alt="" width={14} height={14} loading="lazy" className="size-3.5 shrink-0 rounded-[4px] bg-white object-contain" />
+          )}
+          <span className="truncate">{store}</span>
+        </span>
         <span className="line-clamp-2 min-h-[2.4em] text-[13px] font-medium leading-tight" dir="auto">
           {o.title}
         </span>
@@ -600,7 +614,7 @@ function SearchView({ s, lang, country, go, back, onOpen, onAsk, view }: CommonP
       </BottomSheet>
       <BottomSheet open={sheet === "store"} title={s.filterStore} onClose={() => setSheet(null)}>
         <div className="space-y-1" data-testid="store-options">
-          {["", "pcm", "salla", "gtp"].map((k) => (
+          {["", "pcm", "salla", "pkt", "gtp"].map((k) => (
             <button key={k} onClick={() => (setStore(k), setSheet(null))} className={`flex w-full items-center justify-between rounded-xl px-3 py-2.5 text-start text-[14px] ${store === k ? "bg-bg-muted font-semibold" : "hover:bg-bg-soft"}`}>
               <span>{k ? STORE_NAMES[k] : s.anyStore}</span>
               <span className="text-[12px] text-fg-muted">{k ? (shown?.stores[k] ?? 0) : ""}</span>

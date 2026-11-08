@@ -39,7 +39,7 @@ export async function GET(req: Request) {
       limit: n(u.searchParams.get("limit")),
     });
     // Keep the index fresh without making anyone wait (the JSON stores; Salla is refreshed elsewhere).
-    after(() => refreshCatalog({ sources: ["pcm", "gtp"] }).catch(() => {}));
+    after(() => refreshCatalog({ sources: ["pcm", "gtp", "pkt"] }).catch(() => {}));
     return Response.json({ country, ...result }, { headers: { "Cache-Control": "public, s-maxage=120, stale-while-revalidate=600" } });
   } catch (err) {
     return Response.json({ error: (err as Error).message }, { status: 500 });
