@@ -4,7 +4,7 @@ import { streamChat } from "./meta";
 import { supabase, supabaseEnabled } from "./supabase";
 
 /**
- * Dalil Index — AI enrichment. Each new or changed product is read ONCE by the model, 20 per call:
+ * Dalil Index — AI enrichment. Each new or changed product is read ONCE by the model, 10 per call:
  * brand, model, one normalized category, an English and an Arabic title and a few search
  * keywords. brand + model give the "twin key" that finds the same product in other stores.
  * Plain code does everything else; unchanged products are never sent again (hash check).
@@ -72,7 +72,34 @@ For EACH product return one JSON object: {"id","brand","model","category","title
 - category: exactly one of ${CATEGORIES.join(", ")}.
 - title_en / title_ar: a short clear product title in English / Egyptian-friendly Arabic (max 80 chars), no prices, no emojis.
 - keywords: 3-6 short search words people would type (mix English and Arabic), e.g. ["earbuds","bluetooth","سماعة"].
-Use only what the listing says; never invent specs. Answer with ONLY a JSON array, nothing else.`;
+Use only what the listing says; never invent specs. Write no double quotes inside the values.
+Answer with ONLY JSON Lines: one complete JSON object per line, one line per product, nothing else.`;
+
+/**
+ * Every JSON object we can read from the answer (JSON Lines, an array, or a broken array):
+ * one bad line or object only loses that product, not the whole batch.
+ */
+export function salvageObjects(text: string): unknown[] {
+  const whole = text.match(/\[[\s\S]*\]/);
+  if (whole) {
+    try {
+      const a = JSON.parse(whole[0]);
+      if (Array.isArray(a)) return a;
+    } catch {
+      /* fall through to object by object */
+    }
+  }
+  const out: unknown[] = [];
+  // Flat objects (our schema has only strings, nulls and one string array) → {...} without nested braces.
+  for (const m of text.matchAll(/\{[^{}]*\}/g)) {
+    try {
+      out.push(JSON.parse(m[0]));
+    } catch {
+      /* skip this one */
+    }
+  }
+  return out;
+}
 
 async function ask(items: Pending[]): Promise<Map<string, Enrichment>> {
   const input = items.map((i) => ({ id: i.id, title: i.title, title_ar: i.title_ar ?? undefined, category: i.category ?? undefined, description: i.description?.slice(0, 220) }));
@@ -89,21 +116,14 @@ async function ask(items: Pending[]): Promise<Map<string, Enrichment>> {
     }
     text += r.value.text;
   }
-  const m = text.match(/\[[\s\S]*\]/);
   const out = new Map<string, Enrichment>();
-  if (!m) {
-    lastError = `no JSON array in the answer: ${text.slice(0, 160)}`;
-    return out;
-  }
-  let arr: unknown;
-  try {
-    arr = JSON.parse(m[0]);
-  } catch (e) {
-    lastError = `bad JSON: ${(e as Error).message} — ${m[0].slice(0, 120)}`;
+  const arr = salvageObjects(text);
+  if (!arr.length) {
+    lastError = `no usable JSON in the answer: ${text.slice(0, 160)}`;
     return out;
   }
   const ids = new Set(items.map((i) => i.id));
-  for (const raw of Array.isArray(arr) ? arr : []) {
+  for (const raw of arr) {
     const id = (raw as { id?: unknown })?.id;
     if (typeof id !== "string" || !ids.has(id)) continue; // only the products we asked about
     const e = parseEnrichment(raw);
@@ -166,6 +186,16 @@ async function save(items: Pending[], got: Map<string, Enrichment>): Promise<num
   return n;
 }
 
+async function markSkipped(items: Pending[]): Promise<void> {
+  if (!items.length) return;
+  if (!supabaseEnabled) {
+    const ids = new Set(items.map((i) => i.id));
+    for (const r of memSource?.() ?? []) if (ids.has(r.id)) r.enriched_hash = r.hash ?? r.title;
+    return;
+  }
+  await Promise.all(items.map((it) => supabase().from("catalog_items").update({ enriched_hash: `skip:${it.hash ?? ""}` }).eq("id", it.id)));
+}
+
 let running: Promise<{ enriched: number; left: number; error?: string }> | null = null;
 /** Why the last batch gave nothing (shown by /api/cron/catalog for diagnosis). */
 let lastError: string | undefined;
@@ -186,7 +216,8 @@ export async function enrichPending(limit = 40, minGapMs = 0): Promise<{ enriche
       const todo = await pending(limit);
       let done = 0;
       for (let i = 0; i < todo.length; i += 40) {
-        const batches = [todo.slice(i, i + 20), todo.slice(i + 20, i + 40)].filter((b) => b.length);
+        // 10 products per call (a long answer is likelier to break), 4 calls at a time.
+        const batches = [0, 10, 20, 30].map((o) => todo.slice(i + o, i + o + 10)).filter((b) => b.length);
         const results = await Promise.all(
           batches.map((b) =>
             ask(b).catch((e: Error) => {
@@ -195,7 +226,12 @@ export async function enrichPending(limit = 40, minGapMs = 0): Promise<{ enriche
             }),
           ),
         );
-        for (let k = 0; k < batches.length; k++) done += await save(batches[k], results[k]);
+        for (let k = 0; k < batches.length; k++) {
+          done += await save(batches[k], results[k]);
+          // Products the model gave nothing usable for are marked, so they never block the queue
+          // (they stay searchable by their own title; a later change re-queues them via the trigger).
+          await markSkipped(batches[k].filter((it) => !results[k].has(it.id))).catch(() => {});
+        }
       }
       const left = (await pending(1).catch(() => [])).length;
       return { enriched: done, left, ...(done === 0 && lastError ? { error: lastError } : {}) };
