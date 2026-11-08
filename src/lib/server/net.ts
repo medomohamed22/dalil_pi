@@ -2,7 +2,7 @@ import "server-only";
 import dns from "node:dns";
 import { lookup } from "node:dns/promises";
 import net from "node:net";
-import { Agent } from "undici";
+import { Agent, fetch as undiciFetch } from "undici";
 
 /**
  * SSRF guard: the agent and the user can hand us arbitrary URLs (product links,
@@ -99,8 +99,11 @@ export async function fetchWithTimeout(
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), timeoutMs);
   try {
-    const init = { ...rest, signal: rest.signal ?? ctrl.signal, ...(guardOff() ? {} : { dispatcher: guardedAgent() }) };
-    return await fetch(input, init as RequestInit);
+    const init = { ...rest, signal: rest.signal ?? ctrl.signal };
+    if (guardOff()) return await fetch(input, init);
+    // undici's own fetch with its own Agent: the runtime's built-in fetch may bundle another
+    // undici version that rejects a foreign dispatcher ("fetch failed").
+    return (await undiciFetch(input, { ...(init as object), dispatcher: guardedAgent() } as Parameters<typeof undiciFetch>[1])) as unknown as Response;
   } finally {
     clearTimeout(timer);
   }
