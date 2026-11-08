@@ -24,6 +24,7 @@ import {
   ScanBarcode,
   MousePointerClick,
   AppWindow,
+  X,
 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { formatMoney, type Strings } from "@/lib/i18n";
@@ -589,7 +590,7 @@ function TrustPill({ offer, s, open, onToggle }: { offer: Offer; s: Strings; ope
       data-testid="trust"
       className={`inline-flex shrink-0 items-center gap-1 rounded-full border border-line px-1.5 py-0.5 text-[11px] font-semibold tabular-nums ${trustTone(n)}`}
     >
-      <Icon className="size-3" /> {n}
+      <Icon className="size-3" /> <CountUp to={n} />
     </button>
   );
 }
@@ -672,6 +673,11 @@ export function ProductCards({
   };
   const [why, setWhy] = useState<string | null>(null);
   const [sort, setSort] = useState<SortKey>("best");
+  const [detail, setDetail] = useState<Offer | null>(null);
+  const [picked, setPicked] = useState<string[]>([]);
+  const [comparing, setComparing] = useState(false);
+  const twins = useTwins(offers);
+  const togglePick = (id: string) => setPicked((p) => (p.includes(id) ? p.filter((x) => x !== id) : p.length >= 3 ? [...p.slice(1), id] : [...p, id]));
   const sorts: SortKey[] = ["best", "cheapest", "trust", "rating", ...(offers.some((o) => o.distanceKm != null) ? (["nearest"] as SortKey[]) : [])];
   const shown = sortOffers(offers, sort);
   return (
@@ -707,7 +713,7 @@ export function ProductCards({
                 isTop ? "border-fg" : o.trust === "suspicious" ? "border-danger/40" : "border-line"
               }`}
             >
-              <div className="relative">
+              <div className="relative cursor-pointer" onClick={() => setDetail(o)} data-testid="open-detail">
                 <SmartImage src={o.image} alt={o.title} fallbackLabel={o.store} className={o.image ? "h-36 w-full" : "h-24 w-full"} />
                 <div className="absolute start-2 top-2 flex flex-wrap gap-1">
                   {o.badges.map((b) => (
@@ -728,9 +734,14 @@ export function ProductCards({
                   <TrustPill offer={o} s={s} open={why === o.id} onToggle={() => setWhy((w) => (w === o.id ? null : o.id))} />
                 </div>
                 {why === o.id && <TrustBreakdown offer={o} s={s} />}
-                <div className="line-clamp-2 min-h-[2.5rem] text-[13px] leading-snug text-fg-soft" dir="auto">
+                <button type="button" onClick={() => setDetail(o)} className="line-clamp-2 min-h-[2.5rem] text-start text-[13px] leading-snug text-fg-soft hover:text-fg" dir="auto">
                   {o.title}
-                </div>
+                </button>
+                {twins.get(o.id) && (
+                  <div className="text-[11px] text-fg-muted" data-testid="twin">
+                    {s.alsoAt(twins.get(o.id)!.store, formatMoney(twins.get(o.id)!.total, twins.get(o.id)!.currency, lang))}
+                  </div>
+                )}
                 <div className="flex items-end justify-between">
                   <div>
                     <div className="text-lg font-semibold tabular-nums leading-tight" dir="ltr">
@@ -832,6 +843,12 @@ export function ProductCards({
                   </div>
                 )}
                 <div className="mt-auto flex flex-col gap-1.5 pt-2">
+                  {offers.length >= 2 && (
+                    <label className="flex cursor-pointer items-center gap-1.5 text-[11px] text-fg-muted">
+                      <input type="checkbox" checked={picked.includes(o.id)} onChange={() => togglePick(o.id)} className="size-3.5 accent-current" data-testid="compare-pick" />
+                      {s.compare}
+                    </label>
+                  )}
                   {(() => {
                     const lowTrust = o.trustScore != null && o.trustScore < 40;
                     const orderable = !!(onOrder && o.url && o.sig && o.trust !== "suspicious" && !lowTrust && !o.flags.includes("price_unverified") && !o.flags.includes("not_priced_in_pi"));
@@ -877,6 +894,233 @@ export function ProductCards({
           );
         })}
       </div>
+      <AnimatePresence>
+        {picked.length >= 2 && (
+          <m.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 8 }} className="mx-4 mt-1 flex items-center justify-between rounded-2xl bg-inv-bg px-3 py-2 text-inv-fg sm:mx-0">
+            <span className="text-[12px]">{s.comparePicked(picked.length)}</span>
+            <span className="flex gap-2">
+              <button onClick={() => setPicked([])} className="text-[12px] opacity-70">
+                {s.cancel}
+              </button>
+              <button onClick={() => setComparing(true)} className="rounded-full bg-bg px-3 py-1 text-[12px] font-semibold text-fg" data-testid="compare-open">
+                {s.compare}
+              </button>
+            </span>
+          </m.div>
+        )}
+      </AnimatePresence>
+      <BottomSheet open={!!detail} title={detail?.store ?? ""} onClose={() => setDetail(null)}>
+        {detail && <OfferDetail o={detail} s={s} lang={lang} city={city} onOrder={onOrder} ordersLeft={ordersLeft} twin={twins.get(detail.id)} />}
+      </BottomSheet>
+      <BottomSheet open={comparing} title={s.compare} onClose={() => setComparing(false)}>
+        <CompareTable offers={offers.filter((o) => picked.includes(o.id))} s={s} lang={lang} />
+      </BottomSheet>
     </div>
   );
+}
+
+/* ---------- Extras: count-up, sheets, detail, compare, twins ---------- */
+
+/** Counts from 0 to `to` (~600 ms). Shows the number right away when the user prefers reduced motion. */
+export function CountUp({ to, ms = 600 }: { to: number; ms?: number }) {
+  const [v, setV] = useState(to);
+  useEffect(() => {
+    if (typeof window === "undefined" || window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) return setV(to);
+    let raf = 0;
+    const t0 = performance.now();
+    const tick = (t: number) => {
+      const k = Math.min(1, (t - t0) / ms);
+      setV(Math.round(to * (1 - Math.pow(1 - k, 3))));
+      if (k < 1) raf = requestAnimationFrame(tick);
+    };
+    setV(0);
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, [to, ms]);
+  return <span className="tabular-nums">{v}</span>;
+}
+
+/** Animated ✓ for success moments (plan paid, order placed). */
+export function AnimatedCheck({ size = 20 }: { size?: number }) {
+  return (
+    <svg viewBox="0 0 24 24" width={size} height={size} aria-hidden className="shrink-0">
+      <m.circle cx="12" cy="12" r="10" fill="none" stroke="currentColor" strokeWidth="2" initial={{ pathLength: 0 }} animate={{ pathLength: 1 }} transition={{ duration: 0.35 }} />
+      <m.path d="M7 12.5l3.2 3.2L17 9" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" initial={{ pathLength: 0 }} animate={{ pathLength: 1 }} transition={{ duration: 0.3, delay: 0.3 }} />
+    </svg>
+  );
+}
+
+export function BottomSheet({ open, title, onClose, children }: { open: boolean; title: string; onClose: () => void; children: React.ReactNode }) {
+  useEffect(() => {
+    if (!open) return;
+    const k = (e: KeyboardEvent) => e.key === "Escape" && onClose();
+    window.addEventListener("keydown", k);
+    return () => window.removeEventListener("keydown", k);
+  }, [open, onClose]);
+  return (
+    <AnimatePresence>
+      {open && (
+        <m.div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 sm:items-center" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={onClose}>
+          <m.div
+            role="dialog"
+            aria-modal="true"
+            aria-label={title}
+            initial={{ y: 40, opacity: 0 }}
+            animate={{ y: 0, opacity: 1 }}
+            exit={{ y: 40, opacity: 0 }}
+            transition={{ type: "spring", stiffness: 320, damping: 30 }}
+            onClick={(e) => e.stopPropagation()}
+            className="max-h-[88dvh] w-full max-w-lg overflow-y-auto rounded-t-3xl bg-bg p-4 pb-[max(1rem,env(safe-area-inset-bottom))] sm:rounded-3xl"
+          >
+            <div className="mb-3 flex items-center justify-between gap-2">
+              <div className="truncate text-base font-semibold">{title}</div>
+              <button onClick={onClose} aria-label="Close" className="rounded-full p-1.5 hover:bg-bg-soft">
+                <X className="size-4" />
+              </button>
+            </div>
+            {children}
+          </m.div>
+        </m.div>
+      )}
+    </AnimatePresence>
+  );
+}
+
+function OfferDetail({ o, s, lang, city, onOrder, ordersLeft, twin }: { o: Offer; s: Strings; lang: Lang; city?: string; onOrder?: (o: Offer) => void; ordersLeft?: number | null; twin?: Offer }) {
+  const nf = (n: number) => n.toLocaleString(lang === "ar" ? "ar-EG-u-nu-latn" : "en-US");
+  const lowTrust = o.trustScore != null && o.trustScore < 40;
+  const orderable = !!(onOrder && o.url && o.sig && o.trust !== "suspicious" && !lowTrust && !o.flags.includes("price_unverified") && !o.flags.includes("not_priced_in_pi"));
+  return (
+    <div className="space-y-3" data-testid="offer-detail">
+      <SmartImage src={o.image} alt={o.title} fallbackLabel={o.store} className="h-56 w-full rounded-2xl" />
+      <div className="text-[15px] font-semibold leading-snug" dir="auto">
+        {o.title}
+      </div>
+      <div className="flex items-end justify-between">
+        <div>
+          <div className="text-2xl font-semibold tabular-nums" dir="ltr">
+            {formatMoney(o.total, o.currency, lang)}
+          </div>
+          {o.totalUsd != null && <div className="text-[12px] text-fg-muted" dir="ltr">≈ {formatMoney(o.totalUsd, "USD", lang)}</div>}
+        </div>
+        {o.rating != null && (
+          <div className="flex items-center gap-1 text-sm">
+            <Star className="size-4 fill-current" /> <span className="font-medium">{o.rating.toFixed(1)}</span>
+            {o.reviewCount != null && <span className="text-fg-muted">({nf(o.reviewCount)})</span>}
+          </div>
+        )}
+      </div>
+      {twin && <div className="rounded-xl bg-bg-soft px-3 py-2 text-[12px]">{s.alsoAt(twin.store, formatMoney(twin.total, twin.currency, lang))}</div>}
+      <div className="grid grid-cols-2 gap-2 text-[12px]">
+        <div className="rounded-xl border border-line p-2">
+          <div className="text-fg-muted">{s.shipping}</div>
+          <div className="font-medium">{o.shipping ? formatMoney(o.shipping, o.currency, lang) : o.shipping === 0 ? s.free : "—"}</div>
+        </div>
+        <div className="rounded-xl border border-line p-2">
+          <div className="text-fg-muted">{o.distanceKm != null ? s.km : s.days}</div>
+          <div className="font-medium">{o.distanceKm != null ? nf(o.distanceKm) : o.deliveryDays != null ? nf(o.deliveryDays) : "—"}</div>
+        </div>
+      </div>
+      <TrustBreakdown offer={o} s={s} />
+      {!!o.reviews?.length && (
+        <div className="space-y-1 rounded-xl bg-bg-soft p-3">
+          <div className="text-[10px] font-semibold uppercase tracking-wider text-fg-muted">{s.realReviews}</div>
+          {o.reviews.map((q, k) => (
+            <p key={k} className="text-[12px] italic text-fg-soft" dir="auto">
+              “{q}”
+            </p>
+          ))}
+        </div>
+      )}
+      {o.flags.filter((f) => FLAG_TEXT[f]).map((f) => (
+        <div key={f} className="flex items-start gap-1 text-[12px] text-danger">
+          <AlertTriangle className="mt-px size-3.5 shrink-0" /> {FLAG_TEXT[f][lang]}
+        </div>
+      ))}
+      {o.piEvidence && <p className="text-[12px] text-fg-muted" dir="auto">π {o.piEvidence}</p>}
+      {o.address && (
+        <a href={mapsUrl(o, city, true)} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1.5 text-[12px] underline underline-offset-2">
+          <Navigation className="size-3.5" /> {o.address}
+        </a>
+      )}
+      {orderable ? (
+        <button
+          disabled={ordersLeft != null && ordersLeft <= 0}
+          onClick={() => {
+            if (o.trustScore != null && o.trustScore < 60 && !window.confirm(s.cautionConfirm(o.trustScore))) return;
+            onOrder!(o);
+          }}
+          className="flex w-full items-center justify-center gap-1.5 rounded-2xl bg-inv-bg py-3 text-sm font-semibold text-inv-fg disabled:opacity-40"
+        >
+          <Package className="size-4" /> {o.checkout === "woo_pi" ? s.autoOrder : s.order}
+        </button>
+      ) : o.url ? (
+        <a href={o.url} target="_blank" rel="noopener noreferrer" className="flex w-full items-center justify-center gap-1 rounded-2xl border border-line py-3 text-sm font-medium">
+          {s.view} <ExternalLink className="size-3.5" />
+        </a>
+      ) : null}
+    </div>
+  );
+}
+
+function CompareTable({ offers, s, lang }: { offers: Offer[]; s: Strings; lang: Lang }) {
+  const nf = (n?: number) => (n == null ? "—" : n.toLocaleString(lang === "ar" ? "ar-EG-u-nu-latn" : "en-US"));
+  const cheapest = Math.min(...offers.map((o) => o.totalUsd ?? o.total));
+  const trusted = Math.max(...offers.map((o) => o.trustScore ?? 0));
+  const rows: [string, (o: Offer) => React.ReactNode, ((o: Offer) => boolean)?][] = [
+    [s.total, (o) => <span dir="ltr">{formatMoney(o.total, o.currency, lang)}</span>, (o) => (o.totalUsd ?? o.total) === cheapest],
+    ["≈ $", (o) => (o.totalUsd != null ? formatMoney(o.totalUsd, "USD", lang) : "—")],
+    [s.trust, (o) => nf(o.trustScore), (o) => (o.trustScore ?? 0) === trusted],
+    ["★", (o) => (o.rating != null ? `${o.rating.toFixed(1)} (${nf(o.reviewCount)})` : "—")],
+    [s.shipping, (o) => (o.shipping ? formatMoney(o.shipping, o.currency, lang) : o.shipping === 0 ? s.free : "—")],
+    [s.km, (o) => nf(o.distanceKm)],
+    [s.days, (o) => nf(o.deliveryDays)],
+  ];
+  return (
+    <div className="overflow-x-auto" data-testid="compare-table">
+      <table className="w-full text-[12px]">
+        <thead>
+          <tr>
+            <th />
+            {offers.map((o) => (
+              <th key={o.id} className="p-1.5 text-start align-top font-semibold" dir="auto">
+                <div className="line-clamp-2">{o.title}</div>
+                <div className="font-normal text-fg-muted">{o.store}</div>
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map(([label, cell, best]) => (
+            <tr key={label} className="border-t border-line">
+              <td className="p-1.5 text-fg-muted">{label}</td>
+              {offers.map((o) => (
+                <td key={o.id} className={`p-1.5 tabular-nums ${best?.(o) ? "font-semibold text-emerald-700 dark:text-emerald-400" : ""}`}>
+                  {cell(o)}
+                </td>
+              ))}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+/** Same product in another store: word overlap of the titles (Jaccard ≥ 0.6), cheapest other store wins. */
+function useTwins(offers: Offer[]): Map<string, Offer> {
+  const words = (t: string) => new Set(t.toLowerCase().replace(/[^\p{L}\p{N} ]/gu, " ").split(/\s+/).filter((w) => w.length > 1));
+  const out = new Map<string, Offer>();
+  const ws = offers.map((o) => words(o.title));
+  offers.forEach((a, i) => {
+    let best: Offer | undefined;
+    offers.forEach((b, j) => {
+      if (i === j || a.store === b.store || a.currency !== b.currency) return;
+      const inter = [...ws[i]].filter((w) => ws[j].has(w)).length;
+      const uni = new Set([...ws[i], ...ws[j]]).size;
+      if (uni && inter / uni >= 0.6 && (!best || b.total < best.total)) best = b;
+    });
+    if (best) out.set(a.id, best);
+  });
+  return out;
 }

@@ -17,6 +17,8 @@ export default function MessageView({
   city,
   onOrder,
   ordersLeft,
+  onFollowUp,
+  onRetry,
 }: {
   msg: ChatMessage;
   live: boolean;
@@ -25,6 +27,9 @@ export default function MessageView({
   city?: string;
   onOrder?: (o: Offer) => void;
   ordersLeft?: number | null;
+  /** Only on the latest finished answer: quick follow-up chips / retry. */
+  onFollowUp?: (text: string) => void;
+  onRetry?: () => void;
 }) {
   if (msg.role === "user") {
     const texts = msg.blocks.filter((b): b is Extract<Block, { type: "text" }> => b.type === "text");
@@ -102,13 +107,34 @@ export default function MessageView({
               return (
                 <div key={i} className="flex items-start gap-2 rounded-2xl border border-danger/30 px-3 py-2.5 text-sm text-danger">
                   <AlertCircle className="mt-0.5 size-4 shrink-0" />
-                  <span className="break-words">{b.text}</span>
+                  <span className="flex-1 break-words">{b.text}</span>
+                  {onRetry && (
+                    <button onClick={onRetry} className="shrink-0 rounded-full border border-danger/40 px-2.5 py-0.5 text-[12px] font-medium" data-testid="retry">
+                      {s.retry}
+                    </button>
+                  )}
                 </div>
               );
             default:
               return null;
           }
         })}
+        {onFollowUp && !live && msg.blocks.some((b) => b.type === "products") && (
+          <div className="no-scrollbar flex gap-1.5 overflow-x-auto" data-testid="follow-ups">
+            {s.followUps.map((label, i) => (
+              <m.button
+                key={label}
+                initial={{ opacity: 0, y: 6 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.1 + i * 0.05 }}
+                onClick={() => onFollowUp(s.followUpsPrompt[i])}
+                className="shrink-0 rounded-full border border-line px-3 py-1 text-[12px] font-medium text-fg-soft hover:bg-bg-soft"
+              >
+                {label}
+              </m.button>
+            ))}
+          </div>
+        )}
       </div>
     </m.div>
   );

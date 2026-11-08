@@ -16,6 +16,7 @@ const AutoOrderSheet = dynamic(() => import("./Account").then((x) => x.AutoOrder
 import Composer, { type ComposerPayload } from "./Composer";
 import Logo from "./Logo";
 import MessageView from "./MessageView";
+import { AnimatedCheck } from "./cards";
 
 interface Config {
   ai: boolean;
@@ -419,6 +420,47 @@ export default function App() {
    * the order on our server. The user pays the store directly.
    */
   const [autoOffer, setAutoOffer] = useState<Offer | null>(null);
+  const [offline, setOffline] = useState(false);
+  const [tourStep, setTourStep] = useState<number | null>(null);
+  useEffect(() => {
+    const on = () => setOffline(false);
+    const off = () => setOffline(true);
+    setOffline(typeof navigator !== "undefined" && navigator.onLine === false);
+    window.addEventListener("online", on);
+    window.addEventListener("offline", off);
+    return () => {
+      window.removeEventListener("online", on);
+      window.removeEventListener("offline", off);
+    };
+  }, []);
+  // First sign-in on this device: a 3-step tour.
+  useEffect(() => {
+    if (!me) return;
+    void getKV<boolean>("tour-done").then((done) => !done && setTourStep(0));
+  }, [me]);
+  const endTour = () => {
+    setTourStep(null);
+    void setKV("tour-done", true);
+  };
+
+  /** Quick follow-up chips under the latest results ("Near me" also switches the scope and asks for GPS). */
+  const followUp = (text: string) => {
+    if (text === s.followUpsPrompt[2]) {
+      updateSettings({ scope: "local" });
+      navigator.geolocation?.getCurrentPosition(
+        (pos) => updateSettings({ coords: { lat: Math.round(pos.coords.latitude * 100) / 100, lon: Math.round(pos.coords.longitude * 100) / 100 } }),
+        () => {},
+        { timeout: 10_000, maximumAge: 10 * 60_000 },
+      );
+    }
+    void send({ text, images: [], links: [] });
+  };
+  /** Re-sends the last question after an error. */
+  const retry = () => {
+    const lastUser = [...messages].reverse().find((x) => x.role === "user");
+    const text = lastUser?.blocks.map((b) => (b.type === "text" ? b.text : "")).join(" ").trim();
+    if (text) void send({ text, images: [], links: [] });
+  };
   const order = (o: Offer) => {
     if (!o.url) return;
     // Stores whose checkout takes Pi: confirm what we send, then Dalil Pi places the order there.
@@ -626,9 +668,19 @@ export default function App() {
               <EmptyState s={s} needsKey={config ? !config.ai : false} onPick={(text) => setPrefill({ text, n: Date.now() })} />
             ) : (
               <div className="space-y-7 pt-4">
-                {messages.map((m) => (
+                {messages.map((m, idx) => (
                   <div key={m.id} id={`msg-${m.id}`}>
-                    <MessageView msg={m} live={live?.id === m.id} s={s} lang={lang} city={config?.geo.city} onOrder={order} ordersLeft={ordersLeft} />
+                    <MessageView
+                      msg={m}
+                      live={live?.id === m.id}
+                      s={s}
+                      lang={lang}
+                      city={config?.geo.city}
+                      onOrder={order}
+                      ordersLeft={ordersLeft}
+                      onFollowUp={idx === messages.length - 1 && !busy ? followUp : undefined}
+                      onRetry={idx === messages.length - 1 && !busy ? retry : undefined}
+                    />
                   </div>
                 ))}
               </div>
@@ -656,7 +708,8 @@ export default function App() {
               />
               <Composer s={s} lang={lang} busy={busy} onSend={send} onStop={() => abortRef.current?.abort()} prefill={prefill} />
               {notice && (
-                <p className={`mt-2 text-center text-[11px] ${notice === s.autoDone ? "font-medium text-emerald-700 dark:text-emerald-400" : "text-danger"}`} dir="auto" role="status">
+                <p className={`mt-2 flex items-center justify-center gap-1.5 text-center text-[11px] ${notice === s.autoDone ? "font-medium text-emerald-700 dark:text-emerald-400" : "text-danger"}`} dir="auto" role="status">
+                  {notice === s.autoDone && <AnimatedCheck size={16} />}
                   {notice}
                 </p>
               )}
@@ -678,6 +731,54 @@ export default function App() {
         )}
       </main>
 
+      {offline && (
+        <div className="fixed inset-x-0 top-0 z-[60] bg-danger px-3 py-1.5 text-center text-[12px] font-medium text-white" role="status" data-testid="offline">
+          {s.offline}
+        </div>
+      )}
+      <AnimatePresence>
+        {tourStep != null && (
+          <m.div className="fixed inset-0 z-[55] flex items-end justify-center bg-black/50 p-4 sm:items-center" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
+            <m.div
+              key={tourStep}
+              role="dialog"
+              aria-label={s.tour[tourStep].t}
+              data-testid="tour"
+              initial={{ y: 24, opacity: 0 }}
+              animate={{ y: 0, opacity: 1 }}
+              transition={{ type: "spring", stiffness: 300, damping: 28 }}
+              className="w-full max-w-sm rounded-3xl bg-bg p-5"
+            >
+              <div className="mb-3 flex size-10 items-center justify-center rounded-full bg-inv-bg text-inv-fg">
+                {(() => {
+                  const Icon = [Search, ShieldCheck, Wallet][tourStep] ?? Search;
+                  return <Icon className="size-5" />;
+                })()}
+              </div>
+              <div className="text-base font-semibold">{s.tour[tourStep].t}</div>
+              <p className="mt-1 text-sm leading-relaxed text-fg-muted">{s.tour[tourStep].d}</p>
+              <div className="mt-4 flex items-center justify-between">
+                <div className="flex gap-1">
+                  {s.tour.map((_, i) => (
+                    <span key={i} className={`h-1.5 rounded-full transition-all ${i === tourStep ? "w-5 bg-fg" : "w-1.5 bg-line"}`} />
+                  ))}
+                </div>
+                <div className="flex gap-2">
+                  <button onClick={endTour} className="px-2 text-sm text-fg-muted">
+                    {s.skip}
+                  </button>
+                  <button
+                    onClick={() => (tourStep + 1 < s.tour.length ? setTourStep(tourStep + 1) : endTour())}
+                    className="rounded-full bg-inv-bg px-4 py-1.5 text-sm font-semibold text-inv-fg"
+                  >
+                    {tourStep + 1 < s.tour.length ? s.next : s.start}
+                  </button>
+                </div>
+              </div>
+            </m.div>
+          </m.div>
+        )}
+      </AnimatePresence>
       <AutoOrderSheet
         offer={autoOffer}
         onClose={() => setAutoOffer(null)}

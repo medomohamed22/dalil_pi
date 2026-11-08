@@ -5,6 +5,7 @@ import { Check, ExternalLink, Loader2, MapPin, Package, Pencil, Plus, Sparkles, 
 import { useCallback, useEffect, useState } from "react";
 import { countryLabel, flag, formatMoney, type Strings } from "@/lib/i18n";
 import { piPay } from "@/lib/pi-client";
+import { AnimatedCheck } from "./cards";
 import type { Address, Lang, Me, Offer, Order, PaidPlanId, PlanOffer, Usage } from "@/lib/types";
 
 type Fetch = (url: string, init?: RequestInit) => Promise<Response>;
@@ -488,7 +489,8 @@ function PlanShop({ s, api, open, onUsage }: { s: Strings; api: Fetch; open: boo
         ))
       )}
       {msg && (
-        <p className={`text-[12px] ${msg.ok ? "font-medium text-emerald-600 dark:text-emerald-400" : "text-danger"}`} role="status" data-testid="pay-msg">
+        <p className={`flex items-center gap-1.5 text-[12px] ${msg.ok ? "font-medium text-emerald-600 dark:text-emerald-400" : "text-danger"}`} role="status" data-testid="pay-msg">
+          {msg.ok && <AnimatedCheck size={18} />}
           {msg.text}
         </p>
       )}
