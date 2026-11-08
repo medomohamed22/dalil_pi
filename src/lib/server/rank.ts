@@ -9,6 +9,7 @@ const PI_VERIFIED = [
   "pipcm.com",                             // Pi Chain Mall (Pi Hackathon 2021 winner, Pi prices) — searched first
   "mall.salla-shop.com", "salla-shop.com", // Salla Shop Mall (Pi SDK, escrow)
   "piketplace.com",                        // Piketplace (Hackathon 2023 runner-up)
+  "globaltradepi.xyz",                     // Global Trade Pi (Pi SDK login, π prices)
   "mapofpi.com",                           // Map of Pi (local shops)
   "pinet.com",                             // Pi Mainnet apps (*.pinet.com)
 ];

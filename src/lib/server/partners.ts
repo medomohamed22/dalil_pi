@@ -294,3 +294,102 @@ export async function pcmPriceOf(url: string, title: string): Promise<number | u
     if (hit) return hit.price;
   }
 }
+
+/* ======================= Smaller Pi marketplaces (public searches) ======================= */
+
+/**
+ * Global Trade Pi (globaltradepi.xyz) — small global Pi marketplace (Pi SDK login, prices in π).
+ * Reads the public product search its own home page uses (no key). Products carry the seller's
+ * country; physical items are only useful in that country, digital ones anywhere.
+ * MARKETPLACES_SEARCH=off turns these off.
+ */
+const GTP = () => base(process.env.GTP_API_URL) || "https://globaltradepi.xyz";
+
+export function marketplacesEnabled(): boolean {
+  return process.env.MARKETPLACES_SEARCH !== "off";
+}
+
+let countryIndex: Map<string, string> | null = null;
+/** Retired, reserved and non-country region codes (BU → MM, UK → GB, EU …). */
+const NOT_COUNTRY = /^(AA|AN|BU|CS|DD|DY|EU|EZ|FX|HV|NH|NT|QM|QN|QO|QP|QQ|QR|QS|QT|QU|QV|QW|QX|QY|QZ|RH|SU|TP|UK|UN|VD|X[A-Z]|YD|YU|ZR|ZZ)$/;
+/** "United States of America" / "Myanmar (formerly Burma)" → "US" / "MM". */
+export function countryCode(name?: string): string | undefined {
+  if (!name) return;
+  const key = (s: string) => s.toLowerCase().replace(/\(.*?\)/g, "").replace(/[^a-z]/g, "");
+  if (!countryIndex) {
+    countryIndex = new Map();
+    const dn = new Intl.DisplayNames(["en"], { type: "region" });
+    for (let a = 65; a <= 90; a++)
+      for (let b = 65; b <= 90; b++) {
+        const code = String.fromCharCode(a, b);
+        const n = dn.of(code);
+        if (n && n !== code && !NOT_COUNTRY.test(code)) countryIndex.set(key(n), code);
+      }
+    for (const [n, c] of Object.entries({ unitedstatesofamerica: "US", usa: "US", uk: "GB", burma: "MM", ivorycoast: "CI", turkey: "TR", czechrepublic: "CZ", southkorea: "KR", russia: "RU", vietnam: "VN", laos: "LA" })) countryIndex.set(n, c);
+  }
+  return countryIndex.get(key(name)) ?? (/^[A-Z]{2}$/.test(name) ? name : undefined);
+}
+
+export interface MarketItem {
+  market: string;
+  title: string;
+  price: number;
+  currency: "PI";
+  url: string;
+  image?: string;
+  seller?: string;
+  country?: string;
+  digital: boolean;
+  inStock: boolean;
+}
+
+interface GtpProduct {
+  _id?: string;
+  id?: string;
+  title?: string;
+  description?: string;
+  price?: number;
+  country?: string;
+  images?: string[];
+  stock?: number;
+  status?: string;
+  productType?: string;
+  sellerUsername?: string;
+  sellingType?: string;
+}
+
+export async function globalTradeSearch(q: string): Promise<MarketItem[]> {
+  const u = new URL(`${GTP()}/api/products`);
+  u.searchParams.set("page", "1");
+  u.searchParams.set("limit", "30");
+  u.searchParams.set("search", q.trim().slice(0, 60));
+  const j = await getJson<{ products?: GtpProduct[] }>(u.toString(), { timeoutMs: 6000 });
+  const out: MarketItem[] = [];
+  for (const p of j.products ?? []) {
+    const id = p._id ?? p.id;
+    const price = Number(p.price);
+    if (!id || !/^[a-f0-9]{24}$/i.test(id) || !p.title?.trim() || !(price > 0) || (p.status && p.status !== "active") || p.sellingType === "auction") continue;
+    const img = p.images?.find((x) => typeof x === "string" && /^https:\/\//.test(x));
+    out.push({
+      market: "Global Trade Pi",
+      title: p.title.trim().slice(0, 160),
+      price,
+      currency: "PI",
+      url: `https://globaltradepi.xyz/products/${id}`,
+      image: img,
+      seller: p.sellerUsername,
+      country: countryCode(p.country),
+      digital: p.productType === "digital",
+      inStock: p.stock == null || p.stock > 0,
+    });
+  }
+  return out;
+}
+
+/** All smaller marketplaces at once; only what can reach the user (their country, or digital). */
+export async function marketplacesSearch(q: string, country: string): Promise<MarketItem[]> {
+  const lists = await Promise.allSettled([globalTradeSearch(q)]);
+  return lists
+    .flatMap((r) => (r.status === "fulfilled" ? r.value : []))
+    .filter((x) => x.digital || !x.country || x.country === country);
+}
