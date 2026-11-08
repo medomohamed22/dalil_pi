@@ -10,7 +10,7 @@ import type { StoreCheck } from "../types";
  * official Pi marketplace, HTTPS, domain age (RDAP), a Pi checkout, wallet
  * passphrase phishing on the page, and Dalil Pi buyer reviews / complaints.
  */
-const OFFICIAL = ["mall.salla-shop.com", "salla-shop.com", "piketplace.com", "mapofpi.com", "pinet.com", "minepi.com"];
+const OFFICIAL = ["pipcm.com", "mall.salla-shop.com", "salla-shop.com", "piketplace.com", "mapofpi.com", "pinet.com", "minepi.com"];
 // Pages that ask for the 24-word wallet passphrase are always scams.
 const PHISH = /(pass\s?phrase|seed\s?phrase|recovery\s?phrase|24[\s-]?words?|mnemonic|عبارة\s?المرور|الكلمات\s?(السرية|الـ?24)|24\s?كلمة|كلمات\s?المحفظة)/i;
 const allowPrivate = () => !process.env.VERCEL && process.env.DALIL_TEST_ALLOW_PRIVATE_STORES === "1";

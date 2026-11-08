@@ -6,11 +6,15 @@ import type { Offer, TrustLevel } from "../types";
  * score (next phase) proves otherwise.
  */
 const PI_VERIFIED = [
+  "pipcm.com",                             // Pi Chain Mall (Pi Hackathon 2021 winner, Pi prices) — searched first
   "mall.salla-shop.com", "salla-shop.com", // Salla Shop Mall (Pi SDK, escrow)
   "piketplace.com",                        // Piketplace (Hackathon 2023 runner-up)
   "mapofpi.com",                           // Map of Pi (local shops)
   "pinet.com",                             // Pi Mainnet apps (*.pinet.com)
 ];
+
+/** Marketplaces the owner asked to put first. */
+const PRIORITY = ["pipcm.com"];
 
 function isPiVerified(domain: string): boolean {
   return PI_VERIFIED.some((v) => domain === v || domain.endsWith("." + v));
@@ -214,6 +218,11 @@ export function rankOffers(raw: RawOffer[], country: string, piUsd?: number, coo
   pool[0]?.badges.unshift("bestValue");
   const near = pool.filter((o) => o.distanceKm != null).sort((a, b) => a.distanceKm! - b.distanceKm!)[0];
   near?.badges.push("nearest");
+
+  // The priority marketplace (Pi Chain Mall) leads the list among offers you can buy;
+  // badges above were given on the merits, so "best value"/"cheapest" stay honest.
+  const lead = (o: Offer) => Number(!!o.storeDomain && PRIORITY.some((d) => o.storeDomain === d || o.storeDomain!.endsWith("." + d)) && eligible.includes(o));
+  offers.sort((a, b) => lead(b) - lead(a));
 
   return offers;
 }

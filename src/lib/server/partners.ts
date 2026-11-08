@@ -198,3 +198,99 @@ export async function sallaApiSearch(q: string, opts: { country?: string; limit?
       }
     });
 }
+
+/* ======================= Pi Chain Mall (pipcm.com) ======================= */
+
+/**
+ * Pi Chain Mall — Pi Network's global barter marketplace (Pi Hackathon 2021 winner).
+ * Reads the same public product search its own search page uses for visitors (no key,
+ * no login). Product pages: https://pipcm.com/#/product/new-detail?id=…&userId=…
+ * (the buyer signs in with Pi there to order). PCM_SEARCH=off turns it off.
+ */
+export const PCM_SITE = "https://pipcm.com";
+const PCM_API = () => base(process.env.PCM_API_URL) || "https://api.pipcm.com";
+const PCM_IMG = "https://image.pcmsuper.art/image/";
+
+export function pcmEnabled(): boolean {
+  return process.env.PCM_SEARCH !== "off";
+}
+
+interface PcmCommodity {
+  id: string;
+  userId?: string;
+  title?: string;
+  price?: number;
+  status?: number;
+  urlList?: string[];
+  pictureUrl?: string;
+  tUserEntity?: { nickName?: string; userName?: string };
+}
+
+export interface PcmItem {
+  id: string;
+  title: string;
+  /** Price in Pi (the site shows it as "… π"). */
+  price: number;
+  currency: "PI";
+  url: string;
+  image?: string;
+  seller?: string;
+}
+
+/** Its search matches case-sensitively, so try the usual spellings of each keyword. */
+export function pcmVariants(q: string): string[] {
+  const t = q.trim().replace(/\s+/g, " ").slice(0, 60);
+  if (!t) return [];
+  const title = t.toLowerCase().replace(/(^|\s)(\p{L})/gu, (_, s: string, c: string) => s + c.toUpperCase());
+  return Array.from(new Set([t, title, t.toUpperCase(), t.toLowerCase()]));
+}
+
+export async function pcmSearch(q: string, limit = 12): Promise<PcmItem[]> {
+  const lists = await Promise.all(
+    pcmVariants(q).map(async (v) => {
+      const u = new URL(`${PCM_API()}/api/commodity/commodity/getCommodityList`);
+      for (const [k, val] of Object.entries({ currentPage: "1", pageSize: "20", countryId: "globle8787", hasStock: "false", commdityMark: "-1", search: v })) u.searchParams.set(k, val);
+      try {
+        const j = await getJson<{ code?: string; object?: PcmCommodity[] }>(u.toString(), { timeoutMs: 5000 });
+        return Array.isArray(j.object) ? j.object : [];
+      } catch {
+        return [];
+      }
+    }),
+  );
+  const seen = new Set<string>();
+  const out: PcmItem[] = [];
+  for (const c of lists.flat()) {
+    const price = Number(c.price);
+    if (!c?.id || seen.has(c.id) || !c.title || !(price > 0) || (c.status ?? 0) !== 0) continue;
+    seen.add(c.id);
+    const pic = c.pictureUrl || c.urlList?.[0]?.trim();
+    out.push({
+      id: c.id,
+      title: c.title.trim().slice(0, 160),
+      price,
+      currency: "PI",
+      url: `${PCM_SITE}/#/product/new-detail?id=${encodeURIComponent(c.id)}${c.userId ? `&userId=${encodeURIComponent(c.userId)}` : ""}`,
+      image: pic ? (/^https?:\/\//.test(pic) ? pic : PCM_IMG + pic.replace(/^\/+/, "")) : undefined,
+      seller: c.tUserEntity?.nickName || c.tUserEntity?.userName || undefined,
+    });
+    if (out.length >= limit) break;
+  }
+  return out;
+}
+
+/** Current Pi price of a Pi Chain Mall listing (found again by its title, matched by id). */
+export async function pcmPriceOf(url: string, title: string): Promise<number | undefined> {
+  let id = "";
+  try {
+    id = new URL(new URL(url).hash.slice(1), "http://h").searchParams.get("id") ?? "";
+  } catch {
+    return;
+  }
+  const words = title.trim().split(/\s+/);
+  if (!id || !words[0]) return;
+  for (const q of [words.slice(0, 4).join(" "), words.slice(0, 2).join(" "), words[0]]) {
+    const hit = (await pcmSearch(q, 40)).find((x) => x.id === id);
+    if (hit) return hit.price;
+  }
+}

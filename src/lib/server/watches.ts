@@ -1,6 +1,7 @@
 import "server-only";
 import { browse, extract } from "./browse";
 import { fetchWithTimeout } from "./net";
+import { pcmPriceOf } from "./partners";
 import { verifyOffer } from "./sign";
 import { supabase, supabaseEnabled } from "./supabase";
 import type { Offer, Watch } from "../types";
@@ -150,7 +151,9 @@ export async function markDropsSeen(uid: string): Promise<void> {
 /** Tests only: read a local mock page. Never on Vercel. */
 const allowPrivate = () => !process.env.VERCEL && process.env.DALIL_TEST_ALLOW_PRIVATE_STORES === "1";
 
-async function priceNow(url: string): Promise<number | undefined> {
+async function priceNow(url: string, title?: string): Promise<number | undefined> {
+  // Pi Chain Mall pages are an app (no price in the HTML): look the listing up in its search.
+  if (/^https:\/\/(www\.)?pipcm\.com\//.test(url)) return pcmPriceOf(url, title ?? "");
   if (allowPrivate() && /^http:\/\/(127\.0\.0\.1|localhost)/.test(url)) {
     const res = await fetchWithTimeout(url, { timeoutMs: 8000 });
     return extract(await res.text(), url).product.price;
@@ -171,7 +174,7 @@ export async function checkWatches(limit = 40): Promise<{ checked: number; drops
   for (let i = 0; i < rows.length; i += 5) {
     await Promise.all(
       rows.slice(i, i + 5).map(async (r) => {
-        const p = await priceNow(r.url).catch(() => undefined);
+        const p = await priceNow(r.url, r.title).catch(() => undefined);
         const now = new Date().toISOString();
         const patch: Partial<Row> = { last_checked_at: now };
         if (p && p > 0) {

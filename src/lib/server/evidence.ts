@@ -34,7 +34,14 @@ function quoteNorm(s: string): string {
 export function normUrl(u: string): string | null {
   try {
     const x = new URL(u);
-    return `${x.hostname.replace(/^www\./, "").toLowerCase()}${x.pathname.replace(/\/+$/, "").toLowerCase()}`;
+    let key = `${x.hostname.replace(/^www\./, "").toLowerCase()}${x.pathname.replace(/\/+$/, "").toLowerCase()}`;
+    // Single-page apps with hash routes (e.g. pipcm.com/#/product/new-detail?id=…): the product is in the hash.
+    if (x.hash.startsWith("#/")) {
+      const h = new URL(x.hash.slice(1), "http://h");
+      const id = h.searchParams.get("id");
+      key += `/#${h.pathname.replace(/\/+$/, "").toLowerCase()}${id ? `?id=${id.toLowerCase()}` : ""}`;
+    }
+    return key;
   } catch {
     return null;
   }

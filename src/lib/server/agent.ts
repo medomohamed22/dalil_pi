@@ -13,7 +13,7 @@ import { detectWooPi } from "./woo";
 import { PriceEvidence } from "./evidence";
 import { cached, norm } from "./cache";
 import { expandQuery } from "./lexicon";
-import { mapOfPiConfigured, mapOfPiNearby, sallaApiConfigured, sallaApiSearch } from "./partners";
+import { mapOfPiConfigured, mapOfPiNearby, pcmEnabled, pcmSearch, sallaApiConfigured, sallaApiSearch } from "./partners";
 import type { AgentEvent, Lang, Offer, Scope, Step, WireMessage } from "../types";
 
 const OFFER_SCHEMA = {
@@ -66,6 +66,22 @@ const SALLA_TOOL: FunctionTool = {
   },
 };
 
+const PCM_TOOL: FunctionTool = {
+  type: "function",
+  function: {
+    name: "search_pi_chain_mall",
+    description:
+      "Search Pi Chain Mall (pipcm.com — Pi Network's global marketplace, Pi Hackathon winner; sellers worldwide, all prices in Pi). TOP PRIORITY source: call it in your FIRST turn for every product search. Returns REAL listings with the Pi price, the exact product link, image and seller. Fast (~1 s). Its catalog is mostly English (some Arabic/Chinese): pass 1-3 short keyword queries, e.g. [\"power bank\", \"خازن\"].",
+    parameters: {
+      type: "object",
+      properties: {
+        queries: { type: "array", items: { type: "string" }, description: "1-3 short keyword queries" },
+      },
+      required: ["queries"],
+    },
+  },
+};
+
 const MERCHANTS_TOOL: FunctionTool = {
   type: "function",
   function: {
@@ -99,7 +115,7 @@ const MAPOFPI_TOOL: FunctionTool = {
 };
 
 /** Interactive Pi apps / map apps: a headless browser can't read them, it only burns time. */
-const UNREADABLE = /(^|\.)(mapofpi\.com|pinet\.com|minepi\.com)$/i;
+const UNREADABLE = /(^|\.)(mapofpi\.com|pinet\.com|minepi\.com|pipcm\.com)$/i;
 function assertReadable(url: string) {
   let host = "";
   try {
@@ -109,7 +125,11 @@ function assertReadable(url: string) {
   }
   if (UNREADABLE.test(host)) {
     throw Object.assign(new Error(`${host} is an interactive Pi app/map that can't be read by browsing.`), {
-      hint: mapOfPiConfigured() ? "Use the map_of_pi tool for local shops." : "Use the web_search results (titles, snippets, prices) instead of opening it.",
+      hint: /pipcm\.com$/i.test(host)
+        ? "Use the search_pi_chain_mall tool (exact Pi prices, links and images)."
+        : mapOfPiConfigured()
+        ? "Use the map_of_pi tool for local shops."
+        : "Use the web_search results (titles, snippets, prices) instead of opening it.",
     });
   }
 }
@@ -232,17 +252,18 @@ Country rule: only show stores that sell in ${loc.countryName} or ship to it. If
 ${SCOPE_RULE[scope]}
 
 Where Pi is accepted (check these first; they take payment in Pi):
+- Pi Chain Mall — https://pipcm.com (FIRST PRIORITY: Pi Network's global marketplace, Pi Hackathon winner, every price in Pi). Search it with the search_pi_chain_mall tool in your first turn for every product request; when it has a good match, list it first. Never guess its URLs and never open pipcm.com with browse_url/browser_open (it's an app that needs a Pi login).
 - Salla Shop Mall — https://mall.salla-shop.com (multi-vendor Pi marketplace from Egypt; ships across Egypt, the Middle East and Africa; also services: Telegram Stars/Premium, Salla Care, Salla Go, food, Salla Swap). Search it with the search_salla tool (exact links, prices and images) — never guess Salla URLs.
 - Shops registered with Dalil Pi: search them with the dalil_merchants tool in your first turn (approved merchants that accept Pi, with Pi prices).
 - Stores using the Sallanet Pay gateway (WooCommerce stores that accept Pi at checkout).
-- Pi Chain Mall and Piketplace (https://piketplace.com), and Pi Mainnet commerce apps on *.pinet.com.
+- Piketplace (https://piketplace.com), and Pi Mainnet commerce apps on *.pinet.com.
 - Local physical shops: Map of Pi — only when the user asks for local shops. ${mapOfPi ? "Call the map_of_pi tool FIRST for any local request: it returns real nearby shops with exact location, rating and Pi prices in 1-3 s. Turn its shops/items into offers (kind \"local\", with address, lat, lon, distanceKm and the shop url)." : "Find them with web_search (e.g. \"<item> accept Pi <city> Map of Pi\")."}
 - NEVER open mapofpi.com, *.pinet.com or *.minepi.com pages with browse_url/browser_open: they are interactive Pi apps (maps, wallets) that can't be read and only waste time.
 A store counts as accepting Pi only if you saw evidence: a price in Pi, a Pi payment option/checkout, or it is one of the marketplaces above. Put that evidence in piEvidence. Never present a store as accepting Pi without evidence.
 
 How to work:
 1. Identify the exact product or service. If the message contains a scanned barcode (8-14 digits), call lookup_barcode first. If the user sent a photo, identify brand/model from it. If they sent a link, browse it first.
-2. Be fast. In your FIRST turn call, in parallel: search_salla (when the user is in Egypt, the Middle East or Africa, or asks for Salla) with 1-2 short keyword queries (English and Arabic), and ONE web_search with 2-3 queries for other Pi stores, e.g. "<product> pay with Pi Network ${loc.countryName}", "<product> Pi coin store". If search_salla already returned good matches, show them right away with show_offers and only browse other stores if needed. Open other product pages with browse_url (several in one turn) or browser_open for JavaScript pages. Each tool result ends with the time left; when it is under 15s, finish.
+2. Be fast. In your FIRST turn call, in parallel: search_pi_chain_mall (always) with 1-3 short keyword queries, search_salla (when the user is in Egypt, the Middle East or Africa, or asks for Salla) with 1-2 short keyword queries (English and Arabic), and ONE web_search with 2-3 queries for other Pi stores, e.g. "<product> pay with Pi Network ${loc.countryName}", "<product> Pi coin store". If search_pi_chain_mall or search_salla already returned good matches, show them right away with show_offers and only browse other stores if needed. Open other product pages with browse_url (several in one turn) or browser_open for JavaScript pages. Each tool result ends with the time left; when it is under 15s, finish.
    Links and images: use ONLY the exact URLs and image URLs returned by tools. Never build, shorten or guess a product URL; a store's home page or logo is not a product link or product image.
 3. Prices: report the price exactly as the store lists it. If the store shows a Pi price, use currency PI. If it only shows a local price (e.g. EGP) and says it accepts Pi, report that currency — never convert prices yourself.
 4. Call show_offers as soon as you have 2+ real offers and again later with a better list if you keep searching (it replaces the cards). 2-8 real offers. Never invent URLs, prices, ratings, reviews or stores — only use facts from tool results. If a fact is unknown, omit it.
@@ -327,6 +348,7 @@ export async function runAgent(opts: RunOptions): Promise<{ offersShown: boolean
   const hasBrowser = browserAvailable();
   const tools = [
     ...TOOLS,
+    ...(pcmEnabled() ? [PCM_TOOL] : []),
     MERCHANTS_TOOL,
     ...(hasBrowser || sallaApiConfigured() ? [SALLA_TOOL] : []),
     ...(mapOfPiConfigured() ? [MAPOFPI_TOOL] : []),
@@ -409,12 +431,14 @@ export async function runAgent(opts: RunOptions): Promise<{ offersShown: boolean
           if (call.name === "browser_action") step.detail = clip(`${args.action}${args.id != null ? ` #${args.id}` : ""}${args.text ? ` "${args.text}"` : ""}`, 60);
           if (call.name === "lookup_barcode") step.detail = String(args.code ?? "");
           if (call.name === "map_of_pi" || call.name === "dalil_merchants") step.detail = clip(String(args.query ?? ""), 60);
-          if (call.name === "search_salla") step.detail = clip((Array.isArray(args.queries) ? args.queries : [args.query]).filter(Boolean).map(String).join(" · "), 90);
+          if (call.name === "search_salla" || call.name === "search_pi_chain_mall") step.detail = clip((Array.isArray(args.queries) ? args.queries : [args.query]).filter(Boolean).map(String).join(" · "), 90);
           emit({ type: "step", step });
           try {
             const output = await execTool(call.name, args, { cfg, locale, piUsd: opts.piUsd, coords: opts.coords, ipCoords: opts.ipCoords, emit, signal, pages, state, browser, viaBrowser, evidence, trustedSearch });
             const hosts =
-              call.name === "search_salla"
+              call.name === "search_pi_chain_mall"
+                ? ["pipcm.com"]
+                : call.name === "search_salla"
                 ? ["mall.salla-shop.com"]
                 : call.name === "map_of_pi"
                 ? ["mapofpi.com"]
@@ -557,6 +581,36 @@ async function execTool(
       if (!results.length) return { results: [], hint: "No Salla match — try other keywords (English/Arabic) or other Pi stores." };
       return results.slice(0, 16);
     }
+    case "search_pi_chain_mall": {
+      let qs = (Array.isArray(args.queries) ? args.queries : [args.query])
+        .map((q) => String(q ?? "").trim())
+        .filter(Boolean)
+        .slice(0, 3);
+      if (qs.length === 1) qs = expandQuery(qs[0]);
+      if (!qs.length) throw new Error("empty query");
+      const lists = await Promise.all(qs.map((q) => cached("pcm", norm(q), 10 * 60_000, () => pcmSearch(q))));
+      const seen = new Set<string>();
+      const out: Array<Record<string, unknown>> = [];
+      for (const it of lists.flat()) {
+        if (seen.has(it.url)) continue;
+        seen.add(it.url);
+        // Prices and images come straight from the marketplace: trusted for grounding and for the cards.
+        ctx.evidence.addObserved(it.url, it.price);
+        ctx.pages.set(it.url, { image: it.image });
+        out.push({
+          title: it.title,
+          store: it.seller ? `Pi Chain Mall · ${it.seller}` : "Pi Chain Mall",
+          url: it.url,
+          image: it.image,
+          price: it.price,
+          currency: "PI",
+          kind: "online",
+          piEvidence: "Pi price on Pi Chain Mall (pipcm.com, Pi marketplace)",
+        });
+      }
+      if (!out.length) return { results: [], hint: "No Pi Chain Mall match — try other/shorter keywords (English first) or the other Pi stores." };
+      return out.slice(0, 16);
+    }
     case "dalil_merchants": {
       const kind = ["online", "local", "service"].includes(String(args.kind)) ? (String(args.kind) as "online" | "local" | "service") : undefined;
       const list = await searchMerchants({ country: ctx.locale.country, query: String(args.query ?? ""), kind });
@@ -664,7 +718,7 @@ async function execTool(
         if (q?.length) o.reviews = q;
       });
       // Stores whose own checkout takes Pi (WooCommerce + Sallanet Pay …): Dalil Pi can place the order.
-      const probe = rankedRaw.filter((o) => o.url && o.currency === "PI" && o.trust !== "suspicious" && !/salla-shop\.com$|piketplace\.com$/.test(o.storeDomain ?? ""));
+      const probe = rankedRaw.filter((o) => o.url && o.currency === "PI" && o.trust !== "suspicious" && !/salla-shop\.com$|piketplace\.com$|pipcm\.com$/.test(o.storeDomain ?? ""));
       const seen = new Map<string, Promise<string | null>>();
       await Promise.all(
         probe.slice(0, 6).map(async (o) => {
