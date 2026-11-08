@@ -13,7 +13,9 @@ export async function GET(req: Request) {
   const s = requireSession(req);
   if (s instanceof Response) return s;
   try {
-    return Response.json({ orders: await listOrders(s.uid) }, { headers: { "Cache-Control": "no-store" } });
+    // 20 per page; ?limit= up to 100 for "show more".
+    const limit = Math.min(100, Math.max(1, Number(new URL(req.url).searchParams.get("limit")) || 20));
+    return Response.json({ orders: await listOrders(s.uid, limit) }, { headers: { "Cache-Control": "no-store" } });
   } catch (err) {
     return errorJson(err);
   }

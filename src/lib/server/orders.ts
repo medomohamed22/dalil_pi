@@ -129,7 +129,8 @@ export async function createOrder(uid: string, offer: Offer, addressId?: string,
     pi_usd_rate: offer.currency === "PI" && price ? price.usd : null,
     country: offer.country ?? address?.country ?? null,
     trust: offer.trust,
-    offer: { ...offer },
+    // Signed snapshot for the record — without the bulky display-only parts (less storage and egress).
+    offer: { ...offer, trustParts: undefined, reviews: undefined, reason: undefined },
     address_id: address?.id ?? null,
     shipping: address ? shippingSnapshot(address) : null,
     // Default connector: the "Order" button opens the product page in the store.

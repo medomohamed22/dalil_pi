@@ -1,5 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import { Inter, IBM_Plex_Sans_Arabic } from "next/font/google";
+import { Analytics } from "@vercel/analytics/next";
+import { SpeedInsights } from "@vercel/speed-insights/next";
 import "./globals.css";
 
 const inter = Inter({ subsets: ["latin"], variable: "--font-inter", display: "swap" });
@@ -37,7 +39,12 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <head>
         <script dangerouslySetInnerHTML={{ __html: boot }} />
       </head>
-      <body className={`${inter.variable} ${arabic.variable}`}>{children}</body>
+      <body className={`${inter.variable} ${arabic.variable}`}>
+        {children}
+        {/* Real-device speed + page views (free Hobby allowance; inactive until enabled in the Vercel dashboard). */}
+        <SpeedInsights />
+        <Analytics />
+      </body>
     </html>
   );
 }
