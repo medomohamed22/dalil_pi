@@ -7,6 +7,7 @@ import { piUsdPrice } from "./price";
 import { rankOffers, type RawOffer } from "./rank";
 import { prepareOffers } from "./sign";
 import { MIN_ORDER_TRUST, scoreTrust } from "./trust";
+import { ruleCategory } from "./rules";
 import type { Offer } from "../types";
 
 /**
@@ -170,12 +171,16 @@ export async function searchShop(f: ShopFilters): Promise<ShopResult> {
   const max = f.max ?? parsed.max;
   const sort = f.sort ?? parsed.sort ?? "best";
   const queries = [parsed.text, ...(f.any ?? [])].filter(Boolean);
+  // A short search that names a kind of product ("سماعة", "perfume", "موبايل") also brings the whole
+  // category the rules put products in, even when a title says it differently ("earbuds").
+  const kind = !f.cats?.length && parsed.text && parsed.text.split(/\s+/).length <= 2 ? ruleCategory({ title: parsed.text }) : null;
+  const cats = f.cats?.length ? f.cats : kind ? [kind] : undefined;
   const browse = !queries.length;
 
   // The heavy part (match + trust + sign) depends only on the words, country and store → cached.
-  const base = await cached("shop", `${f.country}|${f.store ?? "*"}|${norm(f.category ?? "")}|${(f.cats ?? []).join(",")}|${queries.map(norm).join("+")}`, 5 * 60_000, async () => {
+  const base = await cached("shop", `${f.country}|${f.store ?? "*"}|${norm(f.category ?? "")}|${(cats ?? []).join(",")}|${queries.map(norm).join("+")}`, 5 * 60_000, async () => {
     const [{ hits }, piUsd] = await Promise.all([
-      searchCatalog(queries, { country: f.country, limit: 400, browse: browse && !f.cats?.length, category: f.category, cats: f.cats }),
+      searchCatalog(queries, { country: f.country, limit: 400, browse: browse && !cats?.length, category: f.category, cats }),
       piUsdPrice().catch(() => null),
     ]);
     const relevance = new Map(hits.map((h, i) => [h.item.url, { score: h.score, rank: i, ageMin: h.ageMin, source: h.item.source, listPrice: h.listPrice }]));

@@ -4,6 +4,7 @@ import { BrowserSession, browserAvailable, type SallaCatalogRaw } from "./browse
 import { expandQuery, synonymGroups } from "./lexicon";
 import { fetchWithTimeout, assertPublicUrl } from "./net";
 import { attachMemoryCatalog, type MemCatalogRow } from "./enrich";
+import { ruleCategory, ruleTwinKey } from "./rules";
 import { countryCode, PCM_COUNTRY_IDS } from "./partners";
 import { supabase, supabaseEnabled } from "./supabase";
 
@@ -599,6 +600,11 @@ async function index(): Promise<NonNullable<typeof loaded>> {
       .limit(20000);
     if (error) throw new Error(`catalog load: ${error.message}`);
     items = (data ?? []) as CatalogItem[];
+  }
+  // Smart indexing with plain rules (rules.ts): category + brand/model twin key, in memory, no AI.
+  for (const it of items) {
+    it.norm_category ??= ruleCategory(it);
+    it.twin_key ??= ruleTwinKey(it);
   }
   const rows = items.map((item) => ({
     item,

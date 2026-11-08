@@ -1,5 +1,4 @@
 import { refreshCatalog, SOURCES, type CatalogSource } from "@/lib/server/catalog";
-import { enrichPending } from "@/lib/server/enrich";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -20,8 +19,6 @@ export async function GET(req: Request) {
     .split(",")
     .filter((s): s is CatalogSource => (SOURCES as string[]).includes(s));
   const results = await refreshCatalog({ force: u.searchParams.get("force") === "1", sources: sources.length ? sources : undefined });
-  // Then let AI tidy up to 60 new/changed products (brand, model, category, titles) — once each.
-  const enrich = u.searchParams.get("enrich") === "0" ? { enriched: 0, left: -1, skipped: "off" } : await enrichPending(Number(u.searchParams.get("enrich")) || 60);
   const failed = results.filter((r) => r.status === "failed");
-  return Response.json({ ok: !failed.length, results, enrich }, { status: failed.length && failed.length === results.length ? 500 : 200 });
+  return Response.json({ ok: !failed.length, results }, { status: failed.length && failed.length === results.length ? 500 : 200 });
 }

@@ -4,6 +4,9 @@ import { streamChat } from "./meta";
 import { supabase, supabaseEnabled } from "./supabase";
 
 /**
+ * NOT USED by default: the owner chose plain-code indexing (rules in catalog.ts) and AI only in
+ * Ask Dalil. Runs only when AI_ENRICH=on is set (e.g. for a one-off clean-up).
+ *
  * Dalil Index — AI enrichment. Each new or changed product is read ONCE by the model, 10 per call:
  * brand, model, one normalized category, an English and an Arabic title and a few search
  * keywords. brand + model give the "twin key" that finds the same product in other stores.
@@ -206,6 +209,7 @@ let lastRun = 0;
  * instance, and `minGapMs` keeps background runs from piling up.
  */
 export async function enrichPending(limit = 40, minGapMs = 0): Promise<{ enriched: number; left: number; skipped?: string; error?: string }> {
+  if (process.env.AI_ENRICH !== "on") return { enriched: 0, left: -1, skipped: "AI enrichment is off (AI_ENRICH)" };
   if (!hostedEnabled()) return { enriched: 0, left: -1, skipped: "no AI key" };
   if (running) return running;
   if (Date.now() - lastRun < minGapMs) return { enriched: 0, left: -1, skipped: "recently ran" };

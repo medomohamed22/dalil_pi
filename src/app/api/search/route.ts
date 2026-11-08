@@ -4,7 +4,6 @@ import { geoFromRequest, isCountryCode } from "@/lib/server/geo";
 import { rateLimit } from "@/lib/server/ratelimit";
 import { searchShop, type ShopSort } from "@/lib/server/shop";
 import { recordMiss } from "@/lib/server/stats";
-import { enrichPending } from "@/lib/server/enrich";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -42,10 +41,7 @@ export async function GET(req: Request) {
       limit: n(u.searchParams.get("limit")),
     });
     // Keep the index fresh without making anyone wait (the JSON stores; Salla is refreshed elsewhere).
-    after(async () => {
-      await refreshCatalog({ sources: ["pcm", "gtp", "pkt"] }).catch(() => {});
-      await enrichPending(20, 10 * 60_000).catch(() => {}); // a few new products, at most every 10 min
-    });
+    after(() => refreshCatalog({ sources: ["pcm", "gtp", "pkt"] }).catch(() => {}));
     // Nothing found for a typed search (no narrowing filters): record the demand gap.
     const typed = result.parsed.text;
     if (typed && result.total === 0 && !store && !u.searchParams.get("category") && !u.searchParams.get("offset")) after(() => recordMiss(typed, country).catch(() => {}));
