@@ -11,8 +11,9 @@ const nextConfig: NextConfig = {
         headers: [
           { key: "X-Content-Type-Options", value: "nosniff" },
           { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
-          // Framing only by the Pi Sandbox (it runs the app in an iframe on Testnet) and the Pi apps.
-          { key: "Content-Security-Policy", value: "frame-ancestors 'self' https://sandbox.minepi.com https://*.minepi.com" },
+          // No frame-ancestors / X-Frame-Options: the Pi Browser runs apps inside its own frame
+          // (its parent origin varies by Pi Browser version and platform), so any framing rule
+          // risks a blank white page there.
           { key: "Permissions-Policy", value: "camera=(self), microphone=(self), geolocation=(self), payment=(self)" },
           { key: "Strict-Transport-Security", value: "max-age=31536000; includeSubDomains" },
         ],

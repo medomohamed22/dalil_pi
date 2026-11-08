@@ -125,12 +125,19 @@ export default function App() {
   /* ---------- boot ---------- */
   useEffect(() => {
     requestPersistence();
-    loadSettings().then(async (st) => {
-      setSettings(st);
-      const saved = await getKV<string>(SESSION_KEY);
-      if (saved) setToken(saved);
-      setReady(true);
-    });
+    // Some in-app browsers stall IndexedDB; never let that keep the page empty.
+    const fallback = setTimeout(() => setReady(true), 2500);
+    loadSettings()
+      .then(async (st) => {
+        setSettings(st);
+        const saved = await getKV<string>(SESSION_KEY);
+        if (saved) setToken(saved);
+      })
+      .catch(() => {})
+      .finally(() => {
+        clearTimeout(fallback);
+        setReady(true);
+      });
     fetch("/api/config")
       .then((r) => r.json())
       .then((c: Config) => setConfig(c))
