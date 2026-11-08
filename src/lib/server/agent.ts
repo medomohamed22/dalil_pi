@@ -8,6 +8,7 @@ import { prepareOffers } from "./sign";
 import { MIN_ORDER_TRUST, scoreTrust } from "./trust";
 import { detectWooPi } from "./woo";
 import { PriceEvidence } from "./evidence";
+import { mapOfPiConfigured, mapOfPiNearby, sallaApiConfigured, sallaApiSearch } from "./partners";
 import type { AgentEvent, Lang, Offer, Scope, Step, WireMessage } from "../types";
 
 const OFFER_SCHEMA = {
@@ -58,6 +59,38 @@ const SALLA_TOOL: FunctionTool = {
     },
   },
 };
+
+const MAPOFPI_TOOL: FunctionTool = {
+  type: "function",
+  function: {
+    name: "map_of_pi",
+    description:
+      "Find PHYSICAL shops near the user that accept Pi, from Map of Pi's live data: shop name, address, exact location, distance, rating, community trust meter, and items with Pi prices. Fast (1-3 s) and exact — use it first for any local / near-me request. Pass a short keyword for what the user wants (e.g. \"coffee\", \"phone repair\"); leave it empty to list nearby shops.",
+    parameters: {
+      type: "object",
+      properties: {
+        query: { type: "string", description: "Short keyword, e.g. \"coffee\" or \"صيانة موبايل\"" },
+        radius_km: { type: "number", description: "Search radius in km (default 10, max 50)" },
+      },
+    },
+  },
+};
+
+/** Interactive Pi apps / map apps: a headless browser can't read them, it only burns time. */
+const UNREADABLE = /(^|\.)(mapofpi\.com|pinet\.com|minepi\.com)$/i;
+function assertReadable(url: string) {
+  let host = "";
+  try {
+    host = new URL(url).hostname;
+  } catch {
+    return;
+  }
+  if (UNREADABLE.test(host)) {
+    throw Object.assign(new Error(`${host} is an interactive Pi app/map that can't be read by browsing.`), {
+      hint: mapOfPiConfigured() ? "Use the map_of_pi tool for local shops." : "Use the web_search results (titles, snippets, prices) instead of opening it.",
+    });
+  }
+}
 
 const BROWSER_TOOLS: FunctionTool[] = [
   {
@@ -166,7 +199,7 @@ const SCOPE_RULE: Record<Scope, string> = {
   services: "Scope: SERVICES paid in Pi only (the user chose it), e.g. Salla Shop services, Salla Care, Salla Go, food, Telegram Stars/Premium.",
 };
 
-function developerPrompt(loc: Locale, lang: Lang, scope: Scope, coords?: { lat: number; lon: number }, piUsd?: number): string {
+function developerPrompt(loc: Locale, lang: Lang, scope: Scope, coords?: { lat: number; lon: number }, piUsd?: number, mapOfPi = false): string {
   const where = `${loc.city ? `${loc.city}, ` : ""}${loc.countryName} (${loc.country})`;
   return `You are Dalil Pi, a trustworthy AI shopping agent for Pi Network users. You only look for things that can be bought WITH PI (the Pi Network cryptocurrency).
 Today is ${new Date().toISOString().slice(0, 10)}. The user is in ${where}${coords ? ` (GPS ${coords.lat.toFixed(4)}, ${coords.lon.toFixed(4)} — use it to estimate distanceKm to physical shops)` : ""}. Local currency: ${loc.currency}.${piUsd ? ` Live Pi price: 1 PI ≈ $${piUsd} (OKX).` : ""}
@@ -180,7 +213,8 @@ Where Pi is accepted (check these first; they take payment in Pi):
 - Salla Shop Mall — https://mall.salla-shop.com (multi-vendor Pi marketplace from Egypt; ships across Egypt, the Middle East and Africa; also services: Telegram Stars/Premium, Salla Care, Salla Go, food, Salla Swap). Search it with the search_salla tool (exact links, prices and images) — never guess Salla URLs.
 - Stores using the Sallanet Pay gateway (WooCommerce stores that accept Pi at checkout).
 - Pi Chain Mall and Piketplace (https://piketplace.com), and Pi Mainnet commerce apps on *.pinet.com.
-- Local physical shops: Map of Pi (https://mapofpi.com) — only when the user asks for local shops.
+- Local physical shops: Map of Pi — only when the user asks for local shops. ${mapOfPi ? "Call the map_of_pi tool FIRST for any local request: it returns real nearby shops with exact location, rating and Pi prices in 1-3 s. Turn its shops/items into offers (kind \"local\", with address, lat, lon, distanceKm and the shop url)." : "Find them with web_search (e.g. \"<item> accept Pi <city> Map of Pi\")."}
+- NEVER open mapofpi.com, *.pinet.com or *.minepi.com pages with browse_url/browser_open: they are interactive Pi apps (maps, wallets) that can't be read and only waste time.
 A store counts as accepting Pi only if you saw evidence: a price in Pi, a Pi payment option/checkout, or it is one of the marketplaces above. Put that evidence in piEvidence. Never present a store as accepting Pi without evidence.
 
 How to work:
@@ -229,6 +263,8 @@ export interface RunOptions {
   locale: Locale;
   scope: Scope;
   coords?: { lat: number; lon: number };
+  /** Approximate location from the IP (server-side only; never sent to the model). */
+  ipCoords?: { lat: number; lon: number };
   lang: Lang;
   /** Live Pi price in USD (OKX), if available. */
   piUsd?: number;
@@ -252,7 +288,13 @@ export async function runAgent(opts: RunOptions): Promise<{ offersShown: boolean
   const evidence = new PriceEvidence();
   for (const o of opts.knownOffers ?? []) evidence.addObserved(o.url, o.price);
   const trustedSearch = !!opts.trustedSearch;
-  const tools = [...TOOLS, ...(browserAvailable() ? [SALLA_TOOL, ...BROWSER_TOOLS] : [])];
+  const hasBrowser = browserAvailable();
+  const tools = [
+    ...TOOLS,
+    ...(hasBrowser || sallaApiConfigured() ? [SALLA_TOOL] : []),
+    ...(mapOfPiConfigured() ? [MAPOFPI_TOOL] : []),
+    ...(hasBrowser ? BROWSER_TOOLS : []),
+  ];
   const browser = new BrowserSession();
   // One tab: browser calls of the same turn run one after another.
   let browserQueue: Promise<unknown> = Promise.resolve();
@@ -263,7 +305,7 @@ export async function runAgent(opts: RunOptions): Promise<{ offersShown: boolean
   };
   try {
     const messages: ChatMsg[] = [
-      { role: "developer", content: developerPrompt(locale, lang, opts.scope, opts.coords, opts.piUsd) },
+      { role: "developer", content: developerPrompt(locale, lang, opts.scope, opts.coords, opts.piUsd, mapOfPiConfigured()) },
       ...toChatMessages(opts.history),
     ];
 
@@ -329,13 +371,16 @@ export async function runAgent(opts: RunOptions): Promise<{ offersShown: boolean
           if (call.name === "browse_url" || call.name === "browser_open") step.detail = hostOf(String(args.url ?? ""));
           if (call.name === "browser_action") step.detail = clip(`${args.action}${args.id != null ? ` #${args.id}` : ""}${args.text ? ` "${args.text}"` : ""}`, 60);
           if (call.name === "lookup_barcode") step.detail = String(args.code ?? "");
+          if (call.name === "map_of_pi") step.detail = clip(String(args.query ?? ""), 60);
           if (call.name === "search_salla") step.detail = clip((Array.isArray(args.queries) ? args.queries : [args.query]).filter(Boolean).map(String).join(" · "), 90);
           emit({ type: "step", step });
           try {
-            const output = await execTool(call.name, args, { cfg, locale, piUsd: opts.piUsd, coords: opts.coords, emit, signal, pages, state, browser, viaBrowser, evidence, trustedSearch });
+            const output = await execTool(call.name, args, { cfg, locale, piUsd: opts.piUsd, coords: opts.coords, ipCoords: opts.ipCoords, emit, signal, pages, state, browser, viaBrowser, evidence, trustedSearch });
             const hosts =
               call.name === "search_salla"
                 ? ["mall.salla-shop.com"]
+                : call.name === "map_of_pi"
+                ? ["mapofpi.com"]
                 : call.name === "web_search" && Array.isArray(output)
                 ? Array.from(
                     new Set(
@@ -350,7 +395,8 @@ export async function runAgent(opts: RunOptions): Promise<{ offersShown: boolean
           } catch (err) {
             const msg = err instanceof Error ? err.message : String(err);
             emit({ type: "step", step: { ...step, status: "error" } });
-            return { error: msg, hint: call.name === "browse_url" ? "Page blocked or slow — use prices from search results instead." : undefined };
+            const hint = (err as { hint?: string })?.hint ?? (call.name === "browse_url" ? "Page blocked or slow — use prices from search results instead." : undefined);
+            return { error: msg, hint };
           }
         }),
       );
@@ -379,6 +425,7 @@ async function execTool(
     locale: Locale;
     piUsd?: number;
     coords?: { lat: number; lon: number };
+    ipCoords?: { lat: number; lon: number };
     emit: (e: AgentEvent) => void;
     signal?: AbortSignal;
     pages: Map<string, { image?: string; rating?: number; reviewCount?: number }>;
@@ -417,12 +464,43 @@ async function execTool(
     case "lookup_barcode":
       return lookupBarcode(String(args.code ?? ""), ctx.signal);
     case "search_salla": {
-      if (!ctx.browser || !ctx.viaBrowser) throw new Error("browser unavailable");
       const qs = (Array.isArray(args.queries) ? args.queries : [args.query])
         .map((q) => String(q ?? "").trim())
         .filter(Boolean)
         .slice(0, 2);
       if (!qs.length) throw new Error("empty query");
+      // Partner API first (exact, ~0.5 s); the headless browser is the fallback.
+      if (sallaApiConfigured()) {
+        try {
+          const lists = await Promise.all(qs.map((q) => sallaApiSearch(q, { country: ctx.locale.country, limit: 12 })));
+          const seen = new Set<string>();
+          const out: Array<Record<string, unknown>> = [];
+          for (const p of lists.flat()) {
+            if (seen.has(p.url)) continue;
+            seen.add(p.url);
+            ctx.evidence.addObserved(p.url, p.price);
+            ctx.pages.set(p.url, { image: p.image, rating: p.rating, reviewCount: p.review_count });
+            out.push({
+              title: p.title,
+              store: p.store?.name ? `${p.store.name} (Salla Shop)` : "Salla Shop Mall",
+              url: p.url,
+              image: p.image,
+              price: p.price,
+              currency: p.currency,
+              inStock: p.in_stock,
+              rating: p.rating,
+              reviewCount: p.review_count,
+              storeRating: p.store?.rating,
+              kind: "online",
+              piEvidence: "Pi price from Salla Shop's partner API",
+            });
+          }
+          if (out.length) return out.slice(0, 16);
+        } catch {
+          /* fall back to the browser */
+        }
+      }
+      if (!ctx.browser || !ctx.viaBrowser) throw new Error("Salla search unavailable right now");
       const seen = new Set<string>();
       const results: Array<Record<string, unknown>> = [];
       for (const q of qs) {
@@ -439,9 +517,26 @@ async function execTool(
       if (!results.length) return { results: [], hint: "No Salla match — try other keywords (English/Arabic) or other Pi stores." };
       return results.slice(0, 16);
     }
+    case "map_of_pi": {
+      const at = ctx.coords ?? ctx.ipCoords;
+      if (!at) {
+        throw Object.assign(new Error("The user's location is unknown."), { hint: "Ask the user to tap \"Near me\" to share their location, or to name their area." });
+      }
+      const shops = await mapOfPiNearby({ lat: at.lat, lon: at.lon, radiusKm: Number(args.radius_km) || 10, query: String(args.query ?? "") });
+      for (const sh of shops) {
+        ctx.pages.set(sh.url, { image: sh.items[0]?.image ?? sh.image, rating: sh.rating });
+        for (const it of sh.items) ctx.evidence.addObserved(sh.url, it.price);
+      }
+      if (!shops.length) return { shops: [], hint: "No Map of Pi shops here — widen radius_km or try web_search." };
+      return {
+        located_by: ctx.coords ? "gps" : "ip (approximate — say distances are approximate)",
+        shops: shops.map((sh) => ({ ...sh, piEvidence: "Listed on Map of Pi" })),
+      };
+    }
     case "browser_open": {
       if (!ctx.browser || !ctx.viaBrowser) throw new Error("browser unavailable");
       const url = String(args.url ?? "");
+      assertReadable(url);
       const st = await ctx.viaBrowser(() => ctx.browser!.open(url));
       ctx.pages.set(url, { image: st.product.image, rating: st.product.rating, reviewCount: st.product.reviewCount });
       return showPage(st, "open");
@@ -466,6 +561,7 @@ async function execTool(
       );
     }
     case "browse_url": {
+      assertReadable(String(args.url ?? ""));
       const r = await browse(String(args.url ?? ""), ctx.signal);
       ctx.evidence.addObserved(r.url, r.product.price);
       ctx.evidence.addObserved(String(args.url ?? ""), r.product.price);

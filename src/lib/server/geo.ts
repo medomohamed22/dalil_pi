@@ -8,6 +8,9 @@ import "server-only";
 export interface Geo {
   country: string;
   city?: string;
+  /** Approximate IP location (city level) from Vercel — server-side use only. */
+  lat?: number;
+  lon?: number;
   /** Where the country came from. */
   source: "ip" | "language" | "default";
 }
@@ -26,7 +29,10 @@ export function geoFromRequest(req: Request): Geo {
   } catch {
     city = undefined;
   }
-  if (isCountryCode(ipCountry)) return { country: ipCountry, city, source: "ip" };
+  const lat = Number(h.get("x-vercel-ip-latitude"));
+  const lon = Number(h.get("x-vercel-ip-longitude"));
+  const ll = h.get("x-vercel-ip-latitude") && Number.isFinite(lat) && Number.isFinite(lon) && Math.abs(lat) <= 90 && Math.abs(lon) <= 180 ? { lat, lon } : {};
+  if (isCountryCode(ipCountry)) return { country: ipCountry, city, source: "ip", ...ll };
   // e.g. "ar-EG,ar;q=0.9,en;q=0.8" → EG
   const m = (h.get("accept-language") ?? "").match(/[a-z]{2,3}-([A-Z]{2})/);
   if (m && isCountryCode(m[1])) return { country: m[1], city, source: "language" };

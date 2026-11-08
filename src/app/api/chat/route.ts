@@ -100,6 +100,8 @@ export async function POST(req: Request) {
           locale,
           scope: settings.scope ?? "auto",
           coords: settings.coords ?? undefined,
+          // Map of Pi fallback when the user didn't share GPS — only if they shop in the IP's country.
+          ipCoords: country === geo.country && geo.lat != null && geo.lon != null ? { lat: geo.lat, lon: geo.lon } : undefined,
           lang,
           piUsd: price?.usd,
           signal: req.signal,
