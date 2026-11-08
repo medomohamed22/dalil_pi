@@ -18,7 +18,7 @@
     "cheerio": "^1.0.0",
     "dexie": "^4.0.11",
     "dexie-react-hooks": "^1.1.7",
-    "framer-motion": "^11.18.2",
+    "framer-motion": "^12.43.0",
     "lucide-react": "^0.468.0",
     "next": "15.5.29",
     "puppeteer-core": "^25.16.0",

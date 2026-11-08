@@ -165,9 +165,9 @@ export default function ScannerSheet({
             role="dialog"
             aria-label={ar ? "مسح باركود" : "Scan barcode"}
             className="w-full max-w-md overflow-hidden rounded-t-3xl bg-bg sm:rounded-3xl"
-            initial={{ y: 40, opacity: 0 }}
-            animate={{ y: 0, opacity: 1 }}
-            exit={{ y: 40, opacity: 0 }}
+            initial={{ y: "100%" }}
+            animate={{ y: 0 }}
+            exit={{ y: "100%" }}
             transition={{ type: "spring", damping: 28, stiffness: 320 }}
             onClick={(e) => e.stopPropagation()}
           >

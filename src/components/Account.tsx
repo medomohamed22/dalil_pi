@@ -208,9 +208,9 @@ function Sheet({ open, title, onClose, children }: { open: boolean; title: strin
           <m.div
             role="dialog"
             aria-label={title}
-            initial={{ y: 40, opacity: 0 }}
-            animate={{ y: 0, opacity: 1 }}
-            exit={{ y: 40, opacity: 0 }}
+            initial={{ y: "100%" }}
+            animate={{ y: 0 }}
+            exit={{ y: "100%" }}
             className="fixed inset-x-0 bottom-0 z-50 mx-auto flex max-h-[88dvh] w-full max-w-md flex-col rounded-t-3xl border border-line bg-bg shadow-card sm:bottom-auto sm:top-[6dvh] sm:rounded-3xl"
           >
             <div className="flex items-center justify-between px-4 pb-2 pt-3">
