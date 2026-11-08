@@ -1,7 +1,9 @@
 import { after } from "next/server";
 import { refreshInBackground, SOURCES, type CatalogSource } from "@/lib/server/catalog";
 import { geoFromRequest, isCountryCode } from "@/lib/server/geo";
+import { visitorId } from "@/lib/server/hosted";
 import { rateLimit } from "@/lib/server/ratelimit";
+import { counters } from "@/lib/server/store";
 import { searchShop, type ShopSort } from "@/lib/server/shop";
 import { recordMiss } from "@/lib/server/stats";
 
@@ -44,9 +46,14 @@ export async function GET(req: Request) {
     after(() => refreshInBackground(["pcm", "gtp", "pkt"]));
     // Nothing found for a typed search (no narrowing filters): record the demand gap.
     const typed = result.parsed.text;
-    // At most 20 recorded per visitor per hour: random queries can't flood the table.
-    if (typed && result.total === 0 && !store && !u.searchParams.get("category") && !u.searchParams.get("offset") && !(await rateLimit(req, "miss", 20, 3600)))
-      after(() => recordMiss(typed, country).catch(() => {}));
+    // At most 20 recorded per visitor per hour (counted in the database, across all server
+    // instances; only searches with no result pay this extra call): random queries can't flood it.
+    if (typed && result.total === 0 && !store && !u.searchParams.get("category") && !u.searchParams.get("offset")) {
+      const who = visitorId(req);
+      after(async () => {
+        if ((await counters.incr(`miss:${who}:${Math.floor(Date.now() / 3_600_000)}`, 3700).catch(() => 99)) <= 20) await recordMiss(typed, country).catch(() => {});
+      });
+    }
     return Response.json({ country, ...result }, { headers: { "Cache-Control": "public, s-maxage=120, stale-while-revalidate=600" } });
   } catch (err) {
     return Response.json({ error: (err as Error).message }, { status: 500 });
