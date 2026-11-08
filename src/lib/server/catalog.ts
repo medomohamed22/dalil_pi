@@ -3,7 +3,7 @@ import { createHash } from "node:crypto";
 import { BrowserSession, browserAvailable, type SallaCatalogRaw } from "./browser";
 import { expandQuery, synonymGroups } from "./lexicon";
 import { fetchWithTimeout, assertPublicUrl } from "./net";
-import { countryCode } from "./partners";
+import { countryCode, PCM_COUNTRY_IDS } from "./partners";
 import { supabase, supabaseEnabled } from "./supabase";
 
 /**
@@ -48,6 +48,8 @@ export interface CatalogItem {
   in_stock: boolean;
   stock?: number | null;
   digital: boolean;
+  /** Ships to every country (Pi Chain Mall "global sale"); otherwise only `country`. */
+  ships_global?: boolean;
 }
 
 interface SourceState {
@@ -81,15 +83,31 @@ const num = (v: unknown) => {
 const httpsImg = (v: unknown) => (typeof v === "string" && /^https:\/\/[^\s"'<>]+$/.test(v.trim()) ? v.trim() : null);
 const base = (v?: string) => (v ? v.replace(/\/+$/, "") : "");
 
-/** Pi Chain Mall: the paged product list its own app loads (50 per page). */
+/**
+ * Pi Chain Mall: the product list its own app loads (500 per page), then the lists of the
+ * countries we can place (PCM_COUNTRY_IDS) to learn where each local listing is sold.
+ */
 export async function fetchPcm(): Promise<CatalogItem[]> {
   const api = base(process.env.PCM_API_URL) || "https://api.pipcm.com";
+  const where = new Map<string, string>();
+  for (const [pcmId, iso] of Object.entries(PCM_COUNTRY_IDS)) {
+    for (let page = 1, pages = 1; page <= Math.min(pages, 20); page++) {
+      const u = new URL(`${api}/api/commodity/commodity/getCommodityList`);
+      for (const [k, v] of Object.entries({ currentPage: String(page), pageSize: "500", countryId: pcmId, hasStock: "false", commdityMark: "-1" })) u.searchParams.set(k, v);
+      const j = await getJson<{ object?: Array<Record<string, unknown>>; totalPage?: number }>(u.toString());
+      pages = Number(j.totalPage) || 1;
+      const rows = Array.isArray(j.object) ? j.object : [];
+      for (const c of rows) if (typeof c.id === "string") where.set(c.id, iso);
+      if (!rows.length) break;
+    }
+  }
   const img = (p: string) => (/^https?:\/\//.test(p) ? p : `https://image.pcmsuper.art/image/${p.replace(/^\/+/, "")}`);
   const out: CatalogItem[] = [];
   const seen = new Set<string>(); // its pages can repeat items
   for (let page = 1, pages = 1; page <= Math.min(pages, 40); page++) {
     const u = new URL(`${api}/api/commodity/commodity/getCommodityList`);
-    for (const [k, v] of Object.entries({ currentPage: String(page), pageSize: "50", countryId: "globle8787", hasStock: "false", commdityMark: "-1" })) u.searchParams.set(k, v);
+    // Big pages: its small pages overlap (some items repeat, others never show), one big page doesn't.
+    for (const [k, v] of Object.entries({ currentPage: String(page), pageSize: "500", countryId: "globle8787", hasStock: "false", commdityMark: "-1" })) u.searchParams.set(k, v);
     const j = await getJson<{ object?: Array<Record<string, unknown>>; totalPage?: number }>(u.toString());
     pages = Number(j.totalPage) || 1;
     const rows = Array.isArray(j.object) ? j.object : [];
@@ -110,6 +128,9 @@ export async function fetchPcm(): Promise<CatalogItem[]> {
         image: pics[0] ?? null,
         images: pics.slice(0, 8),
         seller: str(user.nickName, 60) ?? str(user.userName, 60),
+        // Local listings: only their sales country (unknown → shown nowhere); global sale: everywhere.
+        country: where.get(id) ?? null,
+        ships_global: c.commdityMark === 1,
         tags: [],
         in_stock: true,
         digital: false,
@@ -257,7 +278,7 @@ const mem = { items: new Map<string, CatalogItem & { active: boolean }>(), sourc
 
 const fingerprint = (it: CatalogItem) =>
   createHash("sha1")
-    .update(JSON.stringify([it.title, it.title_ar, it.description, it.price, it.price_egp, it.list_price_egp, it.image, it.images, it.in_stock, it.stock, it.category, it.tags]))
+    .update(JSON.stringify([it.title, it.title_ar, it.description, it.price, it.price_egp, it.list_price_egp, it.image, it.images, it.in_stock, it.stock, it.category, it.tags, it.country, it.ships_global]))
     .digest("hex")
     .slice(0, 16);
 
@@ -479,7 +500,7 @@ async function index(): Promise<NonNullable<typeof loaded>> {
   else {
     const { data, error } = await supabase()
       .from("catalog_items")
-      .select("id, source, title, title_ar, description, price, price_egp, list_price_egp, url, image, images, seller, country, category, tags, in_stock, stock, digital")
+      .select("id, source, title, title_ar, description, price, price_egp, list_price_egp, url, image, images, seller, country, category, tags, in_stock, stock, digital, ships_global")
       .eq("active", true)
       .limit(20000);
     if (error) throw new Error(`catalog load: ${error.message}`);
@@ -519,7 +540,8 @@ const SALLA_REGION = new Set(
 function reaches(it: CatalogItem, country: string): boolean {
   if (it.source === "salla") return SALLA_REGION.has(country);
   if (it.source === "gtp") return it.digital || !it.country || it.country === country;
-  return true; // Pi Chain Mall: sellers worldwide, no country on listings
+  // Pi Chain Mall: global-sale listings everywhere; local ones only in their sales country.
+  return !!it.ships_global || it.country === country;
 }
 
 export interface IndexHit {

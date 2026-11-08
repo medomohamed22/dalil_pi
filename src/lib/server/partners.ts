@@ -211,6 +211,16 @@ export const PCM_SITE = "https://pipcm.com";
 const PCM_API = () => base(process.env.PCM_API_URL) || "https://api.pipcm.com";
 const PCM_IMG = "https://image.pcmsuper.art/image/";
 
+/**
+ * Pi Chain Mall lists every product under ONE sales country (its own numeric ids), and marks
+ * "global sale" products (commdityMark = 1) that ship to every country. Others ("Whether global
+ * barter: no") are only sold in that country. The id list is login-only, so these were matched
+ * from the products themselves on 2026-11-08 (e.g. 235: an Indian seller's "Ship From: India";
+ * 17: an Egyptian-pound phone top-up). Unknown ids → the listing is shown nowhere unless global.
+ */
+export const PCM_COUNTRY_IDS: Record<string, string> = { "17": "EG", "235": "IN", "7": "CN", "170": "JP" };
+export const pcmIdOf = (iso: string) => Object.entries(PCM_COUNTRY_IDS).find(([, c]) => c === iso)?.[0];
+
 export function pcmEnabled(): boolean {
   return process.env.PCM_SEARCH !== "off";
 }
@@ -224,10 +234,15 @@ interface PcmCommodity {
   urlList?: string[];
   pictureUrl?: string;
   tUserEntity?: { nickName?: string; userName?: string };
+  commdityMark?: number | null;
 }
 
 export interface PcmItem {
   id: string;
+  /** Ships to every country ("global sale"). */
+  global: boolean;
+  /** Sales country (ISO) when it is a local listing we can place. */
+  country?: string;
   title: string;
   /** Price in Pi (the site shows it as "… π"). */
   price: number;
@@ -245,28 +260,44 @@ export function pcmVariants(q: string): string[] {
   return Array.from(new Set([t, title, t.toUpperCase(), t.toLowerCase()]));
 }
 
-export async function pcmSearch(q: string, limit = 12): Promise<PcmItem[]> {
+/**
+ * Search Pi Chain Mall for what can reach `country`: its global-sale listings plus the local
+ * listings of that country. Without a country (e.g. watch checks) every listing is searched.
+ */
+export async function pcmSearch(q: string, limit = 12, country?: string): Promise<PcmItem[]> {
+  const local = country ? pcmIdOf(country) : undefined;
+  // [countryId, commdityMark]: global listings anywhere + local listings of the user's country.
+  const scopes: Array<[string, string, string | undefined]> = country
+    ? [["globle8787", "1", undefined], ...(local ? ([[local, "-1", country]] as Array<[string, string, string]>) : [])]
+    : [["globle8787", "-1", undefined]];
   const lists = await Promise.all(
-    pcmVariants(q).map(async (v) => {
-      const u = new URL(`${PCM_API()}/api/commodity/commodity/getCommodityList`);
-      for (const [k, val] of Object.entries({ currentPage: "1", pageSize: "20", countryId: "globle8787", hasStock: "false", commdityMark: "-1", search: v })) u.searchParams.set(k, val);
-      try {
-        const j = await getJson<{ code?: string; object?: PcmCommodity[] }>(u.toString(), { timeoutMs: 5000 });
-        return Array.isArray(j.object) ? j.object : [];
-      } catch {
-        return [];
-      }
-    }),
+    pcmVariants(q).flatMap((v) =>
+      scopes.map(async ([countryId, mark, iso]) => {
+        const u = new URL(`${PCM_API()}/api/commodity/commodity/getCommodityList`);
+        for (const [k, val] of Object.entries({ currentPage: "1", pageSize: "20", countryId, hasStock: "false", commdityMark: mark, search: v })) u.searchParams.set(k, val);
+        try {
+          const j = await getJson<{ code?: string; object?: PcmCommodity[] }>(u.toString(), { timeoutMs: 5000 });
+          return (Array.isArray(j.object) ? j.object : []).map((c) => ({ c, iso }));
+        } catch {
+          return [];
+        }
+      }),
+    ),
   );
   const seen = new Set<string>();
   const out: PcmItem[] = [];
-  for (const c of lists.flat()) {
+  for (const { c, iso } of lists.flat()) {
     const price = Number(c.price);
     if (!c?.id || seen.has(c.id) || !c.title || !(price > 0) || (c.status ?? 0) !== 0) continue;
     seen.add(c.id);
     const pic = c.pictureUrl || c.urlList?.[0]?.trim();
+    const global = c.commdityMark === 1;
+    // Searching for a country: a non-global listing only counts when it came from that country's list.
+    if (country && !global && iso !== country) continue;
     out.push({
       id: c.id,
+      global,
+      country: global ? undefined : iso,
       title: c.title.trim().slice(0, 160),
       price,
       currency: "PI",

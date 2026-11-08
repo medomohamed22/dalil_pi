@@ -685,6 +685,7 @@ async function execTool(
           category: it.category ?? undefined,
           about: it.description ? it.description.slice(0, 160) : undefined,
           sellerCountry: it.country ?? undefined,
+          shipping: it.source === "pcm" ? (it.ships_global ? "global sale (ships internationally)" : `sold in ${ctx.locale.countryName}`) : undefined,
           piEvidence: `Pi price from ${h.store}'s catalog (Dalil Index, ${h.ageMin >= 0 ? `${h.ageMin} min old` : "fresh"})`,
           match: h.score,
         };
@@ -704,7 +705,8 @@ async function execTool(
         .slice(0, 3);
       if (qs.length === 1) qs = expandQuery(qs[0]);
       if (!qs.length) throw new Error("empty query");
-      const lists = await Promise.all(qs.map((q) => cached("pcm", norm(q), 10 * 60_000, () => pcmSearch(q))));
+      // Only what can reach the user: global-sale listings + local listings of their country.
+      const lists = await Promise.all(qs.map((q) => cached("pcm", `${ctx.locale.country}|${norm(q)}`, 10 * 60_000, () => pcmSearch(q, 12, ctx.locale.country))));
       const seen = new Set<string>();
       const out: Array<Record<string, unknown>> = [];
       for (const it of lists.flat()) {
@@ -721,6 +723,7 @@ async function execTool(
           price: it.price,
           currency: "PI",
           kind: "online",
+          notes: it.global ? "Global sale on Pi Chain Mall (ships internationally)" : `Sold in ${ctx.locale.countryName}`,
           piEvidence: "Pi price on Pi Chain Mall (pipcm.com, Pi marketplace)",
         });
       }
