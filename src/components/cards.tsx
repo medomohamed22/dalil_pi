@@ -656,6 +656,8 @@ export function ProductCards({
   city,
   onOrder,
   ordersLeft,
+  onWatch,
+  onAsk,
 }: {
   offers: Offer[];
   s: Strings;
@@ -664,6 +666,8 @@ export function ProductCards({
   onOrder?: (o: Offer) => void;
   /** Orders left this month (null = unknown). */
   ordersLeft?: number | null;
+  onWatch?: (o: Offer) => Promise<boolean>;
+  onAsk?: (text: string) => void;
 }) {
   const badgeText: Record<string, string> = {
     cheapest: s.cheapest,
@@ -910,7 +914,26 @@ export function ProductCards({
         )}
       </AnimatePresence>
       <BottomSheet open={!!detail} title={detail?.store ?? ""} onClose={() => setDetail(null)}>
-        {detail && <OfferDetail o={detail} s={s} lang={lang} city={city} onOrder={onOrder} ordersLeft={ordersLeft} twin={twins.get(detail.id)} />}
+        {detail && (
+          <OfferDetail
+            o={detail}
+            s={s}
+            lang={lang}
+            city={city}
+            onOrder={onOrder}
+            ordersLeft={ordersLeft}
+            twin={twins.get(detail.id)}
+            onWatch={onWatch}
+            onAsk={
+              onAsk
+                ? (t) => {
+                    setDetail(null);
+                    onAsk(t);
+                  }
+                : undefined
+            }
+          />
+        )}
       </BottomSheet>
       <BottomSheet open={comparing} title={s.compare} onClose={() => setComparing(false)}>
         <CompareTable offers={offers.filter((o) => picked.includes(o.id))} s={s} lang={lang} />
@@ -986,7 +1009,28 @@ export function BottomSheet({ open, title, onClose, children }: { open: boolean;
   );
 }
 
-function OfferDetail({ o, s, lang, city, onOrder, ordersLeft, twin }: { o: Offer; s: Strings; lang: Lang; city?: string; onOrder?: (o: Offer) => void; ordersLeft?: number | null; twin?: Offer }) {
+function OfferDetail({
+  o,
+  s,
+  lang,
+  city,
+  onOrder,
+  ordersLeft,
+  twin,
+  onWatch,
+  onAsk,
+}: {
+  o: Offer;
+  s: Strings;
+  lang: Lang;
+  city?: string;
+  onOrder?: (o: Offer) => void;
+  ordersLeft?: number | null;
+  twin?: Offer;
+  onWatch?: (o: Offer) => Promise<boolean>;
+  onAsk?: (text: string) => void;
+}) {
+  const [watched, setWatched] = useState<"idle" | "busy" | "done">("idle");
   const nf = (n: number) => n.toLocaleString(lang === "ar" ? "ar-EG-u-nu-latn" : "en-US");
   const lowTrust = o.trustScore != null && o.trustScore < 40;
   const orderable = !!(onOrder && o.url && o.sig && o.trust !== "suspicious" && !lowTrust && !o.flags.includes("price_unverified") && !o.flags.includes("not_priced_in_pi"));
@@ -1043,6 +1087,34 @@ function OfferDetail({ o, s, lang, city, onOrder, ordersLeft, twin }: { o: Offer
           <Navigation className="size-3.5" /> {o.address}
         </a>
       )}
+      <div className="flex gap-2">
+        {onWatch && o.url && o.sig && !o.flags.includes("price_unverified") && (
+          <button
+            disabled={watched !== "idle"}
+            onClick={async () => {
+              setWatched("busy");
+              setWatched((await onWatch(o)) ? "done" : "idle");
+            }}
+            className="flex flex-1 items-center justify-center gap-1.5 rounded-2xl border border-line py-2.5 text-[12px] font-medium disabled:opacity-80"
+            data-testid="watch-btn"
+          >
+            {watched === "done" ? (
+              <>
+                <AnimatedCheck size={16} /> {s.watching}
+              </>
+            ) : watched === "busy" ? (
+              <Loader2 className="size-4 animate-spin" />
+            ) : (
+              <>♡ {s.watch}</>
+            )}
+          </button>
+        )}
+        {onAsk && (
+          <button onClick={() => onAsk(s.moreFromStore(o.store))} className="flex flex-1 items-center justify-center rounded-2xl border border-line py-2.5 text-[12px] font-medium" data-testid="more-from-store">
+            {s.moreFromStoreBtn}
+          </button>
+        )}
+      </div>
       {orderable ? (
         <button
           disabled={ordersLeft != null && ordersLeft <= 0}

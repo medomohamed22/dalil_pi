@@ -34,6 +34,9 @@ const Body = z.object({
       country: z.string().length(2).nullish(),
       scope: z.enum(["auto", "online", "local", "services"]).optional(),
       coords: z.object({ lat: z.number().min(-90).max(90), lon: z.number().min(-180).max(180) }).nullish(),
+      prefs: z
+        .object({ budgetPi: z.number().min(0).max(10_000_000).nullish(), brands: z.string().max(120).nullish(), shipOnly: z.boolean().optional() })
+        .nullish(),
     })
     .default({}),
   /** Offers Dalil already signed in this conversation — lets follow-ups reuse their verified prices. */
@@ -95,6 +98,7 @@ export async function POST(req: Request) {
           locale,
           scope: settings.scope ?? "auto",
           coords: settings.coords ?? undefined,
+          prefs: settings.prefs ?? undefined,
           // Map of Pi fallback when the user didn't share GPS — only if they shop in the IP's country.
           ipCoords: country === geo.country && geo.lat != null && geo.lon != null ? { lat: geo.lat, lon: geo.lon } : undefined,
           lang,

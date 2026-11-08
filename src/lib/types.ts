@@ -124,6 +124,8 @@ export interface Settings {
   scope: Scope;
   /** Optional precise location for local (physical) shops. */
   coords?: { lat: number; lon: number } | null;
+  /** Shopping preferences (stored on this device, sent with each search). */
+  prefs?: { budgetPi?: number | null; brands?: string | null; shipOnly?: boolean };
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -146,6 +148,24 @@ export interface Pack {
   ordersLeft: number;
   startsAt: string;
   endsAt: string;
+}
+
+/** A product on the user's watchlist (price-drop alerts). */
+export interface Watch {
+  id: string;
+  url: string;
+  title: string;
+  store: string;
+  image?: string;
+  currency: string;
+  /** Price when saved. */
+  price: number;
+  /** Latest price from the daily check. */
+  lastPrice: number;
+  lastCheckedAt: string | null;
+  droppedAt: string | null;
+  /** A drop the user hasn't seen yet. */
+  newDrop: boolean;
 }
 
 /** A plan in the shop, priced live in Pi from the OKX rate. */

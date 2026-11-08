@@ -341,7 +341,7 @@ export default function App() {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             history,
-            settings: { lang, country: settings.country, scope: settings.scope, coords: settings.coords ?? null },
+            settings: { lang, country: settings.country, scope: settings.scope, coords: settings.coords ?? null, prefs: settings.prefs ?? null },
             offers: knownOffers,
           }),
           signal: ctrl.signal,
@@ -420,6 +420,23 @@ export default function App() {
    * the order on our server. The user pays the store directly.
    */
   const [autoOffer, setAutoOffer] = useState<Offer | null>(null);
+  const [accountTab, setAccountTab] = useState<"watch" | undefined>();
+  const [drops, setDrops] = useState(0);
+  // Price drops on watched products since the last visit.
+  useEffect(() => {
+    if (!me) return;
+    authFetch("/api/watches")
+      .then((r) => (r.ok ? r.json() : { watches: [] }))
+      .then((j: { watches?: { newDrop: boolean }[] }) => setDrops((j.watches ?? []).filter((w) => w.newDrop).length))
+      .catch(() => {});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [me?.uid]);
+  /** "Watch price" from a product: saved on the server with the signed price. */
+  const watch = async (o: Offer): Promise<boolean> => {
+    const r = await authFetch("/api/watches", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ offer: o }) });
+    if (!r.ok) setNotice((await r.json().catch(() => ({}))).error ?? `HTTP ${r.status}`);
+    return r.ok;
+  };
   const [offline, setOffline] = useState(false);
   const [tourStep, setTourStep] = useState<number | null>(null);
   useEffect(() => {
@@ -680,6 +697,8 @@ export default function App() {
                       ordersLeft={ordersLeft}
                       onFollowUp={idx === messages.length - 1 && !busy ? followUp : undefined}
                       onRetry={idx === messages.length - 1 && !busy ? retry : undefined}
+                      onWatch={watch}
+                      onAsk={busy ? undefined : followUp}
                     />
                   </div>
                 ))}
@@ -718,6 +737,18 @@ export default function App() {
                   <span className={`rounded-full px-2 py-0.5 tabular-nums ${left === 0 ? "bg-danger/10 text-danger" : "bg-bg-soft"}`} data-testid="usage">
                     {s.searchesLeft(left, usage.searchLimit)}
                   </span>
+                )}
+                {drops > 0 && (
+                  <button
+                    onClick={() => {
+                      setAccountTab("watch");
+                      setAccountOpen(true);
+                    }}
+                    className="rounded-full bg-emerald-600 px-2.5 py-0.5 font-semibold text-white"
+                    data-testid="drops"
+                  >
+                    📉 {s.priceDropped(drops)}
+                  </button>
                 )}
                 {usage && left === 0 && (
                   <button onClick={() => setAccountOpen(true)} className="rounded-full bg-inv-bg px-2.5 py-0.5 font-semibold text-inv-fg" data-testid="see-plans">
@@ -792,7 +823,23 @@ export default function App() {
           setNotice(s.autoDone);
         }}
       />
-      <AccountSheet open={accountOpen} onClose={() => setAccountOpen(false)} s={s} lang={lang} me={me} api={authFetch} country={country} onUsage={(u) => setMe((cur) => (cur ? { ...cur, usage: u } : cur))} />
+      <AccountSheet
+        open={accountOpen}
+        onClose={() => {
+          setAccountOpen(false);
+          setAccountTab(undefined);
+        }}
+        initialTab={accountTab}
+        s={s}
+        lang={lang}
+        me={me}
+        api={authFetch}
+        country={country}
+        onUsage={(u) => setMe((cur) => (cur ? { ...cur, usage: u } : cur))}
+        settings={settings}
+        onSettings={updateSettings}
+        onWatchesSeen={() => setDrops(0)}
+      />
       <CountrySheet
         open={countryOpen}
         lang={lang}

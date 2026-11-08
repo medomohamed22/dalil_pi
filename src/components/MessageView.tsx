@@ -19,6 +19,8 @@ export default function MessageView({
   ordersLeft,
   onFollowUp,
   onRetry,
+  onWatch,
+  onAsk,
 }: {
   msg: ChatMessage;
   live: boolean;
@@ -30,6 +32,8 @@ export default function MessageView({
   /** Only on the latest finished answer: quick follow-up chips / retry. */
   onFollowUp?: (text: string) => void;
   onRetry?: () => void;
+  onWatch?: (o: Offer) => Promise<boolean>;
+  onAsk?: (text: string) => void;
 }) {
   if (msg.role === "user") {
     const texts = msg.blocks.filter((b): b is Extract<Block, { type: "text" }> => b.type === "text");
@@ -98,7 +102,7 @@ export default function MessageView({
                 </div>
               );
             case "products":
-              return <ProductCards key={i} offers={b.offers} s={s} lang={lang} city={city} onOrder={onOrder} ordersLeft={ordersLeft} />;
+              return <ProductCards key={i} offers={b.offers} s={s} lang={lang} city={city} onOrder={onOrder} ordersLeft={ordersLeft} onWatch={onWatch} onAsk={onAsk} />;
             case "link":
               return <LinkCard key={i} preview={b.preview} lang={lang} />;
             case "browser":

@@ -6,7 +6,10 @@ import { useCallback, useEffect, useState } from "react";
 import { countryLabel, flag, formatMoney, type Strings } from "@/lib/i18n";
 import { piPay } from "@/lib/pi-client";
 import { AnimatedCheck } from "./cards";
-import type { Address, Lang, Me, Offer, Order, PaidPlanId, PlanOffer, Usage } from "@/lib/types";
+import type { Address, Lang, Me, Offer, Order, PaidPlanId, PlanOffer, Settings, Usage, Watch } from "@/lib/types";
+
+type Tab = "plan" | "addresses" | "orders" | "watch" | "prefs";
+const TABS: Tab[] = ["plan", "watch", "orders", "addresses", "prefs"];
 
 type Fetch = (url: string, init?: RequestInit) => Promise<Response>;
 
@@ -235,6 +238,10 @@ export function AccountSheet({
   api,
   country,
   onUsage,
+  initialTab,
+  settings,
+  onSettings,
+  onWatchesSeen,
 }: {
   open: boolean;
   onClose: () => void;
@@ -244,8 +251,15 @@ export function AccountSheet({
   api: Fetch;
   country: string;
   onUsage: (u: Usage) => void;
+  initialTab?: Tab;
+  settings: Settings;
+  onSettings: (patch: Partial<Settings>) => void;
+  onWatchesSeen?: () => void;
 }) {
-  const [tab, setTab] = useState<"plan" | "addresses" | "orders">("plan");
+  const [tab, setTab] = useState<Tab>("plan");
+  useEffect(() => {
+    if (open) setTab(initialTab ?? "plan");
+  }, [open, initialTab]);
   const { addresses, reload } = useAddresses(api, open && !!me);
   const [editing, setEditing] = useState<Address | "new" | null>(null);
   const [orders, setOrders] = useState<Order[] | null>(null);
@@ -273,8 +287,8 @@ export function AccountSheet({
 
   return (
     <Sheet open={open} title={s.account} onClose={onClose}>
-      <div className="mb-3 flex gap-1.5" role="tablist">
-        {(["plan", "addresses", "orders"] as const).map((k) => (
+      <div className="no-scrollbar mb-3 flex gap-1.5 overflow-x-auto" role="tablist">
+        {TABS.map((k) => (
           <button
             key={k}
             role="tab"
@@ -285,7 +299,7 @@ export function AccountSheet({
             }}
             className={`rounded-full border px-3 py-1 text-[12px] font-medium ${tab === k ? "border-fg bg-inv-bg text-inv-fg" : "border-line text-fg-soft"}`}
           >
-            {k === "plan" ? s.plan : k === "addresses" ? s.addresses : s.orders}
+            {k === "plan" ? s.plan : k === "addresses" ? s.addresses : k === "orders" ? s.orders : k === "watch" ? s.watchlist : s.prefs}
           </button>
         ))}
       </div>
@@ -355,6 +369,9 @@ export function AccountSheet({
             </button>
           </div>
         ))}
+
+      {tab === "watch" && <WatchList s={s} lang={lang} api={api} onSeen={onWatchesSeen} />}
+      {tab === "prefs" && <Prefs s={s} settings={settings} onSettings={onSettings} />}
 
       {tab === "orders" && (
         <div className="space-y-2">
@@ -624,5 +641,102 @@ export function AutoOrderSheet({
         </div>
       )}
     </Sheet>
+  );
+}
+
+/* ---------------- Watchlist (price-drop alerts) ---------------- */
+
+function WatchList({ s, lang, api, onSeen }: { s: Strings; lang: Lang; api: Fetch; onSeen?: () => void }) {
+  const [items, setItems] = useState<Watch[] | null>(null);
+  const load = useCallback(async () => {
+    try {
+      setItems((await json<{ watches: Watch[] }>(await api("/api/watches?seen=1"))).watches);
+      onSeen?.();
+    } catch {
+      setItems([]);
+    }
+  }, [api, onSeen]);
+  useEffect(() => {
+    void load();
+  }, [load]);
+  const remove = async (w: Watch) => {
+    await api(`/api/watches/${w.id}`, { method: "DELETE" });
+    setItems((x) => x?.filter((y) => y.id !== w.id) ?? null);
+  };
+  if (items === null) return <Loader2 className="mx-auto size-5 animate-spin text-fg-muted" />;
+  return (
+    <div className="space-y-2" data-testid="watchlist">
+      {items.length === 0 && <p className="py-4 text-center text-sm text-fg-muted">{s.noWatches}</p>}
+      {items.map((w) => {
+        const down = w.lastPrice < w.price;
+        return (
+          <div key={w.id} className="flex items-center gap-3 rounded-2xl border border-line p-3" data-testid="watch-row">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            {w.image ? <img src={w.image} alt="" loading="lazy" referrerPolicy="no-referrer" className="size-12 shrink-0 rounded-xl object-cover" /> : <span className="size-12 shrink-0 rounded-xl bg-bg-muted" />}
+            <div className="min-w-0 flex-1">
+              <a href={w.url} target="_blank" rel="noopener noreferrer" className="line-clamp-2 text-[13px] font-medium" dir="auto">
+                {w.title}
+              </a>
+              <div className="text-[11px] text-fg-muted">
+                {w.store} · <span dir="ltr">{formatMoney(w.lastPrice, w.currency, lang)}</span>
+                {down && (
+                  <span className="ms-1 line-through" dir="ltr">
+                    {formatMoney(w.price, w.currency, lang)}
+                  </span>
+                )}
+              </div>
+              {(down || w.newDrop) && <span className="mt-0.5 inline-block rounded-full bg-emerald-600/10 px-2 py-0.5 text-[10px] font-semibold text-emerald-700 dark:text-emerald-400">{s.dropBadge}</span>}
+            </div>
+            <button onClick={() => remove(w)} aria-label={s.delete} className="rounded-full p-1.5 text-fg-muted hover:bg-bg-soft">
+              <Trash2 className="size-4" />
+            </button>
+          </div>
+        );
+      })}
+      <p className="text-[11px] text-fg-muted">{s.watchNote}</p>
+    </div>
+  );
+}
+
+/* ---------------- Shopping preferences (saved on this device) ---------------- */
+
+function Prefs({ s, settings, onSettings }: { s: Strings; settings: Settings; onSettings: (patch: Partial<Settings>) => void }) {
+  const p = settings.prefs ?? {};
+  const [budget, setBudget] = useState(p.budgetPi ? String(p.budgetPi) : "");
+  const [brands, setBrands] = useState(p.brands ?? "");
+  const [shipOnly, setShipOnly] = useState(!!p.shipOnly);
+  const [saved, setSaved] = useState(false);
+  const save = () => {
+    const b = Number(budget);
+    onSettings({ prefs: { budgetPi: b > 0 ? b : null, brands: brands.trim().slice(0, 120) || null, shipOnly } });
+    setSaved(true);
+    setTimeout(() => setSaved(false), 1800);
+  };
+  const field = "mt-1 w-full rounded-xl border border-line bg-bg px-3 py-2 text-sm outline-none focus:border-fg";
+  return (
+    <div className="space-y-3" data-testid="prefs">
+      <p className="text-[12px] text-fg-muted">{s.prefsNote}</p>
+      <label className="block text-[12px]">
+        <span className="text-fg-muted">{s.budget}</span>
+        <input inputMode="decimal" value={budget} onChange={(e) => setBudget(e.target.value.replace(/[^\d.]/g, ""))} dir="ltr" className={field} placeholder="500" />
+      </label>
+      <label className="block text-[12px]">
+        <span className="text-fg-muted">{s.brands}</span>
+        <input value={brands} onChange={(e) => setBrands(e.target.value)} maxLength={120} className={field} placeholder="Samsung, Anker" />
+      </label>
+      <label className="flex items-center gap-2 text-[13px]">
+        <input type="checkbox" checked={shipOnly} onChange={(e) => setShipOnly(e.target.checked)} className="size-4" />
+        {s.shipOnly}
+      </label>
+      <button onClick={save} className="flex w-full items-center justify-center gap-1.5 rounded-xl bg-inv-bg py-2.5 text-sm font-semibold text-inv-fg">
+        {saved ? (
+          <>
+            <AnimatedCheck size={16} /> {s.saved}
+          </>
+        ) : (
+          s.save
+        )}
+      </button>
+    </div>
   );
 }
