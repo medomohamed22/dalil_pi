@@ -420,7 +420,18 @@ export default function App() {
    * the order on our server. The user pays the store directly.
    */
   const [autoOffer, setAutoOffer] = useState<Offer | null>(null);
-  const [accountTab, setAccountTab] = useState<"watch" | undefined>();
+  const [accountTab, setAccountTab] = useState<"watch" | "shop" | undefined>();
+  // Link from the merchants page: /?shop=1 opens "My shop" once signed in.
+  useEffect(() => {
+    if (!me || typeof window === "undefined") return;
+    const u = new URL(window.location.href);
+    if (u.searchParams.get("shop") === "1") {
+      setAccountTab("shop");
+      setAccountOpen(true);
+      u.searchParams.delete("shop");
+      window.history.replaceState(null, "", u.pathname + u.search);
+    }
+  }, [me]);
   const [drops, setDrops] = useState(0);
   // Price drops on watched products since the last visit.
   useEffect(() => {
@@ -1046,6 +1057,10 @@ function SignIn({
           {" · "}
           <a href="/terms" className="underline underline-offset-2 hover:text-fg">
             {s.terms}
+          </a>
+          {" · "}
+          <a href="/merchants" className="underline underline-offset-2 hover:text-fg">
+            {s.forMerchants}
           </a>
         </p>
       </section>

@@ -6,10 +6,10 @@ import { useCallback, useEffect, useState } from "react";
 import { countryLabel, flag, formatMoney, type Strings } from "@/lib/i18n";
 import { piPay } from "@/lib/pi-client";
 import { AnimatedCheck } from "./cards";
-import type { Address, Lang, Me, Offer, Order, PaidPlanId, PlanOffer, Settings, Usage, Watch } from "@/lib/types";
+import type { Address, Lang, Me, Merchant, Offer, Order, PaidPlanId, PlanOffer, Settings, Usage, Watch } from "@/lib/types";
 
-type Tab = "plan" | "addresses" | "orders" | "watch" | "prefs";
-const TABS: Tab[] = ["plan", "watch", "orders", "addresses", "prefs"];
+type Tab = "plan" | "addresses" | "orders" | "watch" | "prefs" | "shop";
+const TABS: Tab[] = ["plan", "watch", "orders", "addresses", "prefs", "shop"];
 
 type Fetch = (url: string, init?: RequestInit) => Promise<Response>;
 
@@ -299,7 +299,7 @@ export function AccountSheet({
             }}
             className={`rounded-full border px-3 py-1 text-[12px] font-medium ${tab === k ? "border-fg bg-inv-bg text-inv-fg" : "border-line text-fg-soft"}`}
           >
-            {k === "plan" ? s.plan : k === "addresses" ? s.addresses : k === "orders" ? s.orders : k === "watch" ? s.watchlist : s.prefs}
+            {k === "plan" ? s.plan : k === "addresses" ? s.addresses : k === "orders" ? s.orders : k === "watch" ? s.watchlist : k === "shop" ? s.myShop : s.prefs}
           </button>
         ))}
       </div>
@@ -372,6 +372,7 @@ export function AccountSheet({
 
       {tab === "watch" && <WatchList s={s} lang={lang} api={api} onSeen={onWatchesSeen} />}
       {tab === "prefs" && <Prefs s={s} settings={settings} onSettings={onSettings} />}
+      {tab === "shop" && <MyShop s={s} api={api} country={country} />}
 
       {tab === "orders" && (
         <div className="space-y-2">
@@ -736,6 +737,132 @@ function Prefs({ s, settings, onSettings }: { s: Strings; settings: Settings; on
         ) : (
           s.save
         )}
+      </button>
+    </div>
+  );
+}
+
+/* ---------------- My shop ("Dalil Pi for merchants") ---------------- */
+
+function MyShop({ s, api, country }: { s: Strings; api: Fetch; country: string }) {
+  const [m, setM] = useState<Merchant | null | undefined>(undefined);
+  const [f, setF] = useState({ name: "", kind: "local" as Merchant["kind"], city: "", address: "", phone: "", website: "", categories: "", description: "", piWallet: "" });
+  const [items, setItems] = useState<{ title: string; price: string }[]>([{ title: "", price: "" }]);
+  const [loc, setLoc] = useState<{ lat: number; lon: number } | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState("");
+  useEffect(() => {
+    void (async () => {
+      try {
+        const r = await json<{ merchant: Merchant | null }>(await api("/api/merchants/me"));
+        setM(r.merchant);
+        if (r.merchant) {
+          const x = r.merchant;
+          setF({ name: x.name, kind: x.kind, city: x.city ?? "", address: x.address ?? "", phone: x.phone ?? "", website: x.website ?? "", categories: x.categories ?? "", description: x.description ?? "", piWallet: x.piWallet ?? "" });
+          setItems(x.items.length ? x.items.map((i) => ({ title: i.title, price: String(i.price) })) : [{ title: "", price: "" }]);
+          if (x.lat != null && x.lon != null) setLoc({ lat: x.lat, lon: x.lon });
+        }
+      } catch {
+        setM(null);
+      }
+    })();
+  }, [api]);
+  const save = async () => {
+    setBusy(true);
+    setErr("");
+    try {
+      const body = {
+        ...f,
+        country,
+        lat: loc?.lat ?? null,
+        lon: loc?.lon ?? null,
+        items: items.filter((i) => i.title.trim() && Number(i.price) > 0).map((i) => ({ title: i.title.trim(), price: Number(i.price) })),
+      };
+      const r = await json<{ merchant: Merchant }>(await api("/api/merchants/me", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }));
+      setM(r.merchant);
+    } catch (e) {
+      setErr((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+  const field = "mt-1 w-full rounded-xl border border-line bg-bg px-3 py-2 text-sm outline-none focus:border-fg";
+  const set = (k: keyof typeof f) => (e: { target: { value: string } }) => setF((x) => ({ ...x, [k]: e.target.value }));
+  if (m === undefined) return <Loader2 className="mx-auto size-5 animate-spin text-fg-muted" />;
+  return (
+    <div className="space-y-2.5" data-testid="my-shop">
+      <p className="text-[12px] leading-relaxed text-fg-muted">{s.shopIntro}</p>
+      {m && (
+        <div className={`rounded-xl px-3 py-2 text-[12px] font-medium ${m.status === "approved" ? "bg-emerald-600/10 text-emerald-700 dark:text-emerald-400" : m.status === "rejected" ? "bg-danger/10 text-danger" : "bg-bg-soft"}`} data-testid="shop-status">
+          {s.shopStatus[m.status]}
+        </div>
+      )}
+      <label className="block text-[12px]">
+        <span className="text-fg-muted">{s.shopName}</span>
+        <input value={f.name} onChange={set("name")} className={field} />
+      </label>
+      <label className="block text-[12px]">
+        <span className="text-fg-muted">{s.shopKind}</span>
+        <select value={f.kind} onChange={set("kind")} className={field}>
+          {(["local", "online", "service"] as const).map((k) => (
+            <option key={k} value={k}>
+              {s.shopKinds[k]}
+            </option>
+          ))}
+        </select>
+      </label>
+      <div className="grid grid-cols-2 gap-2">
+        <label className="block text-[12px]">
+          <span className="text-fg-muted">{s.city}</span>
+          <input value={f.city} onChange={set("city")} className={field} />
+        </label>
+        <label className="block text-[12px]">
+          <span className="text-fg-muted">{s.phone}</span>
+          <input value={f.phone} onChange={set("phone")} dir="ltr" className={field} />
+        </label>
+      </div>
+      <label className="block text-[12px]">
+        <span className="text-fg-muted">{s.street}</span>
+        <input value={f.address} onChange={set("address")} className={field} />
+      </label>
+      <button
+        type="button"
+        onClick={() => navigator.geolocation?.getCurrentPosition((p) => setLoc({ lat: Math.round(p.coords.latitude * 1e5) / 1e5, lon: Math.round(p.coords.longitude * 1e5) / 1e5 }))}
+        className="flex items-center gap-1.5 text-[12px] underline underline-offset-2"
+      >
+        <MapPin className="size-3.5" /> {loc ? s.shopLocated : s.shopUseLocation}
+      </button>
+      <label className="block text-[12px]">
+        <span className="text-fg-muted">{s.shopWebsite}</span>
+        <input value={f.website} onChange={set("website")} dir="ltr" placeholder="https://" className={field} />
+      </label>
+      <label className="block text-[12px]">
+        <span className="text-fg-muted">{s.shopCategories}</span>
+        <input value={f.categories} onChange={set("categories")} className={field} />
+      </label>
+      <label className="block text-[12px]">
+        <span className="text-fg-muted">{s.shopAbout}</span>
+        <textarea value={f.description} onChange={set("description")} rows={2} maxLength={400} className={field} />
+      </label>
+      <div className="text-[12px] text-fg-muted">{s.shopItems}</div>
+      {items.map((it, i) => (
+        <div key={i} className="flex gap-2">
+          <input value={it.title} onChange={(e) => setItems((x) => x.map((y, j) => (j === i ? { ...y, title: e.target.value } : y)))} placeholder={s.shopItemName} className={field + " mt-0 flex-1"} data-testid="item-title" />
+          <input value={it.price} onChange={(e) => setItems((x) => x.map((y, j) => (j === i ? { ...y, price: e.target.value.replace(/[^\d.]/g, "") } : y)))} placeholder="π" inputMode="decimal" dir="ltr" className={field + " mt-0 w-20"} data-testid="item-price" />
+        </div>
+      ))}
+      {items.length < 20 && (
+        <button type="button" onClick={() => setItems((x) => [...x, { title: "", price: "" }])} className="flex items-center gap-1 text-[12px] font-medium">
+          <Plus className="size-3.5" /> {s.shopAddItem}
+        </button>
+      )}
+      <label className="block text-[12px]">
+        <span className="text-fg-muted">{s.shopWallet}</span>
+        <input value={f.piWallet} onChange={(e) => setF((x) => ({ ...x, piWallet: e.target.value.toUpperCase() }))} dir="ltr" className={field} />
+      </label>
+      {err && <p className="text-[12px] text-danger">{err}</p>}
+      <button onClick={save} disabled={busy || f.name.trim().length < 2} className="flex w-full items-center justify-center gap-1.5 rounded-xl bg-inv-bg py-2.5 text-sm font-semibold text-inv-fg disabled:opacity-50">
+        {busy ? <Loader2 className="size-4 animate-spin" /> : m ? s.shopUpdate : s.shopSubmit}
       </button>
     </div>
   );

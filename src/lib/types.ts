@@ -150,6 +150,25 @@ export interface Pack {
   endsAt: string;
 }
 
+/** A shop registered on "Dalil Pi for merchants". */
+export interface Merchant {
+  id: string;
+  name: string;
+  kind: "online" | "local" | "service";
+  country: string;
+  city?: string | null;
+  address?: string | null;
+  lat?: number | null;
+  lon?: number | null;
+  phone?: string | null;
+  website?: string | null;
+  description?: string | null;
+  categories?: string | null;
+  items: { title: string; price: number }[];
+  piWallet?: string | null;
+  status: "pending" | "approved" | "rejected";
+}
+
 /** A product on the user's watchlist (price-drop alerts). */
 export interface Watch {
   id: string;

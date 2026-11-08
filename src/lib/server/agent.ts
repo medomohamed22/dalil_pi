@@ -3,7 +3,8 @@ import { browse } from "./browse";
 import { lookupBarcode } from "./barcode";
 import { BrowserSession, browserAvailable, type PageState } from "./browser";
 import { streamChat, webSearch, type ChatMsg, type FunctionTool, type MetaConfig } from "./meta";
-import { rankOffers, type RawOffer } from "./rank";
+import { haversineKm, rankOffers, type RawOffer } from "./rank";
+import { searchMerchants } from "./merchants";
 import { prepareOffers } from "./sign";
 import { MIN_ORDER_TRUST, scoreTrust } from "./trust";
 import { detectWooPi } from "./woo";
@@ -58,6 +59,22 @@ const SALLA_TOOL: FunctionTool = {
         queries: { type: "array", items: { type: "string" }, description: "1-2 short keyword queries, e.g. [\"headphones\", \"سماعة\"]" },
       },
       required: ["queries"],
+    },
+  },
+};
+
+const MERCHANTS_TOOL: FunctionTool = {
+  type: "function",
+  function: {
+    name: "dalil_merchants",
+    description:
+      "Search shops that registered directly with Dalil Pi and were approved (online shops, local shops and services that accept Pi in the user's country). Returns name, address, location, phone, website and items with Pi prices. Instant — call it in your FIRST turn alongside the other searches.",
+    parameters: {
+      type: "object",
+      properties: {
+        query: { type: "string", description: "Short keywords, e.g. \"coffee\" or \"headphones\"" },
+        kind: { type: "string", enum: ["online", "local", "service"] },
+      },
     },
   },
 };
@@ -213,6 +230,7 @@ ${SCOPE_RULE[scope]}
 
 Where Pi is accepted (check these first; they take payment in Pi):
 - Salla Shop Mall — https://mall.salla-shop.com (multi-vendor Pi marketplace from Egypt; ships across Egypt, the Middle East and Africa; also services: Telegram Stars/Premium, Salla Care, Salla Go, food, Salla Swap). Search it with the search_salla tool (exact links, prices and images) — never guess Salla URLs.
+- Shops registered with Dalil Pi: search them with the dalil_merchants tool in your first turn (approved merchants that accept Pi, with Pi prices).
 - Stores using the Sallanet Pay gateway (WooCommerce stores that accept Pi at checkout).
 - Pi Chain Mall and Piketplace (https://piketplace.com), and Pi Mainnet commerce apps on *.pinet.com.
 - Local physical shops: Map of Pi — only when the user asks for local shops. ${mapOfPi ? "Call the map_of_pi tool FIRST for any local request: it returns real nearby shops with exact location, rating and Pi prices in 1-3 s. Turn its shops/items into offers (kind \"local\", with address, lat, lon, distanceKm and the shop url)." : "Find them with web_search (e.g. \"<item> accept Pi <city> Map of Pi\")."}
@@ -306,6 +324,7 @@ export async function runAgent(opts: RunOptions): Promise<{ offersShown: boolean
   const hasBrowser = browserAvailable();
   const tools = [
     ...TOOLS,
+    MERCHANTS_TOOL,
     ...(hasBrowser || sallaApiConfigured() ? [SALLA_TOOL] : []),
     ...(mapOfPiConfigured() ? [MAPOFPI_TOOL] : []),
     ...(hasBrowser ? BROWSER_TOOLS : []),
@@ -386,7 +405,7 @@ export async function runAgent(opts: RunOptions): Promise<{ offersShown: boolean
           if (call.name === "browse_url" || call.name === "browser_open") step.detail = hostOf(String(args.url ?? ""));
           if (call.name === "browser_action") step.detail = clip(`${args.action}${args.id != null ? ` #${args.id}` : ""}${args.text ? ` "${args.text}"` : ""}`, 60);
           if (call.name === "lookup_barcode") step.detail = String(args.code ?? "");
-          if (call.name === "map_of_pi") step.detail = clip(String(args.query ?? ""), 60);
+          if (call.name === "map_of_pi" || call.name === "dalil_merchants") step.detail = clip(String(args.query ?? ""), 60);
           if (call.name === "search_salla") step.detail = clip((Array.isArray(args.queries) ? args.queries : [args.query]).filter(Boolean).map(String).join(" · "), 90);
           emit({ type: "step", step });
           try {
@@ -534,6 +553,33 @@ async function execTool(
       }
       if (!results.length) return { results: [], hint: "No Salla match — try other keywords (English/Arabic) or other Pi stores." };
       return results.slice(0, 16);
+    }
+    case "dalil_merchants": {
+      const kind = ["online", "local", "service"].includes(String(args.kind)) ? (String(args.kind) as "online" | "local" | "service") : undefined;
+      const list = await searchMerchants({ country: ctx.locale.country, query: String(args.query ?? ""), kind });
+      const here = ctx.coords ?? ctx.ipCoords;
+      if (!list.length) return { merchants: [], hint: "No registered Dalil Pi merchant matches — use the other sources." };
+      return {
+        merchants: list.map((m) => {
+          // Prices the merchant published on Dalil Pi count as observed.
+          for (const it of m.items) ctx.evidence.addObserved(m.website ?? undefined, it.price);
+          ctx.evidence.addText(m.items.map((it) => `${it.title} ${it.price} Pi`).join("\n"));
+          const distanceKm = here && m.lat != null && m.lon != null ? Math.round(haversineKm(here, { lat: m.lat, lon: m.lon }) * 10) / 10 : undefined;
+          return {
+            store: m.name,
+            kind: m.kind,
+            url: m.website ?? undefined,
+            address: [m.address, m.city].filter(Boolean).join(", ") || undefined,
+            lat: m.lat ?? undefined,
+            lon: m.lon ?? undefined,
+            distanceKm,
+            phone: m.phone ?? undefined,
+            about: m.description ?? undefined,
+            items: m.items.map((it) => ({ title: it.title, price: it.price, currency: "PI" })),
+            piEvidence: "Registered and approved on Dalil Pi for merchants",
+          };
+        }),
+      };
     }
     case "map_of_pi": {
       const at = ctx.coords ?? ctx.ipCoords;
