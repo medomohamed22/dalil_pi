@@ -91,11 +91,15 @@ async function ask(items: Pending[]): Promise<Map<string, Enrichment>> {
   }
   const m = text.match(/\[[\s\S]*\]/);
   const out = new Map<string, Enrichment>();
-  if (!m) return out;
+  if (!m) {
+    lastError = `no JSON array in the answer: ${text.slice(0, 160)}`;
+    return out;
+  }
   let arr: unknown;
   try {
     arr = JSON.parse(m[0]);
-  } catch {
+  } catch (e) {
+    lastError = `bad JSON: ${(e as Error).message} — ${m[0].slice(0, 120)}`;
     return out;
   }
   const ids = new Set(items.map((i) => i.id));
@@ -162,31 +166,41 @@ async function save(items: Pending[], got: Map<string, Enrichment>): Promise<num
   return n;
 }
 
-let running: Promise<{ enriched: number; left: number }> | null = null;
+let running: Promise<{ enriched: number; left: number; error?: string }> | null = null;
+/** Why the last batch gave nothing (shown by /api/cron/catalog for diagnosis). */
+let lastError: string | undefined;
 let lastRun = 0;
 
 /**
  * Enrich up to `limit` products (batches of 20, 2 at a time). Never throws; one run at a time per
  * instance, and `minGapMs` keeps background runs from piling up.
  */
-export async function enrichPending(limit = 40, minGapMs = 0): Promise<{ enriched: number; left: number; skipped?: string }> {
+export async function enrichPending(limit = 40, minGapMs = 0): Promise<{ enriched: number; left: number; skipped?: string; error?: string }> {
   if (!hostedEnabled()) return { enriched: 0, left: -1, skipped: "no AI key" };
   if (running) return running;
   if (Date.now() - lastRun < minGapMs) return { enriched: 0, left: -1, skipped: "recently ran" };
   lastRun = Date.now();
+  lastError = undefined;
   running = (async () => {
     try {
       const todo = await pending(limit);
       let done = 0;
       for (let i = 0; i < todo.length; i += 40) {
         const batches = [todo.slice(i, i + 20), todo.slice(i + 20, i + 40)].filter((b) => b.length);
-        const results = await Promise.all(batches.map((b) => ask(b).catch(() => new Map<string, Enrichment>())));
+        const results = await Promise.all(
+          batches.map((b) =>
+            ask(b).catch((e: Error) => {
+              lastError = e.message.slice(0, 300);
+              return new Map<string, Enrichment>();
+            }),
+          ),
+        );
         for (let k = 0; k < batches.length; k++) done += await save(batches[k], results[k]);
       }
       const left = (await pending(1).catch(() => [])).length;
-      return { enriched: done, left };
-    } catch {
-      return { enriched: 0, left: -1 };
+      return { enriched: done, left, ...(done === 0 && lastError ? { error: lastError } : {}) };
+    } catch (e) {
+      return { enriched: 0, left: -1, error: (e as Error).message };
     } finally {
       running = null;
     }
