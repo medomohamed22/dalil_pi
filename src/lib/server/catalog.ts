@@ -723,7 +723,8 @@ export async function searchCatalog(
       if (cat && !normText(it.category ?? "").includes(cat)) continue;
       const inCat = !!opts.cats?.length && !!it.norm_category && opts.cats.includes(it.norm_category);
       if (opts.cats?.length && !phrases.length && !inCat) continue;
-      let best = phrases.length ? (inCat ? 0.9 : 0) : 1;
+      // Browsing by categories: the first category listed comes first (phones before headphones…).
+      let best = phrases.length ? (inCat ? 0.9 : 0) : inCat ? 1 - opts.cats!.indexOf(it.norm_category!) * 0.05 : 1;
       for (const ws of phrases) {
         // A word counts through any of its synonyms (a synonym is a bit weaker than the word itself).
         const scores = ws.map((w) => Math.max(wordScore(w, row), ...synonymsOf(w).map((s) => wordScore(s, row) * 0.95)));
