@@ -89,7 +89,16 @@ async function getJson<T>(url: string): Promise<T> {
   return (await res.json()) as T;
 }
 
-const str = (v: unknown, max = 400) => (typeof v === "string" && v.trim() ? v.trim().replace(/\s+/g, " ").slice(0, max) : null);
+/** Trimmed, one-line, at most `max` chars — never a half emoji (a lone surrogate breaks Postgres JSON). */
+const str = (v: unknown, max = 400) =>
+  typeof v === "string" && v.trim()
+    ? v
+        .trim()
+        .replace(/\s+/g, " ")
+        .slice(0, max)
+        .replace(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/g, "")
+        .replace(/\u0000/g, "")
+    : null;
 const num = (v: unknown) => {
   const n = typeof v === "string" ? Number(v) : v;
   return typeof n === "number" && Number.isFinite(n) ? n : null;
