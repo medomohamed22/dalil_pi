@@ -11,7 +11,8 @@ import type { Lang, Pack, PaidPlanId, PlanId, Usage } from "../types";
 
 export function freeLimits() {
   return {
-    searches: Math.max(0, Number(process.env.FREE_SEARCHES_PER_MONTH ?? 5) || 0),
+    // AI needs a plan or an AI top-up: no free AI requests unless FREE_SEARCHES_PER_MONTH says so.
+    searches: Math.max(0, Number(process.env.FREE_SEARCHES_PER_MONTH ?? 0) || 0),
     orders: Math.max(0, Number(process.env.FREE_ORDERS_PER_MONTH ?? 5) || 0),
   };
 }

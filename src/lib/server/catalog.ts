@@ -5,6 +5,7 @@ import { expandQuery, synonymGroups } from "./lexicon";
 import { fetchWithTimeout, assertPublicUrl } from "./net";
 import { attachMemoryCatalog, type MemCatalogRow } from "./enrich";
 import { ruleCategory, ruleTwinKey } from "./rules";
+import { hiddenSources } from "./settings";
 import { countryCode, PCM_COUNTRY_IDS } from "./partners";
 import { supabase, supabaseEnabled } from "./supabase";
 
@@ -713,10 +714,11 @@ export async function searchCatalog(
     ages.set(s, at ? Math.round((Date.now() - Date.parse(at)) / 60_000) : -1);
   }
   const cat = opts.category ? normText(opts.category) : "";
+  const hidden = await hiddenSources(); // stores the owner hid from the site (/admin)
   if (phrases.length || opts.browse || opts.cats?.length) {
     for (const row of idx.rows) {
       const it = row.item;
-      if (!reaches(it, opts.country)) continue;
+      if (hidden.has(it.source) || !reaches(it, opts.country)) continue;
       if (opts.sources && !opts.sources.includes(it.source)) continue;
       if (cat && !normText(it.category ?? "").includes(cat)) continue;
       const inCat = !!opts.cats?.length && !!it.norm_category && opts.cats.includes(it.norm_category);
@@ -770,10 +772,11 @@ export async function twinsOf(itemId: string, country: string): Promise<IndexHit
   const idx = await index();
   const me = idx.rows.find((r) => r.item.id === itemId)?.item;
   if (!me?.twin_key) return [];
+  const hidden = await hiddenSources();
   const out: IndexHit[] = [];
   for (const r of idx.twins.get(me.twin_key) ?? []) {
     const it = r.item;
-    if (it.id === me.id || it.source === me.source || !reaches(it, country)) continue;
+    if (it.id === me.id || it.source === me.source || hidden.has(it.source) || !reaches(it, country)) continue;
     const price = it.source === "salla" ? sallaPi(Number(it.price_egp), idx.states.get("salla")?.meta ?? {}) : (it.price ?? null);
     if (!price) continue;
     const ship = it.shipping && country in it.shipping ? it.shipping[country] : 0;
@@ -786,7 +789,7 @@ export async function twinsOf(itemId: string, country: string): Promise<IndexHit
 export async function catalogItem(id: string, country: string): Promise<IndexHit | null> {
   const idx = await index();
   const it = idx.rows.find((r) => r.item.id === id)?.item;
-  if (!it || !reaches(it, country)) return null;
+  if (!it || !reaches(it, country) || (await hiddenSources()).has(it.source)) return null;
   const meta = idx.states.get("salla")?.meta ?? {};
   const price = it.source === "salla" ? sallaPi(Number(it.price_egp), meta) : (it.price ?? null);
   if (!price) return null;

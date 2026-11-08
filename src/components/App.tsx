@@ -899,7 +899,28 @@ export default function App() {
                   }
                 }}
               />
-              <Composer s={s} lang={lang} busy={busy} onSend={send} onStop={() => abortRef.current?.abort()} prefill={prefill} />
+              {usage && left === 0 && !busy ? (
+                // No AI credit: Ask Dalil needs a plan or an AI top-up (search & orders stay free).
+                <m.div initial={{ y: 12, opacity: 0 }} animate={{ y: 0, opacity: 1 }} className="rounded-3xl border border-line bg-bg-soft p-4 text-center" data-testid="ai-paywall">
+                  <div className="mx-auto mb-2 flex size-10 items-center justify-center rounded-full bg-accent-soft text-accent">
+                    <Wallet className="size-5" />
+                  </div>
+                  <div className="text-[15px] font-semibold">{s.aiPaywallTitle}</div>
+                  <p className="mx-auto mt-1 max-w-sm text-[13px] leading-relaxed text-fg-muted">{s.aiPaywallSub}</p>
+                  <button
+                    onClick={() => {
+                      setAccountTab(undefined);
+                      setAccountOpen(true);
+                    }}
+                    className="mt-3 rounded-full bg-inv-bg px-5 py-2.5 text-[14px] font-semibold text-inv-fg"
+                    data-testid="paywall-plans"
+                  >
+                    {s.aiPaywallBtn}
+                  </button>
+                </m.div>
+              ) : (
+                <Composer s={s} lang={lang} busy={busy} onSend={send} onStop={() => abortRef.current?.abort()} prefill={prefill} />
+              )}
               {notice && (
                 <p className={`mt-2 flex items-center justify-center gap-1.5 text-center text-[11px] ${notice === s.autoDone ? "font-medium text-emerald-700 dark:text-emerald-400" : "text-danger"}`} dir="auto" role="status">
                   {notice === s.autoDone && <AnimatedCheck size={16} />}

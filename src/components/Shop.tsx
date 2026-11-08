@@ -188,46 +188,44 @@ export function ProductTile({ o, s, onOpen, i = 0, wide }: { o: Offer; s: String
   const badge = o.badges.includes("bestValue") ? s.bestValue : o.badges.includes("cheapest") ? s.cheapest : null;
   const off = o.listPrice && o.listPrice > o.price ? Math.round((1 - o.price / o.listPrice) * 100) : 0;
   const store = o.store.split(" · ")[0];
+  // Compact, uniform card (like Salla Shop's): a fixed square photo — tall/wide photos are
+  // fitted inside it and never stretch the card — then 2 lines of title and the price.
   return (
     <m.button
       type="button"
       layout="position"
-      initial={{ opacity: 0, y: 10 }}
+      initial={{ opacity: 0, y: 8 }}
       animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.28, delay: Math.min(i, 8) * 0.035 }}
+      transition={{ duration: 0.25, delay: Math.min(i, 8) * 0.03 }}
       whileTap={{ scale: 0.98 }}
       onClick={() => onOpen(o)}
-      className={`group flex flex-col overflow-hidden rounded-2xl border border-line bg-bg text-start shadow-card transition-colors hover:border-line-strong ${wide ? "w-[11.5rem] shrink-0 snap-start" : ""}`}
+      className={`group flex min-w-0 flex-col overflow-hidden rounded-xl border border-line bg-bg text-start transition-colors hover:border-line-strong ${wide ? "w-[9.5rem] shrink-0 snap-start" : ""}`}
       data-testid="tile"
       data-store={store}
     >
-      <div className="relative aspect-square w-full bg-white">
-        <SmartImage src={o.image} alt={o.title} className="size-full p-2 transition-transform duration-300 group-hover:scale-[1.03]" fallbackLabel={store} />
-        {badge && <span className="absolute start-2 top-2 rounded-full bg-bg/95 px-2 py-0.5 text-[10.5px] font-semibold shadow-sm">{badge}</span>}
-        {off >= 3 && <span className="absolute end-2 top-2 rounded-full bg-ok px-1.5 py-0.5 text-[10.5px] font-bold text-white">↓{off}%</span>}
+      <div className="relative aspect-square w-full overflow-hidden bg-white">
+        <SmartImage src={o.image} alt={o.title} className="absolute inset-0 size-full p-1.5 transition-transform duration-300 group-hover:scale-[1.03]" fallbackLabel={store} />
+        {badge && <span className="absolute start-1.5 top-1.5 rounded-full bg-bg/95 px-1.5 py-0.5 text-[9.5px] font-semibold shadow-sm">{badge}</span>}
+        {off >= 3 && <span className="absolute end-1.5 top-1.5 rounded-full bg-ok px-1.5 py-0.5 text-[9.5px] font-bold text-white">↓{off}%</span>}
       </div>
-      <div className="flex flex-1 flex-col gap-1 p-2.5">
-        <span className="flex min-w-0 items-center gap-1 text-[11px] text-fg-muted">
+      <div className="flex flex-1 flex-col gap-0.5 px-2 pb-2 pt-1.5">
+        <span className="flex min-w-0 items-center gap-1 text-[10px] text-fg-muted">
           {LOGO_BY_NAME[store] && (
             // eslint-disable-next-line @next/next/no-img-element
-            <img src={LOGO_BY_NAME[store]} alt="" width={14} height={14} loading="lazy" className="size-3.5 shrink-0 rounded-[4px] bg-white object-contain" />
+            <img src={LOGO_BY_NAME[store]} alt="" width={12} height={12} loading="lazy" className="size-3 shrink-0 rounded-[3px] bg-white object-contain" />
           )}
           <span className="truncate">{store}</span>
         </span>
-        <span className="line-clamp-2 min-h-[2.4em] text-[13px] font-medium leading-tight" dir="auto">
+        <span className="line-clamp-2 min-h-[2.5em] text-[12px] font-medium leading-[1.25]" dir="auto">
           {o.title}
         </span>
-        <div className="mt-auto flex items-end justify-between gap-1 pt-1">
-          <div className="min-w-0">
-            <PiPrice value={o.total} className="text-[16px] leading-none" />
-            {o.listPrice && o.listPrice > o.price ? (
-              <span className="ms-1 text-[11px] text-fg-muted line-through" dir="ltr">
-                {fmt(o.listPrice)}
-              </span>
-            ) : null}
-            {o.totalUsd != null && <div className="mt-0.5 text-[11px] text-fg-muted" dir="ltr">≈ ${o.totalUsd.toFixed(o.totalUsd < 100 ? 1 : 0)}</div>}
-          </div>
+        <div className="mt-auto flex items-center justify-between gap-1 pt-1">
+          <PiPrice value={o.total} className="truncate text-[14px] leading-none" />
           <TrustChip n={o.trustScore} s={s} compact />
+        </div>
+        <div className="flex items-center gap-1 text-[10px] text-fg-muted" dir="ltr">
+          {o.totalUsd != null && <span>≈ ${o.totalUsd.toFixed(o.totalUsd < 100 ? 1 : 0)}</span>}
+          {o.listPrice && o.listPrice > o.price ? <span className="line-through">{fmt(o.listPrice)} π</span> : null}
         </div>
       </div>
     </m.button>
@@ -238,7 +236,7 @@ function TileSkeletons({ n = 4, wide }: { n?: number; wide?: boolean }) {
   return (
     <>
       {Array.from({ length: n }, (_, i) => (
-        <div key={i} className={`overflow-hidden rounded-2xl border border-line ${wide ? "w-[11.5rem] shrink-0" : ""}`} aria-hidden>
+        <div key={i} className={`overflow-hidden rounded-2xl border border-line ${wide ? "w-[9.5rem] shrink-0" : ""}`} aria-hidden>
           <div className="skeleton aspect-square w-full" />
           <div className="space-y-2 p-2.5">
             <div className="skeleton h-2.5 w-1/2 rounded" />
@@ -448,14 +446,33 @@ export const CATEGORIES: Array<{ id: keyof Strings["cat"]; Icon: typeof House; a
   { id: "services", Icon: Wrench, any: "" },
 ];
 
+/** The home page's first row (the owner can change it from /admin → Settings). */
+export interface HomeFeatured {
+  store: string;
+  cats: string;
+  title_en: string;
+  title_ar: string;
+}
+export const DEFAULT_FEATURED: HomeFeatured = { store: "salla", cats: "phones,headphones,computers,tv_audio", title_en: "Phones & electronics", title_ar: "موبايلات وإلكترونيات" };
+
 function HomeView({ s, lang, country, go, onOpen }: CommonProps) {
+  const site = useJson<{ featured?: HomeFeatured; announcement?: { on: boolean; en: string; ar: string } }>("/api/site");
+  const ann = site.data?.announcement;
+  const annText = ann?.on ? (lang === "ar" ? ann.ar || ann.en : ann.en || ann.ar) : "";
+  const fe = site.data?.featured ?? (site.loading ? null : DEFAULT_FEATURED);
+  const featuredUrl = fe ? `/api/search?country=${country}&limit=12${fe.store ? `&store=${fe.store}` : ""}${fe.cats ? `&cat=${encodeURIComponent(fe.cats)}` : ""}` : null;
+  const featured = useJson<SearchResponse>(featuredUrl);
   const deals = useJson<SearchResponse>(`/api/search?deals=1&limit=12&country=${country}`);
-  const popular = useJson<SearchResponse>(deals.data && !deals.data.offers.length ? `/api/search?limit=12&country=${country}` : null);
   const stores = useJson<StoresResponse>(`/api/stores?country=${country}`);
-  const row = deals.data?.offers.length ? deals.data.offers : popular.data?.offers ?? [];
-  const loadingRow = deals.loading || (!!deals.data && !deals.data.offers.length && popular.loading);
+  const feStore = (stores.data?.stores ?? []).find((x) => x.source === fe?.store);
+  const feTitle = fe ? (lang === "ar" ? fe.title_ar : fe.title_en) : "";
   return (
     <div className="pb-24 pt-1" data-testid="home">
+      {annText && (
+        <m.div initial={{ y: -6, opacity: 0 }} animate={{ y: 0, opacity: 1 }} className="mb-3 rounded-2xl bg-accent-soft px-3.5 py-2.5 text-[13px] font-medium text-accent" dir="auto" data-testid="announcement">
+          📣 {annText}
+        </m.div>
+      )}
       <SearchBox s={s} onSubmit={(q) => go({ v: "search", q })} />
       <div className="no-scrollbar -mx-4 mt-4 flex gap-3 overflow-x-auto px-4" data-testid="categories">
         {CATEGORIES.map(({ id, Icon, any, cat }, i) => (
@@ -477,10 +494,36 @@ function HomeView({ s, lang, country, go, onOpen }: CommonProps) {
         ))}
       </div>
 
-      <SectionTitle>{deals.data?.offers.length ? s.deals : s.popular}</SectionTitle>
-      <div className="no-scrollbar -mx-4 flex snap-x gap-3 overflow-x-auto px-4 pb-1" data-testid="home-deals">
-        {loadingRow ? <TileSkeletons n={3} wide /> : row.map((o, i) => <ProductTile key={o.id} o={o} s={s} onOpen={onOpen} i={i} wide />)}
+      <SectionTitle
+        action={
+          fe && (
+            <button onClick={() => go({ v: "search", q: "", cat: fe.cats || undefined, store: fe.store || undefined, title: feTitle })} className="text-[13px] font-medium text-accent" data-testid="featured-all">
+              {s.seeAll}
+            </button>
+          )
+        }
+      >
+        <span className="flex items-center gap-1.5">
+          {feStore?.logo && (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src={feStore.logo} alt="" className="size-5 rounded-md bg-white object-contain ring-1 ring-line" />
+          )}
+          {feTitle || s.popular}
+          {feStore && <span className="text-[12px] font-medium text-fg-muted">· {feStore.name}</span>}
+        </span>
+      </SectionTitle>
+      <div className="no-scrollbar -mx-4 flex snap-x gap-2.5 overflow-x-auto px-4 pb-1" data-testid="home-featured">
+        {!featured.data ? <TileSkeletons n={3} wide /> : featured.data.offers.map((o, i) => <ProductTile key={o.id} o={o} s={s} onOpen={onOpen} i={i} wide />)}
       </div>
+
+      {!!deals.data?.offers.length && (
+        <>
+          <SectionTitle>{s.deals}</SectionTitle>
+          <div className="no-scrollbar -mx-4 flex snap-x gap-2.5 overflow-x-auto px-4 pb-1" data-testid="home-deals">
+            {deals.data.offers.map((o, i) => <ProductTile key={o.id} o={o} s={s} onOpen={onOpen} i={i} wide />)}
+          </div>
+        </>
+      )}
 
       <SectionTitle action={<button onClick={() => go({ v: "stores" })} className="text-[13px] font-medium text-accent">{s.seeAll}</button>}>{s.piStores}</SectionTitle>
       <div className="grid grid-cols-2 gap-2.5" data-testid="home-stores">
@@ -588,7 +631,7 @@ function SearchView({ s, lang, country, go, back, onOpen, onAsk, view }: CommonP
       </div>
 
       {!shown && loading ? (
-        <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-3">
+        <div className="mt-3 grid grid-cols-2 gap-2.5 sm:grid-cols-3 lg:grid-cols-4">
           <TileSkeletons n={6} />
         </div>
       ) : shown && !shown.offers.length ? (
@@ -602,7 +645,7 @@ function SearchView({ s, lang, country, go, back, onOpen, onAsk, view }: CommonP
           </button>
         </m.div>
       ) : (
-        <div className={`mt-3 grid grid-cols-2 gap-3 transition-opacity sm:grid-cols-3 ${loading ? "opacity-60" : ""}`} data-testid="results">
+        <div className={`mt-3 grid grid-cols-2 gap-2.5 transition-opacity sm:grid-cols-3 lg:grid-cols-4 ${loading ? "opacity-60" : ""}`} data-testid="results">
           {(shown?.offers ?? []).map((o, i) => (
             <FragmentWithBanner key={o.id} i={i} show={(shown?.offers.length ?? 0) > 2} banner={<AskBanner s={s} onClick={() => onAsk(compareText)} />}>
               <ProductTile o={o} s={s} onOpen={onOpen} i={i % 24} />
@@ -649,7 +692,7 @@ function FragmentWithBanner({ i, show, banner, children }: { i: number; show: bo
   return (
     <>
       {children}
-      {show && i === 3 && <div className="col-span-2 sm:col-span-3">{banner}</div>}
+      {show && i === 3 && <div className="col-span-2 sm:col-span-3 lg:col-span-4">{banner}</div>}
     </>
   );
 }
@@ -819,7 +862,7 @@ function StoreView({ s, lang, country, go, back, onOpen, onAsk, id }: CommonProp
                   ))}
                 </div>
               )}
-              <div className={`mt-3 grid grid-cols-2 gap-3 sm:grid-cols-3 ${res.loading ? "opacity-60" : ""}`} data-testid="store-results">
+              <div className={`mt-3 grid grid-cols-2 gap-2.5 sm:grid-cols-3 lg:grid-cols-4 ${res.loading ? "opacity-60" : ""}`} data-testid="store-results">
                 {!res.data && res.loading ? <TileSkeletons n={4} /> : (res.data?.offers ?? []).map((o, i) => <ProductTile key={o.id} o={o} s={s} onOpen={onOpen} i={i} />)}
               </div>
               {res.data && !res.data.offers.length && <p className="mt-6 text-center text-[13.5px] text-fg-muted">{s.noResults}</p>}

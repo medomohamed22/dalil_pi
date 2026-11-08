@@ -1,14 +1,14 @@
+import { requireAdmin } from "@/lib/server/admin";
 import { catalogStats } from "@/lib/server/catalog";
 import { adminStats } from "@/lib/server/stats";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-/** Owner dashboard data. Needs "Authorization: Bearer <ADMIN_SECRET or CRON_SECRET>". */
+/** Owner dashboard data. Needs an admin token (or ADMIN_SECRET / CRON_SECRET). */
 export async function GET(req: Request) {
-  const secret = process.env.ADMIN_SECRET || process.env.CRON_SECRET;
-  if (!secret) return Response.json({ error: "ADMIN_SECRET is not set" }, { status: 503 });
-  if (req.headers.get("authorization") !== `Bearer ${secret}`) return Response.json({ error: "Unauthorized" }, { status: 401 });
+  const denied = requireAdmin(req);
+  if (denied) return denied;
   const days = Math.min(180, Math.max(1, Number(new URL(req.url).searchParams.get("days")) || 30));
   try {
     const [stats, catalog] = await Promise.all([adminStats(days), catalogStats("EG").catch(() => [])]);

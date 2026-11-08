@@ -153,3 +153,34 @@ export async function getMerchantName(id: string): Promise<string | null> {
   const { data } = await supabase().from("merchants").select("name").eq("id", id).maybeSingle();
   return (data?.name as string) ?? null;
 }
+
+/* ---------- owner (admin) ---------- */
+
+export interface AdminMerchant extends Merchant {
+  createdAt: string;
+}
+
+/** Every registered shop, pending first (owner panel). */
+export async function listAllMerchants(limit = 200): Promise<AdminMerchant[]> {
+  let rows: Row[];
+  if (!supabaseEnabled) rows = [...mem];
+  else {
+    const { data, error } = await supabase().from("merchants").select("*").order("created_at", { ascending: false }).limit(limit);
+    if (error) throw new Error(`merchants: ${error.message}`);
+    rows = (data ?? []) as Row[];
+  }
+  const rank = { pending: 0, approved: 1, rejected: 2 } as Record<string, number>;
+  return rows.map((r) => ({ ...toMerchant(r), createdAt: r.created_at })).sort((a, b) => (rank[a.status] ?? 3) - (rank[b.status] ?? 3));
+}
+
+export async function setMerchantStatus(id: string, status: Merchant["status"]): Promise<void> {
+  if (!["pending", "approved", "rejected"].includes(status)) throw Object.assign(new Error("Bad status"), { status: 400 });
+  if (!supabaseEnabled) {
+    const m = mem.find((x) => x.id === id);
+    if (!m) throw Object.assign(new Error("Not found"), { status: 404 });
+    m.status = status;
+    return;
+  }
+  const { error } = await supabase().from("merchants").update({ status }).eq("id", id);
+  if (error) throw new Error(`merchants: ${error.message}`);
+}

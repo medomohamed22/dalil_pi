@@ -4,6 +4,7 @@ import { piUsdPrice } from "@/lib/server/price";
 import { rankOffers } from "@/lib/server/rank";
 import { scoreTrust } from "@/lib/server/trust";
 import { visibleStores } from "@/lib/stores";
+import { siteSettings } from "@/lib/server/settings";
 
 export const runtime = "nodejs";
 
@@ -14,7 +15,8 @@ export async function GET(req: Request) {
   const stats = await catalogStats(country).catch(() => []);
   // Store-level trust: the same score as its cards, judged on the store itself (its own site).
   const piUsd = await piUsdPrice().catch(() => null);
-  const dir = visibleStores(country);
+  const hidden = new Set((await siteSettings()).hidden_stores);
+  const dir = visibleStores(country).filter((d) => !hidden.has(d.id));
   const probe = dir.flatMap((d) => rankOffers([{ title: d.name, store: d.name, url: d.url, price: 1, currency: "PI", kind: d.kind === "local" ? "local" : "online", piEvidence: "Pi store" }], country, piUsd?.usd));
   const scored = await scoreTrust(probe, { neutralPrice: true }).catch(() => []);
   const trust = new Map(scored.map((o, i) => [dir[i].id, o.trustScore ?? null]));
