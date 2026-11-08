@@ -78,9 +78,13 @@ function shippingSnapshot(a: Address): NonNullable<Order["shipping"]> {
   return rest;
 }
 
+const ORDER_COLUMNS =
+  "id, status, store_name, store_domain, product_title, product_url, product_image, quantity, price, currency, total, total_usd, country, trust, address_id, shipping, connector, checkout_url, txid, tracking_number, created_at";
+
 export async function listOrders(uid: string, limit = 50): Promise<Order[]> {
   if (!supabaseEnabled) return (mem.get(uid) ?? []).slice(0, limit);
-  const { data, error } = await supabase().from("orders").select("*").eq("pi_uid", uid).order("created_at", { ascending: false }).limit(limit);
+  // Only the columns the app shows — the signed offer snapshot (jsonb) stays in the database (less egress).
+  const { data, error } = await supabase().from("orders").select(ORDER_COLUMNS).eq("pi_uid", uid).order("created_at", { ascending: false }).limit(limit);
   if (error) throw new Error(`orders: ${error.message}`);
   return (data as Row[]).map(fromRow);
 }
@@ -138,7 +142,7 @@ export async function createOrder(uid: string, offer: Offer, addressId?: string,
     mem.set(uid, [o, ...(mem.get(uid) ?? [])]);
     return o;
   }
-  const { data, error } = await supabase().from("orders").insert({ pi_uid: uid, ...base }).select("*").single();
+  const { data, error } = await supabase().from("orders").insert({ pi_uid: uid, ...base }).select(ORDER_COLUMNS).single();
   if (error) throw new Error(`orders: ${error.message}`);
   return fromRow(data as Row);
 }
@@ -171,7 +175,7 @@ export async function updateOrder(uid: string, id: string, patch: { status?: Ord
   if (patch.status) row.status = patch.status;
   if (patch.txid !== undefined) row.txid = patch.txid;
   if (patch.trackingNumber !== undefined) row.tracking_number = patch.trackingNumber;
-  const { data, error } = await supabase().from("orders").update(row).eq("pi_uid", uid).eq("id", id).select("*").single();
+  const { data, error } = await supabase().from("orders").update(row).eq("pi_uid", uid).eq("id", id).select(ORDER_COLUMNS).single();
   if (error) throw new Error(`orders: ${error.message}`);
   return fromRow(data as Row);
 }
