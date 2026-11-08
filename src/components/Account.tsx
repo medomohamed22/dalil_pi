@@ -337,7 +337,7 @@ export function AccountSheet({
               </div>
             </div>
           ))}
-          <PlanShop s={s} api={api} open={open} onUsage={onUsage} />
+          <PlanShop s={s} api={api} open={open} onUsage={onUsage} lang={lang} usageKey={u.packs?.map((p) => p.id).join(",") ?? ""} />
           <p className="text-[11px] text-fg-muted">@{me?.username ?? me?.uid}</p>
         </div>
       )}
@@ -428,7 +428,8 @@ export function AccountSheet({
 
 /* ---------------- Plan shop: pay with Pi, 30-day packs ---------------- */
 
-function PlanShop({ s, api, open, onUsage }: { s: Strings; api: Fetch; open: boolean; onUsage: (u: Usage) => void }) {
+function PlanShop({ s, api, open, onUsage, lang, usageKey }: { s: Strings; api: Fetch; open: boolean; onUsage: (u: Usage) => void; lang: Lang; usageKey: string }) {
+  const day = (iso: string) => new Date(iso).toLocaleDateString(lang === "ar" ? "ar-EG-u-nu-latn" : "en-US", { day: "numeric", month: "long" });
   const [plans, setPlans] = useState<(PlanOffer & { quote: string | null })[] | null>(null);
   const [paying, setPaying] = useState<PaidPlanId | null>(null);
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
@@ -442,10 +443,10 @@ function PlanShop({ s, api, open, onUsage }: { s: Strings; api: Fetch; open: boo
   }, [api]);
   useEffect(() => {
     if (open) void load();
-  }, [open, load]);
+  }, [open, load, usageKey]);
 
   const buy = async (p: PlanOffer & { quote: string | null }) => {
-    if (!p.amountPi || !p.quote || paying) return;
+    if (!p.amountPi || !p.quote || p.activeUntil || paying) return;
     setPaying(p.id);
     setMsg(null);
     try {
@@ -479,13 +480,20 @@ function PlanShop({ s, api, open, onUsage }: { s: Strings; api: Fetch; open: boo
         <Loader2 className="mx-auto size-5 animate-spin text-fg-muted" />
       ) : (
         plans.map((p) => (
-          <div key={p.id} className="flex items-center gap-3 rounded-2xl border border-line p-3" data-testid="plan-offer" data-plan={p.id}>
+          <div
+            key={p.id}
+            className={`flex items-center gap-3 rounded-2xl border p-3 ${p.activeUntil ? "border-fg/40 bg-bg-soft" : "border-line"}`}
+            data-testid="plan-offer"
+            data-plan={p.id}
+            data-active={p.activeUntil ? "1" : undefined}
+          >
             <div className="min-w-0 flex-1">
               <div className="flex items-baseline gap-1.5">
                 <span className="font-semibold">{s.plans[p.id] ?? p.id}</span>
                 <span className="text-[11px] text-fg-muted">· {s.perDays(p.days)}</span>
               </div>
               <div className="text-[12px] text-fg-soft">{s.planIncludes(p.searches, p.orders)}</div>
+              {p.activeUntil && <div className="mt-0.5 text-[11px] font-medium text-emerald-700 dark:text-emerald-400">✓ {s.subscribedUntil(day(p.activeUntil))}</div>}
             </div>
             <div className="text-end">
               <div className="text-sm font-semibold tabular-nums" dir="ltr">
@@ -497,11 +505,12 @@ function PlanShop({ s, api, open, onUsage }: { s: Strings; api: Fetch; open: boo
             </div>
             <button
               onClick={() => buy(p)}
-              disabled={!p.amountPi || !!paying}
-              title={!p.amountPi ? s.priceUnavailable : undefined}
+              disabled={!p.amountPi || !p.quote || !!p.activeUntil || !!paying}
+              aria-disabled={!!p.activeUntil}
+              title={p.activeUntil ? s.subscribedUntil(day(p.activeUntil)) : !p.amountPi ? s.priceUnavailable : undefined}
               className="flex min-w-16 items-center justify-center gap-1 rounded-full bg-inv-bg px-3 py-1.5 text-[12px] font-semibold text-inv-fg disabled:opacity-40"
             >
-              {paying === p.id ? <Loader2 className="size-3.5 animate-spin" /> : s.buy}
+              {paying === p.id ? <Loader2 className="size-3.5 animate-spin" /> : p.activeUntil ? s.subscribed : s.buy}
             </button>
           </div>
         ))

@@ -3,7 +3,7 @@ import { piNetwork, piServerCall, type PiPayment } from "./pi";
 import { piUsdPrice } from "./price";
 import { signToken, verifyToken } from "./sign";
 import { supabase, supabaseEnabled } from "./supabase";
-import { memActivate, PLAN_CATALOG } from "./users";
+import { listPacks, memActivate, PLAN_CATALOG } from "./users";
 import type { PaidPlanId, PlanOffer } from "../types";
 
 /**
@@ -50,13 +50,26 @@ export function piAmount(usd: number, rate: number): number {
 }
 
 /** The plan shop with live Pi prices and a signed quote per plan for this user. */
+/** Plans (not top-ups) the user already has, with the end of the latest pack of each. */
+async function activePlans(uid: string): Promise<Map<PaidPlanId, string>> {
+  const out = new Map<PaidPlanId, string>();
+  for (const p of await listPacks(uid)) {
+    if (p.plan === "topup") continue;
+    const cur = out.get(p.plan);
+    if (!cur || p.endsAt > cur) out.set(p.plan, p.endsAt);
+  }
+  return out;
+}
+
 export async function planOffers(uid: string): Promise<{ plans: (PlanOffer & { quote: string | null })[]; rate: number | null; network: string }> {
-  const price = await piUsdPrice();
+  const [price, active] = await Promise.all([piUsdPrice(), activePlans(uid)]);
   const plans = (Object.keys(PLAN_CATALOG) as PaidPlanId[]).map((id) => {
     const c = PLAN_CATALOG[id];
     const amountPi = price ? piAmount(c.priceUsd, price.usd) : null;
-    const quote = amountPi ? signToken({ uid, plan: id, amountPi, priceUsd: c.priceUsd, rate: price!.usd } satisfies Quote, QUOTE_TTL_MS) : null;
-    return { id, priceUsd: c.priceUsd, searches: c.searches, orders: c.orders, days: c.days, amountPi, quote };
+    const activeUntil = active.get(id) ?? null;
+    // No quote for a plan the user already has: it can't be bought twice while active.
+    const quote = amountPi && !activeUntil ? signToken({ uid, plan: id, amountPi, priceUsd: c.priceUsd, rate: price!.usd } satisfies Quote, QUOTE_TTL_MS) : null;
+    return { id, priceUsd: c.priceUsd, searches: c.searches, orders: c.orders, days: c.days, amountPi, quote, activeUntil };
   });
   return { plans, rate: price?.usd ?? null, network: piNetwork() };
 }
@@ -120,6 +133,9 @@ export async function approvePayment(uid: string, paymentId: string): Promise<vo
   if (!q) throw new BillingError("The price quote expired — please try again", 409, "QUOTE_EXPIRED");
   if (q.uid !== uid || q.plan !== meta.plan || !isPaidPlan(q.plan)) throw new BillingError("The price quote doesn't match this payment");
   if (!sameAmount(p.amount, q.amountPi)) throw new BillingError(`Amount ${p.amount} π doesn't match the quoted ${q.amountPi} π`);
+  if (q.plan !== "topup" && (await activePlans(uid)).has(q.plan)) {
+    throw new BillingError("You already have this plan — it's active until it ends. Pick another plan or a top-up.", 409, "ALREADY_SUBSCRIBED");
+  }
 
   const row: PayRow = { paymentId, uid, plan: q.plan, amount: q.amountPi, priceUsd: q.priceUsd, rate: q.rate, status: "approved" };
   if (supabaseEnabled) {

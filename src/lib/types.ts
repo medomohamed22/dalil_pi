@@ -196,6 +196,8 @@ export interface PlanOffer {
   days: number;
   /** null when the Pi price is unavailable right now. */
   amountPi: number | null;
+  /** The user already has this plan: until when (ISO). Not buyable again until it ends. Never set for top-ups. */
+  activeUntil?: string | null;
 }
 
 /** A saved shipping address (stored in Supabase, per Pi account). */
