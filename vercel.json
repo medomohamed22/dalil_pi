@@ -4,6 +4,11 @@
   "buildCommand": "next build",
   "installCommand": "npm install",
   "outputDirectory": ".next",
+  "git": {
+    "deploymentEnabled": {
+      "ccr-*": false
+    }
+  },
   "regions": [
     "lhr1"
   ],

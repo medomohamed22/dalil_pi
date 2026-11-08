@@ -6,7 +6,9 @@ import { assertPublicUrl, isPrivateIp } from "./net";
 
 /**
  * Real headless Chromium for the agent ("browser_open" / "browser_action").
- * - On Vercel: @sparticuz/chromium (a Lambda-friendly Chromium build).
+ * - On Vercel: @sparticuz/chromium-min. The 67 MB browser is NOT shipped inside the functions
+ *   (each deployment stored a copy per function: Vercel "Functions Storage"); it is downloaded
+ *   once per server instance from the pinned Sparticuz release into /tmp (CHROMIUM_PACK_URL).
  * - BROWSER_WS_ENDPOINT: connect to a remote browser instead (Browserless, Browserbase…).
  * - Locally: CHROME_PATH, or a Playwright/Chrome install.
  *
@@ -24,11 +26,14 @@ export function browserAvailable(): boolean {
   return process.env.DALIL_BROWSER !== "off";
 }
 
+/** Same version as the package (pinned), from the project's own GitHub release. */
+const CHROMIUM_PACK = "https://github.com/Sparticuz/chromium/releases/download/v153.0.0/chromium-v153.0.0-pack.x64.tar";
+
 async function executablePath(): Promise<{ path: string; args: string[] }> {
   if (process.env.CHROME_PATH) return { path: process.env.CHROME_PATH, args: ["--no-sandbox"] };
   if (process.env.VERCEL || process.env.AWS_LAMBDA_FUNCTION_NAME) {
-    const chromium = (await import("@sparticuz/chromium")).default;
-    return { path: await chromium.executablePath(), args: chromium.args };
+    const chromium = (await import("@sparticuz/chromium-min")).default;
+    return { path: await chromium.executablePath(process.env.CHROMIUM_PACK_URL || CHROMIUM_PACK), args: chromium.args };
   }
   const { existsSync } = await import("node:fs");
   for (const p of [

@@ -1,9 +1,9 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  // Real Chromium for the agent's browser tool: keep it out of the bundle and
-  // ship its compressed binary with the chat function only.
-  serverExternalPackages: ["@sparticuz/chromium", "puppeteer-core"],
+  // Real Chromium for the agent's browser tool: kept out of the bundle; the binary is downloaded
+  // at run time (browser.ts), so no function carries 67 MB per deployment.
+  serverExternalPackages: ["@sparticuz/chromium-min", "puppeteer-core"],
   async headers() {
     return [
       {
@@ -30,12 +30,6 @@ const nextConfig: NextConfig = {
       { source: "/admin", headers: [{ key: "X-Frame-Options", value: "DENY" }, { key: "Content-Security-Policy", value: "frame-ancestors 'none'" }, { key: "X-Robots-Tag", value: "noindex, nofollow" }] },
       { source: "/api/admin/:path*", headers: [{ key: "Cache-Control", value: "no-store" }, { key: "X-Robots-Tag", value: "noindex" }] },
     ];
-  },
-  outputFileTracingIncludes: {
-    "/api/chat": ["./node_modules/@sparticuz/chromium/bin/**"],
-    "/api/cron/catalog": ["./node_modules/@sparticuz/chromium/bin/**"],
-    "/api/local-shops": ["./node_modules/@sparticuz/chromium/bin/**"],
-    "/api/admin/refresh": ["./node_modules/@sparticuz/chromium/bin/**"],
   },
 };
 
