@@ -47,6 +47,7 @@ function toWire(messages: ChatMessage[]): WireMessage[] {
         if (m === lastUser) images.push(b.dataUrl);
         else parts.push("[photo attached earlier]");
       }
+      if (b.type === "shops") parts.push("[Salla Local shops shown to user]\n" + b.shops.map((x, i) => `${i + 1}. ${x.name}${x.distanceKm != null ? ` | ${x.distanceKm} km` : ""}${x.address ? ` | ${x.address}` : ""}`).join("\n"));
       if (b.type === "products")
         parts.push(
           "[Offers shown to user]\n" +
@@ -89,7 +90,7 @@ function applyEvent(blocks: Block[], e: AgentEvent): Block[] {
     const idx = stepsIndex();
     next[idx] = { ...(next[idx] as Extract<Block, { type: "steps" }>), note: e.text.trim().slice(0, 240) };
   } else if (e.type === "block") {
-    const at = e.block.type === "products" || e.block.type === "browser" ? next.findIndex((b) => b.type === e.block.type) : -1;
+    const at = e.block.type === "products" || e.block.type === "shops" || e.block.type === "browser" ? next.findIndex((b) => b.type === e.block.type) : -1;
     if (at >= 0) next[at] = e.block;
     else next.push(e.block);
   } else if (e.type === "browserDone") {

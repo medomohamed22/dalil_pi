@@ -80,6 +80,26 @@ export interface Offer {
   sig?: string;
 }
 
+/** A physical shop where you pay in Pi at the counter (Salla Local). No price list. */
+export interface LocalShop {
+  id: string;
+  name: string;
+  description?: string;
+  image?: string;
+  address?: string;
+  lat?: number;
+  lon?: number;
+  distanceKm?: number;
+  /** Digits only, for tel: links. */
+  phone?: string;
+  /** Digits only (international), for wa.me links. */
+  whatsapp?: string;
+  /** Shop page on Salla Local. */
+  url: string;
+  /** "Pay the shop" page on Salla Local. */
+  payUrl: string;
+}
+
 export interface LinkPreview {
   url: string;
   title?: string;
@@ -96,6 +116,7 @@ export type Block =
   | { type: "link"; preview: LinkPreview }
   | { type: "steps"; steps: Step[]; note?: string; startedAt?: number; endedAt?: number }
   | { type: "products"; offers: Offer[]; note?: string }
+  | { type: "shops"; shops: LocalShop[]; source: "salla_local"; locatedBy?: "gps" | "ip" }
   | { type: "error"; text: string; code?: string }
   /** Live view of the agent's real browser (latest screenshot). */
   | { type: "browser"; url: string; title?: string; shot?: string; action?: string; pages?: number; live?: boolean };

@@ -113,6 +113,22 @@ export interface SallaItem {
   seller: "salla" | "merchant";
 }
 
+/** A physical shop on Salla Local (mall.salla-shop.com/local): customers pay it in Pi at the counter. */
+export interface SallaLocalRaw {
+  id: string;
+  name: string;
+  description?: string;
+  image?: string;
+  lat?: number;
+  lon?: number;
+  address?: string;
+  country?: string;
+  phone?: string;
+  whatsapp?: string;
+}
+/** Tests only (never on Vercel): a local copy of the Salla Local page. */
+const SALLA_LOCAL = (!process.env.VERCEL && process.env.DALIL_TEST_SALLA_LOCAL_URL) || `${SALLA}/local`;
+
 export class BrowserSession {
   private browser?: Browser;
   private page?: Page;
@@ -363,6 +379,51 @@ export class BrowserSession {
       page.off("response", onResponse);
       this.lite = false;
     }
+  }
+
+  /**
+   * Salla Local's public shop list, read from what its /local page loads while it renders
+   * (the same data every visitor sees: name, address, map pin, contact). No key of ours is used.
+   */
+  async sallaLocalShops(): Promise<SallaLocalRaw[]> {
+    const page = await this.ensurePage();
+    let rows: unknown[] | null = null;
+    const onResponse = async (res: import("puppeteer-core").HTTPResponse) => {
+      if (!/\/rpc\/get_public_offline_merchants\b/.test(res.url())) return;
+      try {
+        const j = (await res.json()) as unknown;
+        if (Array.isArray(j)) rows = j;
+      } catch {
+        /* not JSON */
+      }
+    };
+    page.on("response", onResponse);
+    this.lite = true;
+    try {
+      await page.goto(SALLA_LOCAL, { waitUntil: "domcontentloaded" });
+      this.pagesVisited++;
+      const until = Date.now() + 9000;
+      while (!rows && Date.now() < until) await new Promise((r) => setTimeout(r, 150));
+    } finally {
+      page.off("response", onResponse);
+      this.lite = false;
+    }
+    const str = (v: unknown, max: number) => (typeof v === "string" && v.trim() ? v.trim().replace(/\s+/g, " ").slice(0, max) : undefined);
+    const num = (v: unknown) => (typeof v === "number" && Number.isFinite(v) ? v : undefined);
+    return ((rows ?? []) as Array<Record<string, unknown>>)
+      .filter((r) => r && typeof r.id === "string" && /^[0-9a-f-]{36}$/i.test(r.id) && str(r.name, 1) && (r.status == null || r.status === "active"))
+      .map((r) => ({
+        id: r.id as string,
+        name: str(r.name, 80)!,
+        description: str(r.description, 240),
+        image: typeof r.image_url === "string" && /^https:\/\//.test(r.image_url) ? r.image_url : undefined,
+        lat: num(r.latitude),
+        lon: num(r.longitude),
+        address: str(r.address, 160),
+        country: str(r.country, 2)?.toUpperCase(),
+        phone: str(r.phone, 24),
+        whatsapp: str(r.whatsapp, 80),
+      }));
   }
 
   async close() {

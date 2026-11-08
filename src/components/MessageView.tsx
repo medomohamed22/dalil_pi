@@ -8,6 +8,7 @@ import type { Strings } from "@/lib/i18n";
 import type { Block, ChatMessage, Lang, Offer } from "@/lib/types";
 import { BrowserCard, LinkCard, OfferSkeletons, ProductCards, StepsTimeline } from "./cards";
 import Logo from "./Logo";
+import { ShopCards } from "./Shops";
 
 export default function MessageView({
   msg,
@@ -85,7 +86,7 @@ export default function MessageView({
               return (
                 <div key={i} className="contents">
                   <StepsTimeline steps={b.steps} live={live} s={s} lang={lang} note={b.note} startedAt={b.startedAt} endedAt={b.endedAt} />
-                  {live && !msg.blocks.some((x) => x.type === "products" || x.type === "browser") && b.steps.length > 0 && <OfferSkeletons />}
+                  {live && !msg.blocks.some((x) => x.type === "products" || x.type === "shops" || x.type === "browser") && b.steps.length > 0 && <OfferSkeletons />}
                 </div>
               );
             case "text":
@@ -109,6 +110,8 @@ export default function MessageView({
               );
             case "products":
               return <ProductCards key={i} offers={b.offers} s={s} lang={lang} city={city} onOrder={onOrder} ordersLeft={ordersLeft} onWatch={onWatch} onAsk={onAsk} onCart={onCart} inCart={inCart} onAskShop={onAskShop} />;
+            case "shops":
+              return <ShopCards key={i} shops={b.shops} s={s} locatedBy={b.locatedBy} />;
             case "link":
               return <LinkCard key={i} preview={b.preview} lang={lang} />;
             case "browser":

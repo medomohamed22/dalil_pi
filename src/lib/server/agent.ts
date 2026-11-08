@@ -13,6 +13,7 @@ import { detectWooPi } from "./woo";
 import { PriceEvidence } from "./evidence";
 import { cached, norm } from "./cache";
 import { expandQuery } from "./lexicon";
+import { pickLocalShops } from "./salla-local";
 import { mapOfPiConfigured, mapOfPiNearby, pcmEnabled, pcmSearch, sallaApiConfigured, sallaApiSearch } from "./partners";
 import type { AgentEvent, Lang, Offer, Scope, Step, WireMessage } from "../types";
 
@@ -93,6 +94,21 @@ const MERCHANTS_TOOL: FunctionTool = {
       properties: {
         query: { type: "string", description: "Short keywords, e.g. \"coffee\" or \"headphones\"" },
         kind: { type: "string", enum: ["online", "local", "service"] },
+      },
+    },
+  },
+};
+
+const SALLA_LOCAL_TOOL: FunctionTool = {
+  type: "function",
+  function: {
+    name: "salla_local",
+    description:
+      "Find PHYSICAL shops in Egypt that take Pi at the counter, from Salla Local (mall.salla-shop.com/local): name, what they sell, address, exact map pin, distance from the user, WhatsApp/phone and a 'Pay the shop' link. The shop cards are shown to the user automatically (do NOT repeat these shops in show_offers — they have no price list). Call it for any local / near-me / in-store request in Egypt. Pass a short keyword for what the user wants (e.g. \"cafe\", \"كافيه\"), or leave it empty for the nearest shops.",
+    parameters: {
+      type: "object",
+      properties: {
+        query: { type: "string", description: "Short keyword, e.g. \"cafe\" or \"منتجات طبيعية\"; empty = nearest shops" },
       },
     },
   },
@@ -257,7 +273,7 @@ Where Pi is accepted (check these first; they take payment in Pi):
 - Shops registered with Dalil Pi: search them with the dalil_merchants tool in your first turn (approved merchants that accept Pi, with Pi prices).
 - Stores using the Sallanet Pay gateway (WooCommerce stores that accept Pi at checkout).
 - Piketplace (https://piketplace.com), and Pi Mainnet commerce apps on *.pinet.com.
-- Local physical shops: Map of Pi — only when the user asks for local shops. ${mapOfPi ? "Call the map_of_pi tool FIRST for any local request: it returns real nearby shops with exact location, rating and Pi prices in 1-3 s. Turn its shops/items into offers (kind \"local\", with address, lat, lon, distanceKm and the shop url)." : "Find them with web_search (e.g. \"<item> accept Pi <city> Map of Pi\")."}
+- Local physical shops (only when the user asks for local / near-me / in-store): in Egypt call the salla_local tool (Salla Local shops that take Pi at the counter; their cards appear automatically). Also Map of Pi — ${mapOfPi ? "Call the map_of_pi tool FIRST for any local request (in Egypt together with salla_local, in parallel): it returns real nearby shops with exact location, rating and Pi prices in 1-3 s. Turn its shops/items into offers (kind \"local\", with address, lat, lon, distanceKm and the shop url)." : "Find them with web_search (e.g. \"<item> accept Pi <city> Map of Pi\")."}
 - NEVER open mapofpi.com, *.pinet.com or *.minepi.com pages with browse_url/browser_open: they are interactive Pi apps (maps, wallets) that can't be read and only waste time.
 A store counts as accepting Pi only if you saw evidence: a price in Pi, a Pi payment option/checkout, or it is one of the marketplaces above. Put that evidence in piEvidence. Never present a store as accepting Pi without evidence.
 
@@ -352,6 +368,7 @@ export async function runAgent(opts: RunOptions): Promise<{ offersShown: boolean
     MERCHANTS_TOOL,
     ...(hasBrowser || sallaApiConfigured() ? [SALLA_TOOL] : []),
     ...(mapOfPiConfigured() ? [MAPOFPI_TOOL] : []),
+    ...(hasBrowser ? [SALLA_LOCAL_TOOL] : []),
     ...(hasBrowser ? BROWSER_TOOLS : []),
   ];
   const browser = new BrowserSession();
@@ -430,7 +447,7 @@ export async function runAgent(opts: RunOptions): Promise<{ offersShown: boolean
           if (call.name === "browse_url" || call.name === "browser_open") step.detail = hostOf(String(args.url ?? ""));
           if (call.name === "browser_action") step.detail = clip(`${args.action}${args.id != null ? ` #${args.id}` : ""}${args.text ? ` "${args.text}"` : ""}`, 60);
           if (call.name === "lookup_barcode") step.detail = String(args.code ?? "");
-          if (call.name === "map_of_pi" || call.name === "dalil_merchants") step.detail = clip(String(args.query ?? ""), 60);
+          if (call.name === "map_of_pi" || call.name === "dalil_merchants" || call.name === "salla_local") step.detail = clip(String(args.query ?? ""), 60);
           if (call.name === "search_salla" || call.name === "search_pi_chain_mall") step.detail = clip((Array.isArray(args.queries) ? args.queries : [args.query]).filter(Boolean).map(String).join(" · "), 90);
           emit({ type: "step", step });
           try {
@@ -438,6 +455,8 @@ export async function runAgent(opts: RunOptions): Promise<{ offersShown: boolean
             const hosts =
               call.name === "search_pi_chain_mall"
                 ? ["pipcm.com"]
+                : call.name === "salla_local"
+                ? ["mall.salla-shop.com"]
                 : call.name === "search_salla"
                 ? ["mall.salla-shop.com"]
                 : call.name === "map_of_pi"
@@ -637,6 +656,24 @@ async function execTool(
             piEvidence: "Registered and approved on Dalil Pi for merchants",
           };
         }),
+      };
+    }
+    case "salla_local": {
+      if (!ctx.browser || !ctx.viaBrowser) throw new Error("Salla Local unavailable right now");
+      const at = ctx.coords ?? ctx.ipCoords;
+      // The shop list is the same for everyone: read it at most every 15 min (cheap on Active CPU).
+      const raw = await cached("salla-local", "all", 15 * 60_000, () => ctx.viaBrowser!(() => ctx.browser!.sallaLocalShops()));
+      const { shops, matched } = pickLocalShops(raw, { country: ctx.locale.country, at, query: String(args.query ?? "") });
+      if (!shops.length) return { shops: [], hint: `No Salla Local shops in ${ctx.locale.countryName} yet — use the other sources.` };
+      ctx.emit({ type: "block", block: { type: "shops", shops, source: "salla_local", locatedBy: ctx.coords ? "gps" : at ? "ip" : undefined } });
+      return {
+        shown_to_user: shops.length,
+        matched_query: matched,
+        located_by: ctx.coords ? "gps" : at ? "ip (approximate — say distances are approximate)" : "unknown (no distances)",
+        shops: shops.map((s) => ({ name: s.name, sells: s.description, address: s.address, distanceKm: s.distanceKm })),
+        note: matched
+          ? "These shop cards are already on screen with Pay/WhatsApp/Directions buttons. Mention the nearest one or two in one sentence; don't list them again."
+          : "No shop matched the keyword; the nearest Salla Local shops are on screen instead. Say so in one sentence.",
       };
     }
     case "map_of_pi": {
