@@ -1,0 +1,541 @@
+import "server-only";
+import { createHash } from "node:crypto";
+import { BrowserSession, browserAvailable, type SallaCatalogRaw } from "./browser";
+import { expandQuery, synonymGroups } from "./lexicon";
+import { fetchWithTimeout, assertPublicUrl } from "./net";
+import { countryCode } from "./partners";
+import { supabase, supabaseEnabled } from "./supabase";
+
+/**
+ * Dalil Index — our own copy of the public catalogs of trusted Pi stores.
+ *
+ *   1. Fetch (plain code, no AI): read each store's whole public catalog —
+ *        Pi Chain Mall   3 small JSON pages (the list its own app loads)
+ *        Global Trade Pi 1 JSON page
+ *        Salla Shop Mall its /products page (one headless render loads every product)
+ *   2. Store: upsert into catalog_items; products that vanished become inactive.
+ *   3. Search: an in-memory index per server instance (reloaded only when a store
+ *      was refreshed), Arabic/English normalisation, the AR↔EN lexicon and typo
+ *      tolerance. ~300 products today → well under a millisecond per search.
+ *
+ * Refresh: lazily after a search when a store's copy is older than its TTL (the
+ * reply is never delayed), from /api/cron/catalog (GitHub Actions / Vercel Cron),
+ * or forced. A lock row per store stops two instances refreshing at once.
+ */
+
+export type CatalogSource = "pcm" | "salla" | "gtp";
+export const SOURCES: CatalogSource[] = ["pcm", "salla", "gtp"];
+/** How old a store's copy may get before a search triggers a background refresh. */
+export const TTL_MIN: Record<CatalogSource, number> = { pcm: 60, gtp: 60, salla: 180 };
+const STORE_NAME: Record<CatalogSource, string> = { pcm: "Pi Chain Mall", salla: "Salla Shop Mall", gtp: "Global Trade Pi" };
+
+export interface CatalogItem {
+  id: string;
+  source: CatalogSource;
+  title: string;
+  title_ar?: string | null;
+  description?: string | null;
+  price?: number | null;
+  price_egp?: number | null;
+  list_price_egp?: number | null;
+  url: string;
+  image?: string | null;
+  images: string[];
+  seller?: string | null;
+  country?: string | null;
+  category?: string | null;
+  tags: string[];
+  in_stock: boolean;
+  stock?: number | null;
+  digital: boolean;
+}
+
+interface SourceState {
+  source: CatalogSource;
+  refreshed_at: string | null;
+  items: number;
+  ok: boolean | null;
+  error: string | null;
+  meta: { usd_rate?: number; profit_percentage?: number; pi_price_cache?: number };
+}
+
+/* ------------------------------------------------------------------ */
+/* 1. Fetchers (plain code)                                            */
+/* ------------------------------------------------------------------ */
+
+const allowPrivate = () => !process.env.VERCEL && process.env.DALIL_TEST_ALLOW_PRIVATE_STORES === "1";
+const UA = "Mozilla/5.0 (compatible; DalilPiBot/1.0; +https://pihackathontest.vercel.app)";
+
+async function getJson<T>(url: string): Promise<T> {
+  if (!allowPrivate()) await assertPublicUrl(url);
+  const res = await fetchWithTimeout(url, { headers: { Accept: "application/json", "User-Agent": UA }, redirect: "error", timeoutMs: 8000 });
+  if (!res.ok) throw new Error(`${new URL(url).host} answered ${res.status}`);
+  return (await res.json()) as T;
+}
+
+const str = (v: unknown, max = 400) => (typeof v === "string" && v.trim() ? v.trim().replace(/\s+/g, " ").slice(0, max) : null);
+const num = (v: unknown) => {
+  const n = typeof v === "string" ? Number(v) : v;
+  return typeof n === "number" && Number.isFinite(n) ? n : null;
+};
+const httpsImg = (v: unknown) => (typeof v === "string" && /^https:\/\/[^\s"'<>]+$/.test(v.trim()) ? v.trim() : null);
+const base = (v?: string) => (v ? v.replace(/\/+$/, "") : "");
+
+/** Pi Chain Mall: the paged product list its own app loads (50 per page). */
+export async function fetchPcm(): Promise<CatalogItem[]> {
+  const api = base(process.env.PCM_API_URL) || "https://api.pipcm.com";
+  const img = (p: string) => (/^https?:\/\//.test(p) ? p : `https://image.pcmsuper.art/image/${p.replace(/^\/+/, "")}`);
+  const out: CatalogItem[] = [];
+  const seen = new Set<string>(); // its pages can repeat items
+  for (let page = 1, pages = 1; page <= Math.min(pages, 40); page++) {
+    const u = new URL(`${api}/api/commodity/commodity/getCommodityList`);
+    for (const [k, v] of Object.entries({ currentPage: String(page), pageSize: "50", countryId: "globle8787", hasStock: "false", commdityMark: "-1" })) u.searchParams.set(k, v);
+    const j = await getJson<{ object?: Array<Record<string, unknown>>; totalPage?: number }>(u.toString());
+    pages = Number(j.totalPage) || 1;
+    const rows = Array.isArray(j.object) ? j.object : [];
+    for (const c of rows) {
+      const id = str(c.id, 64);
+      const title = str(c.title, 200);
+      const price = num(c.price);
+      if (!id || !/^[\w-]+$/.test(id) || !title || !(price && price > 0) || (c.status ?? 0) !== 0 || seen.has(id)) continue;
+      seen.add(id);
+      const pics = (Array.isArray(c.urlList) ? c.urlList : [c.pictureUrl]).map((p) => (typeof p === "string" && p.trim() ? httpsImg(img(p.trim())) : null)).filter(Boolean) as string[];
+      const user = (c.tUserEntity ?? {}) as Record<string, unknown>;
+      out.push({
+        id: `pcm:${id}`,
+        source: "pcm",
+        title,
+        url: `https://pipcm.com/#/product/new-detail?id=${encodeURIComponent(id)}${str(c.userId, 64) ? `&userId=${encodeURIComponent(String(c.userId))}` : ""}`,
+        price,
+        image: pics[0] ?? null,
+        images: pics.slice(0, 8),
+        seller: str(user.nickName, 60) ?? str(user.userName, 60),
+        tags: [],
+        in_stock: true,
+        digital: false,
+      });
+    }
+    if (!rows.length) break;
+  }
+  return out;
+}
+
+/** Global Trade Pi: its public product list. */
+export async function fetchGtp(): Promise<CatalogItem[]> {
+  const api = base(process.env.GTP_API_URL) || "https://globaltradepi.xyz";
+  const out: CatalogItem[] = [];
+  for (let page = 1, pages = 1; page <= Math.min(pages, 20); page++) {
+    const j = await getJson<{ products?: Array<Record<string, unknown>>; pagination?: { totalPages?: number } }>(`${api}/api/products?page=${page}&limit=50`);
+    pages = Number(j.pagination?.totalPages) || 1;
+    const rows = Array.isArray(j.products) ? j.products : [];
+    for (const p of rows) {
+      const id = str(p._id ?? p.id, 64);
+      const title = str(p.title, 200);
+      const price = num(p.price);
+      if (!id || !/^[a-f0-9]{24}$/i.test(id) || !title || !(price && price > 0) || (p.status && p.status !== "active") || p.sellingType === "auction") continue;
+      const pics = (Array.isArray(p.images) ? p.images : []).map(httpsImg).filter(Boolean) as string[];
+      out.push({
+        id: `gtp:${id}`,
+        source: "gtp",
+        title,
+        description: str(p.description, 400),
+        url: `https://globaltradepi.xyz/products/${id}`,
+        price,
+        image: pics[0] ?? null,
+        images: pics.slice(0, 8),
+        seller: str(p.sellerUsername, 60),
+        country: countryCode(str(p.country, 60) ?? undefined) ?? null,
+        category: str(p.category, 60),
+        tags: [],
+        in_stock: p.stock == null || Number(p.stock) > 0,
+        stock: num(p.stock),
+        digital: p.productType === "digital",
+      });
+    }
+    if (!rows.length) break;
+  }
+  return out;
+}
+
+/** Salla Shop Mall: every product its /products page loads (prices in EGP + its EGP→Pi settings). */
+export function parseSalla(raw: SallaCatalogRaw): { items: CatalogItem[]; meta: SourceState["meta"] } {
+  const items: CatalogItem[] = [];
+  for (const r of raw.rows) {
+    const id = str(r.id, 64);
+    const name = str(r.name, 200);
+    const egp = num(r.local_price_egp);
+    if (!id || !/^[0-9a-f-]{36}$/i.test(id) || !name || !(egp && egp > 0) || r.in_stock === false) continue;
+    const was = num(r.original_price);
+    const cat = (r.categories ?? {}) as Record<string, unknown>;
+    const pics = [r.image, ...(Array.isArray(r.images) ? r.images : [])].map(httpsImg).filter(Boolean) as string[];
+    items.push({
+      id: `salla:${id}`,
+      source: "salla",
+      title: name,
+      title_ar: str(r.name_ar, 200),
+      description: [str(r.description, 300), str(r.description_ar, 300)].filter(Boolean).join(" — ") || null,
+      url: `https://mall.salla-shop.com/product/${id}`,
+      price_egp: egp,
+      list_price_egp: was && was > egp ? was : null,
+      image: pics[0] ?? null,
+      images: [...new Set(pics)].slice(0, 8),
+      category: [str(cat.name, 60), str(r.category, 60)].filter(Boolean).join(" / ") || null,
+      tags: (Array.isArray(r.tags) ? r.tags : []).map((x) => str(x, 40)).filter(Boolean).slice(0, 10) as string[],
+      in_stock: r.in_stock !== false && (num(r.stock_quantity) ?? 1) > 0,
+      stock: num(r.stock_quantity),
+      digital: false,
+    });
+  }
+  const s = raw.settings ?? {};
+  return { items, meta: { usd_rate: num(s.usd_rate) ?? undefined, profit_percentage: num(s.profit_percentage) ?? undefined, pi_price_cache: num(s.pi_price_cache) ?? undefined } };
+}
+
+/** Salla's own formula (checked against its pages): Pi = EGP ÷ usd_rate ÷ Pi price × (1 + profit %). */
+export function sallaPi(egp: number, meta: SourceState["meta"]): number | null {
+  const { usd_rate, pi_price_cache, profit_percentage } = meta;
+  if (!(egp > 0) || !usd_rate || !pi_price_cache) return null;
+  return Math.round((egp / usd_rate / pi_price_cache) * (1 + (profit_percentage ?? 0) / 100) * 1e4) / 1e4;
+}
+
+/* ------------------------------------------------------------------ */
+/* 2. Storage + refresh                                                */
+/* ------------------------------------------------------------------ */
+
+const mem = { items: new Map<string, CatalogItem & { active: boolean }>(), sources: new Map<CatalogSource, SourceState & { lock_until?: number }>() };
+
+const fingerprint = (it: CatalogItem) =>
+  createHash("sha1")
+    .update(JSON.stringify([it.title, it.title_ar, it.description, it.price, it.price_egp, it.list_price_egp, it.image, it.images, it.in_stock, it.stock, it.category, it.tags]))
+    .digest("hex")
+    .slice(0, 16);
+
+/** Take the refresh lock of a store (2 min). False when another instance holds it. */
+async function claim(source: CatalogSource): Promise<boolean> {
+  const until = new Date(Date.now() + 2 * 60_000).toISOString();
+  if (!supabaseEnabled) {
+    const s = mem.sources.get(source);
+    if (s?.lock_until && s.lock_until > Date.now()) return false;
+    mem.sources.set(source, { ...(s ?? { source, refreshed_at: null, items: 0, ok: null, error: null, meta: {} }), lock_until: Date.parse(until) });
+    return true;
+  }
+  const { data, error } = await supabase()
+    .from("catalog_sources")
+    .update({ lock_until: until })
+    .eq("source", source)
+    .or(`lock_until.is.null,lock_until.lt.${new Date().toISOString()}`)
+    .select("source");
+  if (error) throw new Error(`catalog lock: ${error.message}`);
+  return !!data?.length;
+}
+
+async function save(source: CatalogSource, items: CatalogItem[], meta: SourceState["meta"], started: number) {
+  const now = new Date().toISOString();
+  if (!supabaseEnabled) {
+    const ids = new Set(items.map((i) => i.id));
+    for (const [id, it] of mem.items) if (it.source === source && !ids.has(id)) it.active = false;
+    for (const it of items) mem.items.set(it.id, { ...it, active: true });
+    mem.sources.set(source, { source, refreshed_at: now, items: items.length, ok: true, error: null, meta, lock_until: 0 });
+    version++;
+    return;
+  }
+  const db = supabase();
+  for (let i = 0; i < items.length; i += 200) {
+    const rows = items.slice(i, i + 200).map((it) => ({ ...it, active: true, hash: fingerprint(it), seen_at: now, updated_at: now }));
+    const { error } = await db.from("catalog_items").upsert(rows, { onConflict: "id" });
+    if (error) throw new Error(`catalog save: ${error.message}`);
+  }
+  // Gone from the store → inactive (kept for price history and old links).
+  await db.from("catalog_items").update({ active: false }).eq("source", source).eq("active", true).lt("seen_at", now);
+  await db
+    .from("catalog_sources")
+    .update({ refreshed_at: now, items: items.length, ok: true, error: null, duration_ms: Date.now() - started, meta, lock_until: null })
+    .eq("source", source);
+}
+
+async function fail(source: CatalogSource, err: Error, started: number) {
+  if (!supabaseEnabled) {
+    const s = mem.sources.get(source);
+    mem.sources.set(source, { ...(s ?? { source, refreshed_at: null, items: 0, meta: {} }), ok: false, error: err.message.slice(0, 300), lock_until: 0 });
+    return;
+  }
+  await supabase()
+    .from("catalog_sources")
+    .update({ ok: false, error: err.message.slice(0, 300), duration_ms: Date.now() - started, lock_until: null })
+    .eq("source", source);
+}
+
+export interface RefreshResult {
+  source: CatalogSource;
+  status: "fresh" | "locked" | "updated" | "failed" | "skipped";
+  items?: number;
+  ms?: number;
+  error?: string;
+}
+
+/** Re-read the stores whose copy is stale (or all of them with force). Never throws. */
+export async function refreshCatalog(opts: { force?: boolean; sources?: CatalogSource[] } = {}): Promise<RefreshResult[]> {
+  const states = await sourceStates().catch(() => new Map<CatalogSource, SourceState>());
+  const want = (opts.sources ?? SOURCES).filter((s) => opts.force || isStale(states.get(s), s));
+  const asked = opts.sources ?? SOURCES;
+  const skipped = SOURCES.filter((s) => !want.includes(s)).map((s): RefreshResult => ({ source: s, status: asked.includes(s) ? "fresh" : "skipped" }));
+  let browser: BrowserSession | null = null;
+  try {
+    const done = await Promise.all(
+      want.map(async (source): Promise<RefreshResult> => {
+        const started = Date.now();
+        try {
+          if (source === "salla" && !browserAvailable()) return { source, status: "skipped", error: "no browser" };
+          if (!(await claim(source))) return { source, status: "locked" };
+          let items: CatalogItem[];
+          let meta: SourceState["meta"] = {};
+          if (source === "pcm") items = await fetchPcm();
+          else if (source === "gtp") items = await fetchGtp();
+          else {
+            browser ??= new BrowserSession();
+            const parsed = parseSalla(await browser.sallaCatalog());
+            if (!parsed.meta.usd_rate || !parsed.meta.pi_price_cache) throw new Error("Salla prices settings not found");
+            ({ items, meta } = parsed);
+          }
+          // An empty read is far more likely a broken page than an empty store: keep the old copy.
+          if (!items.length) throw new Error("no products read");
+          await save(source, items, meta, started);
+          return { source, status: "updated", items: items.length, ms: Date.now() - started };
+        } catch (e) {
+          await fail(source, e as Error, started).catch(() => {});
+          return { source, status: "failed", error: (e as Error).message, ms: Date.now() - started };
+        }
+      }),
+    );
+    return [...done, ...skipped];
+  } finally {
+    await (browser as BrowserSession | null)?.close();
+  }
+}
+
+function isStale(s: SourceState | undefined, source: CatalogSource): boolean {
+  if (!s?.refreshed_at) return true;
+  return Date.now() - Date.parse(s.refreshed_at) > TTL_MIN[source] * 60_000;
+}
+
+/** Stores whose copy is older than its TTL (or never read). */
+export async function staleSources(): Promise<CatalogSource[]> {
+  const states = await sourceStates();
+  return SOURCES.filter((s) => isStale(states.get(s), s));
+}
+
+async function sourceStates(): Promise<Map<CatalogSource, SourceState>> {
+  if (!supabaseEnabled) return new Map([...mem.sources].map(([k, v]) => [k, v]));
+  const { data, error } = await supabase().from("catalog_sources").select("source, refreshed_at, items, ok, error, meta");
+  if (error) throw new Error(`catalog sources: ${error.message}`);
+  return new Map(((data ?? []) as SourceState[]).map((r) => [r.source, r]));
+}
+
+/* ------------------------------------------------------------------ */
+/* 3. Search                                                           */
+/* ------------------------------------------------------------------ */
+
+/** Lowercase, Arabic letter variants unified, diacritics/tatweel removed, punctuation → space. */
+export function normText(s: string): string {
+  return s
+    .toLowerCase()
+    .replace(/[ً-ٰٟـ]/g, "")
+    .replace(/[إأآٱ]/g, "ا")
+    .replace(/ة/g, "ه")
+    .replace(/ى/g, "ي")
+    .replace(/ؤ/g, "و")
+    .replace(/ئ/g, "ي")
+    .replace(/[^\p{L}\p{N}]+/gu, " ")
+    .trim();
+}
+/** "السماعة" → "سماعه"; "headphones" → "headphone" (light stemming, both sides). */
+function stem(w: string): string {
+  if (/^ال[؀-ۿ]{3,}/.test(w)) w = w.slice(2);
+  if (/^[a-z]{4,}s$/.test(w) && !/ss$/.test(w)) w = w.slice(0, -1);
+  return w;
+}
+const STOP = new Set(
+  "the a an and or for with of to in on at by from new best cheap buy price pi shop store near me في من على عن الى إلى مع او أو و ال اللي عايز عاوز عايزه محتاج ابغى ابي اريد سعر بكام ارخص رخيص افضل احسن جديد شراء اشتري متجر محل قريب باي".split(" ").map((w) => stem(normText(w))),
+);
+const words = (s: string) => normText(s).split(" ").map(stem).filter((w) => w.length >= 2 && !STOP.has(w));
+
+function editDistance(a: string, b: string, max: number): number {
+  if (Math.abs(a.length - b.length) > max) return max + 1;
+  let prev2: number[] = [];
+  let prev = Array.from({ length: b.length + 1 }, (_, i) => i);
+  for (let i = 1; i <= a.length; i++) {
+    const cur = [i];
+    let best = i;
+    for (let j = 1; j <= b.length; j++) {
+      cur[j] = Math.min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+      if (i > 1 && j > 1 && a[i - 1] === b[j - 2] && a[i - 2] === b[j - 1]) cur[j] = Math.min(cur[j], prev2[j - 2] + 1);
+      best = Math.min(best, cur[j]);
+    }
+    if (best > max) return max + 1;
+    prev2 = prev;
+    prev = cur;
+  }
+  return prev[b.length];
+}
+
+/** Single-word synonyms across languages: "دراجه" ↔ "bike" ↔ "bicycle" ↔ "عجله". */
+let synonyms: Map<string, string[]> | null = null;
+function synonymsOf(w: string): string[] {
+  if (!synonyms) {
+    const m = new Map<string, Set<string>>();
+    for (const g of synonymGroups()) {
+      const singles = g.map((x) => words(x)).filter((ws) => ws.length === 1).map((ws) => ws[0]);
+      for (const a of singles) {
+        const set = m.get(a) ?? new Set<string>();
+        for (const b of singles) if (b !== a) set.add(b);
+        m.set(a, set);
+      }
+    }
+    synonyms = new Map([...m].map(([k, v]) => [k, [...v]]));
+  }
+  return synonyms.get(w) ?? [];
+}
+
+interface Indexed {
+  item: CatalogItem;
+  title: string[];
+  body: Set<string>;
+}
+
+let version = 0;
+let loaded: { at: number; checkedAt: number; key: string; rows: Indexed[]; states: Map<CatalogSource, SourceState> } | null = null;
+
+/** The in-memory index; reloaded only when a store was refreshed (checked at most once a minute). */
+async function index(): Promise<NonNullable<typeof loaded>> {
+  const now = Date.now();
+  if (loaded && now - loaded.checkedAt < 60_000 && (supabaseEnabled || loaded.key === `mem${version}`)) return loaded;
+  const states = await sourceStates();
+  const key = supabaseEnabled ? SOURCES.map((s) => states.get(s)?.refreshed_at ?? "-").join("|") : `mem${version}`;
+  if (loaded && loaded.key === key) {
+    loaded.checkedAt = now;
+    loaded.states = states;
+    return loaded;
+  }
+  let items: CatalogItem[];
+  if (!supabaseEnabled) items = [...mem.items.values()].filter((i) => i.active);
+  else {
+    const { data, error } = await supabase()
+      .from("catalog_items")
+      .select("id, source, title, title_ar, description, price, price_egp, list_price_egp, url, image, images, seller, country, category, tags, in_stock, stock, digital")
+      .eq("active", true)
+      .limit(20000);
+    if (error) throw new Error(`catalog load: ${error.message}`);
+    items = (data ?? []) as CatalogItem[];
+  }
+  const rows = items.map((item) => ({
+    item,
+    title: words(`${item.title} ${item.title_ar ?? ""}`),
+    body: new Set(words(`${item.category ?? ""} ${(item.tags ?? []).join(" ")} ${item.seller ?? ""} ${item.description ?? ""}`)),
+  }));
+  loaded = { at: now, checkedAt: now, key, rows, states };
+  return loaded;
+}
+
+/**
+ * How well one query word matches an item: exact title word > prefix > typo > description.
+ * Prefixes need 4+ letters ("head" must not match "headphones" → no shampoo), and typos keep
+ * the first letter ("honey" ≠ "money"); a swap of two letters is one typo ("oriamo" → "oraimo").
+ */
+function wordScore(w: string, row: Indexed): number {
+  let best = 0;
+  const maxTypos = w.length >= 8 ? 2 : 1;
+  for (const t of row.title) {
+    if (t === w) return 3;
+    if (w.length >= 4 && (t.startsWith(w) || (t.length >= Math.max(4, w.length - 2) && w.startsWith(t)))) best = Math.max(best, 2.2);
+    else if (w.length >= 5 && best < 1.6 && t[0] === w[0] && editDistance(w, t, maxTypos) <= maxTypos) best = Math.max(best, 1.6);
+  }
+  if (best < 1 && row.body.has(w)) best = 1;
+  if (best < 0.8 && w.length >= 5) for (const b of row.body) if (b.startsWith(w)) return 0.8;
+  return best;
+}
+
+/** Regions Salla Shop Mall ships to (Egypt, the Middle East, Africa). */
+const SALLA_REGION = new Set(
+  "EG SA AE KW QA BH OM YE JO LB SY IQ PS IL TR IR LY TN DZ MA MR SD SS ER DJ SO ET KE UG TZ RW BI CD CG CM NG GH CI SN ML NE TD BF GN GW SL LR TG BJ GA GQ CF AO ZM ZW MW MZ NA BW ZA LS SZ MG MU SC KM CV ST".split(" "),
+);
+function reaches(it: CatalogItem, country: string): boolean {
+  if (it.source === "salla") return SALLA_REGION.has(country);
+  if (it.source === "gtp") return it.digital || !it.country || it.country === country;
+  return true; // Pi Chain Mall: sellers worldwide, no country on listings
+}
+
+export interface IndexHit {
+  item: CatalogItem;
+  score: number;
+  /** Pi price now (Salla: computed with its current rate). */
+  price: number;
+  listPrice?: number;
+  store: string;
+  /** Minutes since this store's copy was read. */
+  ageMin: number;
+}
+
+/** Search the index. Several phrasings (e.g. the AR↔EN expansion) count; the best one wins per item. */
+export async function searchCatalog(queries: string[], opts: { country: string; limit?: number }): Promise<{ hits: IndexHit[]; sources: Record<string, { items: number; ageMin: number | null; ok: boolean | null }> }> {
+  const idx = await index();
+  const phrases = [...new Set(queries.flatMap((q) => expandQuery(q)).map((q) => words(q).join(" ")).filter(Boolean))].map((p) => p.split(" "));
+  const hits: IndexHit[] = [];
+  const ages = new Map<CatalogSource, number>();
+  for (const s of SOURCES) {
+    const at = idx.states.get(s)?.refreshed_at;
+    ages.set(s, at ? Math.round((Date.now() - Date.parse(at)) / 60_000) : -1);
+  }
+  if (phrases.length) {
+    for (const row of idx.rows) {
+      const it = row.item;
+      if (!reaches(it, opts.country)) continue;
+      let best = 0;
+      for (const ws of phrases) {
+        // A word counts through any of its synonyms (a synonym is a bit weaker than the word itself).
+        const scores = ws.map((w) => Math.max(wordScore(w, row), ...synonymsOf(w).map((s) => wordScore(s, row) * 0.95)));
+        const matched = scores.filter((x) => x > 0).length;
+        // Every word should match when there are 1-2 words; most of them for longer queries.
+        if (matched < (ws.length <= 2 ? ws.length : Math.ceil(ws.length * 0.6))) continue;
+        best = Math.max(best, scores.reduce((a, b) => a + b, 0) / (3 * ws.length));
+      }
+      if (!best) continue;
+      let price: number | null = it.price ?? null;
+      let listPrice: number | undefined;
+      if (it.source === "salla") {
+        const meta = idx.states.get("salla")?.meta ?? {};
+        price = sallaPi(Number(it.price_egp), meta);
+        listPrice = it.list_price_egp ? (sallaPi(Number(it.list_price_egp), meta) ?? undefined) : undefined;
+      }
+      if (!price || !(price > 0)) continue;
+      const boost = (it.in_stock ? 0.05 : -0.2) + (it.image ? 0.03 : 0) + (it.source === "pcm" ? 0.04 : 0);
+      hits.push({ item: it, score: Math.round((best + boost) * 1000) / 1000, price: Number(price), listPrice, store: STORE_NAME[it.source], ageMin: ages.get(it.source) ?? -1 });
+    }
+  }
+  hits.sort((a, b) => b.score - a.score);
+  // With a strong match on top, very weak ones are noise ("iphone" → not the iTunes card).
+  const cut = (hits[0]?.score ?? 0) * 0.5;
+  while (hits.length && hits[hits.length - 1].score < cut) hits.pop();
+  const sources: Record<string, { items: number; ageMin: number | null; ok: boolean | null }> = {};
+  for (const s of SOURCES) {
+    const st = idx.states.get(s);
+    sources[STORE_NAME[s]] = { items: idx.rows.filter((r) => r.item.source === s).length, ageMin: (ages.get(s) ?? -1) >= 0 ? ages.get(s)! : null, ok: st?.ok ?? null };
+  }
+  return { hits: hits.slice(0, opts.limit ?? 12), sources };
+}
+
+/** Current Pi price of an indexed product page (for watches), or undefined when unknown/stale. */
+export async function indexedPrice(url: string): Promise<number | undefined> {
+  const idx = await index();
+  const row = idx.rows.find((r) => r.item.url === url);
+  if (!row) return;
+  const st = idx.states.get(row.item.source);
+  if (!st?.refreshed_at || Date.now() - Date.parse(st.refreshed_at) > 2 * TTL_MIN[row.item.source] * 60_000) return;
+  return row.item.source === "salla" ? (sallaPi(Number(row.item.price_egp), st.meta ?? {}) ?? undefined) : (row.item.price ?? undefined);
+}
+
+/** Tests: forget the in-memory copy. */
+export function resetCatalogMemory() {
+  mem.items.clear();
+  mem.sources.clear();
+  loaded = null;
+  version++;
+}

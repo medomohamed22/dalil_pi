@@ -126,6 +126,13 @@ export interface SallaLocalRaw {
   phone?: string;
   whatsapp?: string;
 }
+/** Salla Shop Mall's catalog as its /products page loads it, plus its EGP→Pi settings. */
+export interface SallaCatalogRaw {
+  rows: Array<Record<string, unknown>>;
+  settings: { usd_rate?: number; profit_percentage?: number; pi_price_cache?: number } | null;
+}
+/** Tests only (never on Vercel): a local copy of the Salla products page. */
+const SALLA_PRODUCTS = (!process.env.VERCEL && process.env.DALIL_TEST_SALLA_PRODUCTS_URL) || `${SALLA}/products`;
 /** Tests only (never on Vercel): a local copy of the Salla Local page. */
 const SALLA_LOCAL = (!process.env.VERCEL && process.env.DALIL_TEST_SALLA_LOCAL_URL) || `${SALLA}/local`;
 
@@ -424,6 +431,47 @@ export class BrowserSession {
         phone: str(r.phone, 24),
         whatsapp: str(r.whatsapp, 80),
       }));
+  }
+
+  /**
+   * The whole Salla Shop Mall catalog (every in-stock product, ~170 today) and the EGP→Pi
+   * settings its pages use, read from what /products loads while it renders. No key of ours.
+   */
+  async sallaCatalog(): Promise<SallaCatalogRaw> {
+    const page = await this.ensurePage();
+    let rows: Array<Record<string, unknown>> | null = null;
+    let settings: SallaCatalogRaw["settings"] = null;
+    const onResponse = async (res: import("puppeteer-core").HTTPResponse) => {
+      const u = res.url();
+      if (res.request().method() !== "GET") return;
+      try {
+        if (/\/rest\/v1\/products\?/.test(u) && /select=/.test(u)) {
+          const j = (await res.json()) as unknown;
+          // The biggest list on the page is the catalog (other lists are "featured" etc.).
+          if (Array.isArray(j) && j.length >= (rows?.length ?? 0)) rows = j as Array<Record<string, unknown>>;
+        } else if (/\/rest\/v1\/store_settings\?/.test(u)) {
+          const j = (await res.json()) as Array<Record<string, unknown>>;
+          const s = Array.isArray(j) ? j[0] : null;
+          if (s && (s.usd_rate != null || s.pi_price_cache != null)) settings = { ...(settings ?? {}), ...(s as object) };
+        }
+      } catch {
+        /* not JSON */
+      }
+    };
+    page.on("response", onResponse);
+    this.lite = true;
+    try {
+      await page.goto(SALLA_PRODUCTS, { waitUntil: "domcontentloaded" });
+      this.pagesVisited++;
+      const until = Date.now() + 12000;
+      const ready = () => rows && settings?.usd_rate && settings?.pi_price_cache;
+      while (!ready() && Date.now() < until) await new Promise((r) => setTimeout(r, 200));
+      await page.waitForNetworkIdle({ idleTime: 500, timeout: 2500 }).catch(() => {});
+    } finally {
+      page.off("response", onResponse);
+      this.lite = false;
+    }
+    return { rows: rows ?? [], settings };
   }
 
   async close() {

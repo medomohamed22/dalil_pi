@@ -2,6 +2,7 @@ import "server-only";
 import { browse, extract } from "./browse";
 import { fetchWithTimeout } from "./net";
 import { pcmPriceOf } from "./partners";
+import { indexedPrice } from "./catalog";
 import { verifyOffer } from "./sign";
 import { supabase, supabaseEnabled } from "./supabase";
 import type { Offer, Watch } from "../types";
@@ -152,6 +153,9 @@ export async function markDropsSeen(uid: string): Promise<void> {
 const allowPrivate = () => !process.env.VERCEL && process.env.DALIL_TEST_ALLOW_PRIVATE_STORES === "1";
 
 async function priceNow(url: string, title?: string): Promise<number | undefined> {
+  // Products in Dalil Index: the fresh catalog copy (no page load).
+  const known = await indexedPrice(url).catch(() => undefined);
+  if (known) return known;
   // Pi Chain Mall pages are an app (no price in the HTML): look the listing up in its search.
   if (/^https:\/\/(www\.)?pipcm\.com\//.test(url)) return pcmPriceOf(url, title ?? "");
   if (allowPrivate() && /^http:\/\/(127\.0\.0\.1|localhost)/.test(url)) {

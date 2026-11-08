@@ -1,0 +1,33 @@
+# Dalil Index: re-read the trusted Pi stores' catalogs every hour.
+# (Vercel's free plan runs crons once a day; this fills the gap for free.)
+# Needs one repository secret: CRON_SECRET (same value as in Vercel).
+# Optional repository variable: APP_URL (defaults to the production site).
+name: Refresh Dalil Index
+
+on:
+  schedule:
+    - cron: "23 * * * *"
+  workflow_dispatch:
+    inputs:
+      force:
+        description: "Re-read every store now"
+        type: boolean
+        default: false
+
+permissions: {}
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Refresh stale stores
+        env:
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+          APP_URL: ${{ vars.APP_URL || 'https://pihackathontest.vercel.app' }}
+          FORCE: ${{ github.event.inputs.force == 'true' && '1' || '0' }}
+        run: |
+          if [ -z "$CRON_SECRET" ]; then echo "CRON_SECRET secret is not set — skipping"; exit 0; fi
+          curl -sS --fail-with-body --max-time 90 \
+            -H "Authorization: Bearer $CRON_SECRET" \
+            "$APP_URL/api/cron/catalog?force=$FORCE"

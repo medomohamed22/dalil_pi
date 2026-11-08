@@ -36,6 +36,10 @@ const PAIRS: [string[], string][] = [
   [["نظارة", "نضارة"], "glasses"],
   [["قهوة", "قهوه"], "coffee"],
   [["كافيه", "كافية", "كافيتريا", "مقهى"], "cafe"],
+  [["دراجة", "دراجه", "عجلة", "عجله", "بسكلتة"], "bike"],
+  [["ايفون", "آيفون", "أيفون"], "iphone"],
+  [["سامسونج", "سامسنج"], "samsung"],
+  [["عسل"], "honey"],
   [["تليجرام", "تلجرام"], "telegram"],
   [["طبيعي", "طبيعية", "طبيعيه"], "natural"],
   [["شاي"], "tea"],
@@ -101,4 +105,9 @@ export function translateQuery(q: string): string | null {
 export function expandQuery(q: string): string[] {
   const t = translateQuery(q);
   return t ? [q, t] : [q];
+}
+
+/** Every synonym group (Arabic words + the English one) — for matching word by word. */
+export function synonymGroups(): string[][] {
+  return PAIRS.map(([arList, en]) => [...arList, en]);
 }

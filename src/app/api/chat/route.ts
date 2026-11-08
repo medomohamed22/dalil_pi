@@ -1,5 +1,7 @@
+import { after } from "next/server";
 import { z } from "zod";
 import { runAgent } from "@/lib/server/agent";
+import { refreshCatalog } from "@/lib/server/catalog";
 import { countryName, currencyOf, geoFromRequest, isCountryCode } from "@/lib/server/geo";
 import { hostedConfig, hostedEnabled, hostedLimits, visitorId } from "@/lib/server/hosted";
 import { piUsdPrice } from "@/lib/server/price";
@@ -124,6 +126,9 @@ export async function POST(req: Request) {
       }
     },
   });
+
+  // After the reply: re-read any trusted store whose copy in Dalil Index is stale (never delays the user).
+  after(() => refreshCatalog().catch(() => {}));
 
   return new Response(stream, {
     headers: {

@@ -14,6 +14,7 @@ import { PriceEvidence } from "./evidence";
 import { cached, norm } from "./cache";
 import { expandQuery } from "./lexicon";
 import { pickLocalShops } from "./salla-local";
+import { searchCatalog } from "./catalog";
 import { marketplacesEnabled, marketplacesSearch, mapOfPiConfigured, mapOfPiNearby, pcmEnabled, pcmSearch, sallaApiConfigured, sallaApiSearch } from "./partners";
 import type { AgentEvent, Lang, Offer, Scope, Step, WireMessage } from "../types";
 
@@ -61,6 +62,22 @@ const SALLA_TOOL: FunctionTool = {
       type: "object",
       properties: {
         queries: { type: "array", items: { type: "string" }, description: "1-2 short keyword queries, e.g. [\"headphones\", \"سماعة\"]" },
+      },
+      required: ["queries"],
+    },
+  },
+};
+
+const INDEX_TOOL: FunctionTool = {
+  type: "function",
+  function: {
+    name: "search_dalil_index",
+    description:
+      "INSTANT search (<1 s) across Dalil Index: our own up-to-date copy of the whole catalogs of the trusted Pi stores — Pi Chain Mall (pipcm.com), Salla Shop Mall (mall.salla-shop.com) and Global Trade Pi. Returns exact product links, Pi prices (current), images, stock and descriptions; Arabic and English both match, typos are tolerated. ALWAYS call it FIRST, alone, for any product request. Pass 1-3 short keyword queries (e.g. [\"wireless headphones\", \"سماعة\"]).",
+    parameters: {
+      type: "object",
+      properties: {
+        queries: { type: "array", items: { type: "string" }, description: "1-3 short keyword queries" },
       },
       required: ["queries"],
     },
@@ -289,8 +306,8 @@ Country rule: only show stores that sell in ${loc.countryName} or ship to it. If
 ${SCOPE_RULE[scope]}
 
 Where Pi is accepted (check these first; they take payment in Pi):
-- Pi Chain Mall — https://pipcm.com (FIRST PRIORITY: Pi Network's global marketplace, Pi Hackathon winner, every price in Pi). Search it with the search_pi_chain_mall tool in your first turn for every product request; when it has a good match, list it first. Never guess its URLs and never open pipcm.com with browse_url/browser_open (it's an app that needs a Pi login).
-- Salla Shop Mall — https://mall.salla-shop.com (multi-vendor Pi marketplace from Egypt; ships across Egypt, the Middle East and Africa; also services: Telegram Stars/Premium, Salla Care, Salla Go, food, Salla Swap). Search it with the search_salla tool (exact links, prices and images) — never guess Salla URLs.
+- Pi Chain Mall — https://pipcm.com (FIRST PRIORITY: Pi Network's global marketplace, Pi Hackathon winner, every price in Pi). It is in search_dalil_index (live fallback: search_pi_chain_mall); when it has a good match, list it first. Never guess its URLs and never open pipcm.com with browse_url/browser_open (it's an app that needs a Pi login).
+- Salla Shop Mall — https://mall.salla-shop.com (multi-vendor Pi marketplace from Egypt; ships across Egypt, the Middle East and Africa; also services: Telegram Stars/Premium, Salla Care, Salla Go, food, Salla Swap). Its whole catalog is in search_dalil_index; the live search_salla tool is the fallback (and covers merchant products and services) — never guess Salla URLs.
 - Shops registered with Dalil Pi: search them with the dalil_merchants tool in your first turn (approved merchants that accept Pi, with Pi prices).
 - Stores using the Sallanet Pay gateway (WooCommerce stores that accept Pi at checkout).
 - Smaller Pi marketplaces: search them with search_pi_marketplaces (Global Trade Pi). Piketplace (https://piketplace.com — global incl. Egypt; slow, some π prices are inflated, compare before recommending), and Pi Mainnet commerce apps on *.pinet.com.${regionalMarkets(loc.country)}
@@ -301,7 +318,7 @@ A store counts as accepting Pi only if you saw evidence: a price in Pi, a Pi pay
 
 How to work:
 1. Identify the exact product or service. If the message contains a scanned barcode (8-14 digits), call lookup_barcode first. If the user sent a photo, identify brand/model from it. If they sent a link, browse it first.
-2. Be fast. In your FIRST turn call, in parallel: search_pi_chain_mall (always) with 1-3 short keyword queries, search_pi_marketplaces (always) with 1-2 English keywords, search_salla (when the user is in Egypt, the Middle East or Africa, or asks for Salla) with 1-2 short keyword queries (English and Arabic), and ONE web_search with 2-3 queries for other Pi stores, e.g. "<product> pay with Pi Network ${loc.countryName}", "<product> Pi coin store". If search_pi_chain_mall or search_salla already returned good matches, show them right away with show_offers and only browse other stores if needed. Open other product pages with browse_url (several in one turn) or browser_open for JavaScript pages. Each tool result ends with the time left; when it is under 15s, finish.
+2. Be fast. FIRST call search_dalil_index (instant copy of Pi Chain Mall, Salla Shop Mall and Global Trade Pi). If it returns good matches, call show_offers with them right away, then you may look further (web_search for other Pi stores). If it returns nothing useful (or reports a store's copy as failed/empty), call in parallel: search_pi_chain_mall with 1-3 short keyword queries, search_pi_marketplaces with 1-2 English keywords, search_salla (when the user is in Egypt, the Middle East or Africa, or asks for Salla) with 1-2 short keyword queries (English and Arabic), and ONE web_search with 2-3 queries for other Pi stores, e.g. "<product> pay with Pi Network ${loc.countryName}", "<product> Pi coin store". If search_dalil_index, search_pi_chain_mall or search_salla already returned good matches, show them right away with show_offers and only browse other stores if needed. Open other product pages with browse_url (several in one turn) or browser_open for JavaScript pages. Each tool result ends with the time left; when it is under 15s, finish.
    Links and images: use ONLY the exact URLs and image URLs returned by tools. Never build, shorten or guess a product URL; a store's home page or logo is not a product link or product image.
 3. Prices: report the price exactly as the store lists it. If the store shows a Pi price, use currency PI. If it only shows a local price (e.g. EGP) and says it accepts Pi, report that currency — never convert prices yourself.
 4. Call show_offers as soon as you have 2+ real offers and again later with a better list if you keep searching (it replaces the cards). 2-8 real offers. Never invent URLs, prices, ratings, reviews or stores — only use facts from tool results. If a fact is unknown, omit it.
@@ -399,6 +416,7 @@ export async function runAgent(opts: RunOptions): Promise<{ offersShown: boolean
   const hasBrowser = browserAvailable();
   const tools = [
     ...TOOLS,
+    INDEX_TOOL,
     ...(pcmEnabled() ? [PCM_TOOL] : []),
     ...(marketplacesEnabled() ? [MARKETS_TOOL] : []),
     MERCHANTS_TOOL,
@@ -484,12 +502,14 @@ export async function runAgent(opts: RunOptions): Promise<{ offersShown: boolean
           if (call.name === "browser_action") step.detail = clip(`${args.action}${args.id != null ? ` #${args.id}` : ""}${args.text ? ` "${args.text}"` : ""}`, 60);
           if (call.name === "lookup_barcode") step.detail = String(args.code ?? "");
           if (call.name === "map_of_pi" || call.name === "dalil_merchants" || call.name === "salla_local") step.detail = clip(String(args.query ?? ""), 60);
-          if (call.name === "search_salla" || call.name === "search_pi_chain_mall" || call.name === "search_pi_marketplaces") step.detail = clip((Array.isArray(args.queries) ? args.queries : [args.query]).filter(Boolean).map(String).join(" · "), 90);
+          if (call.name === "search_salla" || call.name === "search_pi_chain_mall" || call.name === "search_pi_marketplaces" || call.name === "search_dalil_index") step.detail = clip((Array.isArray(args.queries) ? args.queries : [args.query]).filter(Boolean).map(String).join(" · "), 90);
           emit({ type: "step", step });
           try {
             const output = await execTool(call.name, args, { cfg, locale, piUsd: opts.piUsd, coords: opts.coords, ipCoords: opts.ipCoords, emit, signal, pages, state, browser, viaBrowser, evidence, trustedSearch });
             const hosts =
-              call.name === "search_pi_chain_mall"
+              call.name === "search_dalil_index" && output && typeof output === "object" && "results" in output
+                ? Array.from(new Set(((output as { results: Array<{ url?: string }> }).results ?? []).map((r) => hostOf(r.url ?? "")).filter(Boolean))).slice(0, 6)
+                : call.name === "search_pi_chain_mall"
                 ? ["pipcm.com"]
                 : call.name === "search_pi_marketplaces"
                 ? ["globaltradepi.xyz"]
@@ -637,6 +657,45 @@ async function execTool(
       }
       if (!results.length) return { results: [], hint: "No Salla match — try other keywords (English/Arabic) or other Pi stores." };
       return results.slice(0, 16);
+    }
+    case "search_dalil_index": {
+      const qs = (Array.isArray(args.queries) ? args.queries : [args.query])
+        .map((q) => String(q ?? "").trim().slice(0, 80))
+        .filter(Boolean)
+        .slice(0, 3);
+      if (!qs.length) throw new Error("empty query");
+      const { hits, sources } = await searchCatalog(qs, { country: ctx.locale.country, limit: 12 });
+      const results = hits.map((h) => {
+        const it = h.item;
+        // Prices, links and images come straight from the stores' catalogs: trusted for grounding and for the cards.
+        ctx.evidence.addObserved(it.url, h.price);
+        ctx.pages.set(it.url, { image: it.image ?? undefined });
+        return {
+          title: it.title,
+          ...(it.title_ar ? { title_ar: it.title_ar } : {}),
+          store: it.seller && it.source !== "salla" ? `${h.store} · ${it.seller}` : h.store,
+          url: it.url,
+          image: it.image ?? undefined,
+          price: h.price,
+          currency: "PI",
+          listPrice: h.listPrice,
+          inStock: it.in_stock,
+          stock: it.stock ?? undefined,
+          kind: it.digital ? "service" : "online",
+          category: it.category ?? undefined,
+          about: it.description ? it.description.slice(0, 160) : undefined,
+          sellerCountry: it.country ?? undefined,
+          piEvidence: `Pi price from ${h.store}'s catalog (Dalil Index, ${h.ageMin >= 0 ? `${h.ageMin} min old` : "fresh"})`,
+          match: h.score,
+        };
+      });
+      return {
+        results,
+        index: sources,
+        hint: results.length
+          ? "Show the good matches with show_offers right away (copy title/store/url/image/price/currency/listPrice/inStock/kind/piEvidence). Only search elsewhere if these don't fit the request."
+          : "Nothing in the trusted stores' catalogs matches — now try the live tools (search_pi_chain_mall, search_salla, search_pi_marketplaces) and web_search.",
+      };
     }
     case "search_pi_chain_mall": {
       let qs = (Array.isArray(args.queries) ? args.queries : [args.query])
