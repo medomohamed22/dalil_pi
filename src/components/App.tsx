@@ -2,7 +2,7 @@
 
 import { AnimatePresence, m } from "framer-motion";
 import { useLiveQuery } from "dexie-react-hooks";
-import { Camera, Check, Globe2, Loader2, LogOut, MapPin, Menu, Moon, PanelLeft, Plus, Search, ShieldCheck, ShoppingCart, Sun, Trash2, UserRound, Wallet, X } from "lucide-react";
+import { Camera, Check, Globe2, House, Loader2, LogOut, MapPin, Menu, Moon, PanelLeft, Plus, Search, ShieldCheck, ShoppingCart, Sun, Trash2, UserRound, Wallet, X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { db, delKV, getKV, loadSettings, requestPersistence, saveSettings, setKV, uid } from "@/lib/db";
 import { countryLabel, flag, t, type Strings } from "@/lib/i18n";
@@ -13,12 +13,16 @@ import dynamic from "next/dynamic";
 // Account / plans / order sheets load on first use, not with the first page.
 const AccountSheet = dynamic(() => import("./Account").then((x) => x.AccountSheet), { ssr: false });
 const AutoOrderSheet = dynamic(() => import("./Account").then((x) => x.AutoOrderSheet), { ssr: false });
-import Composer, { type ComposerPayload } from "./Composer";
+import type { ComposerPayload } from "./Composer";
 import Logo from "./Logo";
-import MessageView from "./MessageView";
+
 import { AnimatedCheck } from "./cards";
 import { Deals } from "./Extras";
+import { AskFab, BottomNav, ShopViews, useScrollTopOn, viewFromUrl, viewKey, viewToUrl, type NavTab, type View } from "./Shop";
 
+// The AI chat loads when "Ask Dalil" opens (the shop is the first screen now).
+const Composer = dynamic(() => import("./Composer"), { ssr: false, loading: () => <div className="h-14 rounded-3xl border border-line bg-bg-soft" /> });
+const MessageView = dynamic(() => import("./MessageView"), { ssr: false });
 const CartSheet = dynamic(() => import("./Extras").then((x) => x.CartSheet), { ssr: false });
 const CheckSheet = dynamic(() => import("./Extras").then((x) => x.CheckSheet), { ssr: false });
 
@@ -128,6 +132,11 @@ export default function App() {
   const [prefill, setPrefill] = useState<{ text: string; n: number } | undefined>();
   const abortRef = useRef<AbortController | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
+  // Which screen: the shop (no AI) by default; "ask" is the AI chat. Kept in the URL for Back.
+  const [view, setView] = useState<View>({ v: "home" });
+  const pushed = useRef(0);
+  const [guest, setGuest] = useState(false);
+  const [pendingAsk, setPendingAsk] = useState<string | null>(null);
   const lang: Lang = settings.lang;
   const s = t(lang);
   const ar = lang === "ar";
@@ -154,7 +163,28 @@ export default function App() {
       .catch(() => {});
     setDark(document.documentElement.classList.contains("dark"));
     void loadPi();
+    setView(viewFromUrl(window.location.search));
+    void getKV<boolean>("guest").then((g) => g && setGuest(true));
+    const onPop = () => {
+      pushed.current = Math.max(0, pushed.current - 1);
+      setView(viewFromUrl(window.location.search));
+    };
+    window.addEventListener("popstate", onPop);
+    return () => window.removeEventListener("popstate", onPop);
   }, []);
+
+  const go = useCallback((v: View) => {
+    const url = viewToUrl(v);
+    if (url === window.location.pathname + window.location.search) return setView(v);
+    window.history.pushState(null, "", url);
+    pushed.current++;
+    setView(v);
+  }, []);
+  const back = useCallback(() => {
+    if (pushed.current > 0) window.history.back();
+    else go({ v: "home" });
+  }, [go]);
+  useScrollTopOn(viewKey(view), scrollRef);
 
   // Language: English by default, Arabic switches the whole page to RTL.
   useEffect(() => {
@@ -413,6 +443,29 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [busy, token, settings, convId, lang],
   );
+
+  /** Actions that need a Pi account: a guest is shown the sign-in screen first. */
+  const needAuth = (): boolean => {
+    if (token) return false;
+    setGuest(false);
+    void setKV("guest", false);
+    return true;
+  };
+  /** Ask Dalil (AI): a fresh chat with this question. */
+  const askDalil = (text?: string) => {
+    if (needAuth()) return;
+    abortRef.current?.abort();
+    setConvId(null);
+    go({ v: "ask" });
+    if (text) setPendingAsk(text);
+  };
+  useEffect(() => {
+    if (pendingAsk && view.v === "ask" && convId === null && !busy && token) {
+      const text = pendingAsk;
+      setPendingAsk(null);
+      void send({ text, images: [], links: [] });
+    }
+  }, [pendingAsk, view.v, convId, busy, token, send]);
 
   /* ---------- UI pieces ---------- */
   const usage = me?.usage;
@@ -677,7 +730,15 @@ export default function App() {
           <button className="hidden rounded-lg p-2 text-fg-muted hover:bg-bg-soft hover:text-fg md:block" onClick={() => setDesktopSidebar((v) => !v)} aria-label="Toggle sidebar">
             <PanelLeft className="size-[18px] rtl:-scale-x-100" />
           </button>
-          <span className="whitespace-nowrap text-[15px] font-semibold md:hidden">{s.appName}</span>
+          {view.v === "ask" ? (
+            <button onClick={() => go({ v: "home" })} className="flex items-center gap-1.5 rounded-lg px-2 py-1.5 text-[14px] font-semibold hover:bg-bg-soft" aria-label={s.navHome} data-testid="go-home">
+              <House className="size-[18px]" /> <span className="hidden sm:inline">{s.navHome}</span>
+            </button>
+          ) : (
+            <button onClick={() => go({ v: "home" })} className="flex items-center gap-1.5 whitespace-nowrap text-[16px] font-bold tracking-tight" data-testid="brand">
+              <Logo size={26} /> {s.appName}
+            </button>
+          )}
           <div className="ms-auto flex items-center gap-1">
             {/* Country: flag + code */}
             <button
@@ -728,9 +789,10 @@ export default function App() {
           </div>
         </header>
 
-        <div ref={scrollRef} className="flex-1 overflow-y-auto overflow-x-hidden">
+        <div className="relative min-h-0 flex-1">
+        <div ref={scrollRef} className="h-full overflow-y-auto overflow-x-hidden">
           <div className="mx-auto w-full max-w-3xl px-4 pb-6">
-            {!ready ? null : !token ? (
+            {!ready ? null : !token && (!guest || view.v === "ask") ? (
               <SignIn
                 s={s}
                 busy={authBusy}
@@ -740,6 +802,37 @@ export default function App() {
                 hint={!inPiBrowser() && !config?.devLogin ? s.openInPiBrowser : ""}
                 onSignIn={signIn}
                 onDevSignIn={devSignIn}
+                onGuest={() => {
+                  setGuest(true);
+                  void setKV("guest", true);
+                  if (view.v === "ask") go({ v: "home" });
+                }}
+              />
+            ) : view.v !== "ask" ? (
+              <ShopViews
+                view={view}
+                go={go}
+                back={back}
+                s={s}
+                lang={lang}
+                country={country}
+                onAsk={askDalil}
+                coords={settings.coords}
+                onLocate={() =>
+                  navigator.geolocation?.getCurrentPosition(
+                    (pos) => updateSettings({ coords: { lat: Math.round(pos.coords.latitude * 100) / 100, lon: Math.round(pos.coords.longitude * 100) / 100 } }),
+                    () => {},
+                    { timeout: 10_000, maximumAge: 10 * 60_000 },
+                  )
+                }
+                actions={{
+                  onOrder: (o) => !needAuth() && order(o),
+                  ordersLeft,
+                  onWatch: async (o, target) => (needAuth() ? false : watch(o, target)),
+                  onCart: (o) => !needAuth() && addToCart(o),
+                  inCart: (id) => cart.some((x) => x.id === id),
+                  onAskShop: async (mid, q) => (needAuth() ? false : askShop(mid, q)),
+                }}
               />
             ) : messages.length === 0 ? (
               <EmptyState
@@ -777,8 +870,10 @@ export default function App() {
             )}
           </div>
         </div>
+        {ready && (token || guest) && (view.v === "home" || view.v === "search") && <AskFab s={s} onClick={() => askDalil()} />}
+        </div>
 
-        {token && (
+        {token && view.v === "ask" && (
           <div className="shrink-0 bg-gradient-to-t from-bg via-bg to-transparent px-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-2 sm:px-4">
             <div className="mx-auto max-w-3xl">
               <ScopeBar
@@ -830,6 +925,22 @@ export default function App() {
               </div>
             </div>
           </div>
+        )}
+        {ready && (token || guest) && view.v !== "ask" && (
+          <BottomNav
+            s={s}
+            active={view.v === "home" || view.v === "search" ? "home" : view.v === "stores" || view.v === "store" ? "stores" : view.v === "services" ? "services" : null}
+            watchBadge={drops}
+            onNav={(tab: NavTab) => {
+              if (tab === "home") go({ v: "home" });
+              else if (tab === "stores") go({ v: "stores" });
+              else if (tab === "services") go({ v: "services" });
+              else if (!needAuth()) {
+                setAccountTab(tab === "watch" ? "watch" : undefined);
+                setAccountOpen(true);
+              }
+            }}
+          />
         )}
       </main>
 
@@ -1057,8 +1168,10 @@ function SignIn({
   hint,
   onSignIn,
   onDevSignIn,
+  onGuest,
 }: {
   s: Strings;
+  onGuest: () => void;
   busy: boolean;
   error: string;
   devLogin: boolean;
@@ -1098,6 +1211,9 @@ function SignIn({
         )}
         {sandbox && <p className="mt-3 text-[11px] text-fg-muted">Pi Sandbox · Testnet</p>}
       </div>
+      <button onClick={onGuest} className="mt-4 text-[13.5px] font-medium text-accent underline-offset-4 hover:underline" data-testid="browse-guest">
+        {s.browseGuest}
+      </button>
       <section className="mt-10 w-full max-w-xl text-start" aria-labelledby="how-title" data-testid="how">
         <h2 id="how-title" className="mb-3 text-center text-sm font-semibold">
           {s.howTitle}

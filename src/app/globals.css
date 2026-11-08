@@ -16,6 +16,12 @@
   --inv-fg: #ffffff;
   --shadow: 0 1px 2px rgb(0 0 0 / 0.04), 0 8px 24px -12px rgb(0 0 0 / 0.12);
   --danger: #b42318;
+  /* Brand accents (used sparingly): Pi purple, price gold, trust green */
+  --accent: #6b3fa0;
+  --accent-soft: #f1ebf9;
+  --gold: #b7862b;
+  --ok: #15803d;
+  --ok-soft: #e7f6ec;
 }
 
 .dark {
@@ -31,6 +37,11 @@
   --inv-fg: #0a0a0a;
   --shadow: 0 1px 2px rgb(0 0 0 / 0.4), 0 8px 24px -12px rgb(0 0 0 / 0.6);
   --danger: #f97066;
+  --accent: #b69af0;
+  --accent-soft: #241b33;
+  --gold: #e3b45a;
+  --ok: #4ade80;
+  --ok-soft: #10261a;
 }
 
 @theme inline {
@@ -45,6 +56,11 @@
   --color-inv-bg: var(--inv-bg);
   --color-inv-fg: var(--inv-fg);
   --color-danger: var(--danger);
+  --color-accent: var(--accent);
+  --color-accent-soft: var(--accent-soft);
+  --color-gold: var(--gold);
+  --color-ok: var(--ok);
+  --color-ok-soft: var(--ok-soft);
   --font-sans: var(--font-inter), var(--font-arabic), ui-sans-serif, system-ui, sans-serif;
   --font-arabic-stack: var(--font-arabic), var(--font-inter), ui-sans-serif, system-ui, sans-serif;
   --shadow-card: var(--shadow);
@@ -304,4 +320,18 @@ html[dir="rtl"] .shimmer {
     animation-duration: 0.01ms !important;
     transition-duration: 0.01ms !important;
   }
+}
+
+/* Skeleton shimmer for loading cards (static under reduced motion) */
+.skeleton {
+  background: linear-gradient(90deg, var(--bg-muted) 0%, var(--bg-soft) 50%, var(--bg-muted) 100%);
+  background-size: 200% 100%;
+  animation: skeleton 1.2s ease-in-out infinite;
+}
+@keyframes skeleton {
+  from { background-position: 200% 0; }
+  to { background-position: -200% 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .skeleton { animation: none; }
 }

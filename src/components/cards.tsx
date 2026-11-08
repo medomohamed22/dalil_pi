@@ -766,10 +766,11 @@ export function ProductCards({
                         ≈ {formatMoney(o.totalUsd, "USD", lang)}
                       </div>
                     )}
-                    <div className="text-[11px] text-fg-muted">
-                      {s.shipping}:{" "}
-                      {o.shipping ? formatMoney(o.shipping, o.currency, lang) : o.shipping === 0 ? s.free : "—"}
-                    </div>
+                    {o.shipping != null && (
+                      <div className="text-[11px] text-fg-muted">
+                        {s.shipping}: {o.shipping ? formatMoney(o.shipping, o.currency, lang) : s.free}
+                      </div>
+                    )}
                   </div>
                   {o.rating != null && (
                     <div className="flex items-center gap-1 text-xs">
@@ -1022,7 +1023,7 @@ export function BottomSheet({ open, title, onClose, children }: { open: boolean;
   );
 }
 
-function OfferDetail({
+export function OfferDetail({
   o,
   s,
   lang,
@@ -1080,6 +1081,7 @@ function OfferDetail({
         )}
       </div>
       {twin && <div className="rounded-xl bg-bg-soft px-3 py-2 text-[12px]">{s.alsoAt(twin.store, formatMoney(twin.total, twin.currency, lang))}</div>}
+      {(o.shipping != null || o.distanceKm != null || o.deliveryDays != null) && (
       <div className="grid grid-cols-2 gap-2 text-[12px]">
         <div className="rounded-xl border border-line p-2">
           <div className="text-fg-muted">{s.shipping}</div>
@@ -1090,6 +1092,7 @@ function OfferDetail({
           <div className="font-medium">{o.distanceKm != null ? nf(o.distanceKm) : o.deliveryDays != null ? nf(o.deliveryDays) : "—"}</div>
         </div>
       </div>
+      )}
       {o.priceStats && o.priceStats.days >= 2 && (
         <div className="rounded-xl border border-line p-3" data-testid="price-history">
           <div className="mb-1 flex items-center justify-between text-[12px]">

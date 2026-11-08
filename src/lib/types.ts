@@ -40,6 +40,8 @@ export interface Offer {
   price: number;
   currency: string;
   shipping?: number;
+  /** "Was" price shown by the store (display only). */
+  listPrice?: number;
   total: number;
   /** ≈ total in USD at the live OKX Pi price (Pi offers only). */
   totalUsd?: number;

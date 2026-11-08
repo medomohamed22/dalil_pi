@@ -23,6 +23,7 @@ const nextConfig: NextConfig = {
   outputFileTracingIncludes: {
     "/api/chat": ["./node_modules/@sparticuz/chromium/bin/**"],
     "/api/cron/catalog": ["./node_modules/@sparticuz/chromium/bin/**"],
+    "/api/local-shops": ["./node_modules/@sparticuz/chromium/bin/**"],
   },
 };
 

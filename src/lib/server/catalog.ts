@@ -544,6 +544,34 @@ function reaches(it: CatalogItem, country: string): boolean {
   return !!it.ships_global || it.country === country;
 }
 
+/** Categories of a store's products (for the store page chips), most common first. */
+export async function catalogCategories(country: string, source?: CatalogSource): Promise<string[]> {
+  const idx = await index();
+  const n = new Map<string, number>();
+  for (const r of idx.rows) {
+    if ((source && r.item.source !== source) || !reaches(r.item, country) || !r.item.category) continue;
+    n.set(r.item.category, (n.get(r.item.category) ?? 0) + 1);
+  }
+  return [...n].sort((a, b) => b[1] - a[1]).map(([c]) => c).slice(0, 14);
+}
+
+/** Per store: products reachable in a country + how fresh the copy is (for the stores directory). */
+export async function catalogStats(country: string): Promise<Array<{ source: CatalogSource; name: string; products: number; total: number; ageMin: number | null; ok: boolean | null }>> {
+  const idx = await index();
+  return SOURCES.map((s) => {
+    const st = idx.states.get(s);
+    const rows = idx.rows.filter((r) => r.item.source === s);
+    return {
+      source: s,
+      name: STORE_NAME[s],
+      products: rows.filter((r) => reaches(r.item, country)).length,
+      total: rows.length,
+      ageMin: st?.refreshed_at ? Math.round((Date.now() - Date.parse(st.refreshed_at)) / 60_000) : null,
+      ok: st?.ok ?? null,
+    };
+  });
+}
+
 export interface IndexHit {
   item: CatalogItem;
   score: number;
@@ -556,7 +584,19 @@ export interface IndexHit {
 }
 
 /** Search the index. Several phrasings (e.g. the AR↔EN expansion) count; the best one wins per item. */
-export async function searchCatalog(queries: string[], opts: { country: string; limit?: number }): Promise<{ hits: IndexHit[]; sources: Record<string, { items: number; ageMin: number | null; ok: boolean | null }> }> {
+export async function searchCatalog(
+  queries: string[],
+  opts: {
+    country: string;
+    limit?: number;
+    /** Only these stores. */
+    sources?: CatalogSource[];
+    /** Category text (matches the store's category, either language). */
+    category?: string;
+    /** No query → list everything that matches the filters (newest first) instead of nothing. */
+    browse?: boolean;
+  },
+): Promise<{ hits: IndexHit[]; sources: Record<string, { items: number; ageMin: number | null; ok: boolean | null }> }> {
   const idx = await index();
   const phrases = [...new Set(queries.flatMap((q) => expandQuery(q)).map((q) => words(q).join(" ")).filter(Boolean))].map((p) => p.split(" "));
   const hits: IndexHit[] = [];
@@ -565,11 +605,14 @@ export async function searchCatalog(queries: string[], opts: { country: string; 
     const at = idx.states.get(s)?.refreshed_at;
     ages.set(s, at ? Math.round((Date.now() - Date.parse(at)) / 60_000) : -1);
   }
-  if (phrases.length) {
+  const cat = opts.category ? normText(opts.category) : "";
+  if (phrases.length || opts.browse) {
     for (const row of idx.rows) {
       const it = row.item;
       if (!reaches(it, opts.country)) continue;
-      let best = 0;
+      if (opts.sources && !opts.sources.includes(it.source)) continue;
+      if (cat && !normText(it.category ?? "").includes(cat)) continue;
+      let best = phrases.length ? 0 : 1;
       for (const ws of phrases) {
         // A word counts through any of its synonyms (a synonym is a bit weaker than the word itself).
         const scores = ws.map((w) => Math.max(wordScore(w, row), ...synonymsOf(w).map((s) => wordScore(s, row) * 0.95)));
@@ -593,7 +636,7 @@ export async function searchCatalog(queries: string[], opts: { country: string; 
   }
   hits.sort((a, b) => b.score - a.score);
   // With a strong match on top, very weak ones are noise ("iphone" → not the iTunes card).
-  const cut = (hits[0]?.score ?? 0) * 0.5;
+  const cut = phrases.length ? (hits[0]?.score ?? 0) * 0.5 : 0;
   while (hits.length && hits[hits.length - 1].score < cut) hits.pop();
   const sources: Record<string, { items: number; ageMin: number | null; ok: boolean | null }> = {};
   for (const s of SOURCES) {

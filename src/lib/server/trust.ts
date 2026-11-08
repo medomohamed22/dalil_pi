@@ -98,7 +98,11 @@ export function trustFrom(parts: TrustParts, flags: string[]): number {
 }
 
 /** Adds trustScore + trustParts to every offer (and the low_trust flag under 40). */
-export async function scoreTrust(offers: Offer[], opts: { lookupAge?: boolean } = {}): Promise<Offer[]> {
+/**
+ * `neutralPrice`: the offers are different products (a shop listing, a store page), so their
+ * prices can't be compared with each other — the price part is neutral.
+ */
+export async function scoreTrust(offers: Offer[], opts: { lookupAge?: boolean; neutralPrice?: boolean } = {}): Promise<Offer[]> {
   const domains = [...new Set(offers.map((o) => o.storeDomain).filter(Boolean) as string[])];
   const { storeSignals } = await import("./community"); // lazy: avoids an import cycle with orders
   const [ages, record, signals] = await Promise.all([
@@ -122,7 +126,7 @@ export async function scoreTrust(offers: Offer[], opts: { lookupAge?: boolean } 
     const reviews = clamp01((bayes - 2.5) / 2.5);
     const wallet = onDomain(d, ESCROW) ? 0.9 : o.trust === "verified" ? 0.7 : o.checkout === "woo_pi" ? 0.6 : 0.35;
     const ratio = med > 0 ? o.total / med : 1;
-    const price = (pi.length || offers.length) < 3 ? 0.7 : ratio < 0.6 ? 0 : ratio < 0.8 ? 0.6 : ratio > 1.8 ? 0.6 : 1;
+    const price = opts.neutralPrice || (pi.length || offers.length) < 3 ? 0.7 : ratio < 0.6 ? 0 : ratio < 0.8 ? 0.6 : ratio > 1.8 ? 0.6 : 1;
     const age = d ? ages.get(d) : null;
     // A physical shop is judged on its published whereabouts, not on having a website.
     const physical = (o.kind === "local" || o.kind === "service") && !o.url;
