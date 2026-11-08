@@ -4,7 +4,7 @@ import { AnimatePresence, m } from "framer-motion";
 import { Check, ExternalLink, Loader2, MapPin, Package, Pencil, Plus, Sparkles, Trash2, X } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { countryLabel, flag, formatMoney, type Strings } from "@/lib/i18n";
-import { piPay } from "@/lib/pi-client";
+import { inPiBrowser, openExternal, piPay } from "@/lib/pi-client";
 import { AnimatedCheck } from "./cards";
 import type { Address, Lang, Me, Merchant, Offer, Order, PaidPlanId, PlanOffer, Settings, ShopQuestion, Usage, Watch } from "@/lib/types";
 
@@ -582,7 +582,8 @@ export function AutoOrderSheet({
     if (!offer || !addr || busy) return;
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return setErr(s.emailInvalid);
     // Open the tab inside the click so the browser doesn't block it; fill it once the store answers.
-    const w = window.open("about:blank", "_blank");
+    // (Not in the Pi Browser: it can't fill a blank tab later, so the checkout opens in place there.)
+    const w = inPiBrowser() ? null : window.open("about:blank", "_blank");
     if (w) w.opener = null;
     setBusy(true);
     setErr("");
@@ -1045,15 +1046,24 @@ function Telegram({ s, api }: { s: Strings; api: Fetch }) {
     document.addEventListener("visibilitychange", again);
     return () => document.removeEventListener("visibilitychange", again);
   }, [load]);
+  // Get the one-time link before the tap, so the tap opens it straight away (no blank tab).
+  const [link, setLink] = useState<{ url: string; at: number } | null>(null);
+  const getLink = useCallback(async () => {
+    const { url } = await json<{ url: string }>(await api("/api/telegram/link", { method: "POST" }));
+    const l = { url, at: Date.now() };
+    setLink(l);
+    return l;
+  }, [api]);
+  useEffect(() => {
+    if (st?.configured && !st.linked) void getLink().catch(() => {});
+  }, [st?.configured, st?.linked, getLink]);
   const connect = async () => {
-    const w = window.open("about:blank", "_blank");
     try {
-      const { url } = await json<{ url: string }>(await api("/api/telegram/link", { method: "POST" }));
-      if (w) w.location.href = url;
-      else window.location.href = url;
+      const l = link && Date.now() - link.at < 10 * 60_000 ? link : await getLink();
+      await openExternal(l.url);
       setOpened(true);
     } catch {
-      w?.close();
+      /* ignore */
     }
   };
   if (!st) return null;

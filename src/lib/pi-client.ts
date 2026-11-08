@@ -25,6 +25,7 @@ interface PiSDK {
   init(cfg: { version: string; sandbox?: boolean }): void;
   authenticate(scopes: string[], onIncompletePaymentFound: (payment: PiPaymentDTO) => void): Promise<PiAuthResult>;
   createPayment(data: { amount: number; memo: string; metadata: Record<string, unknown> }, callbacks: PiPaymentCallbacks): void;
+  openUrlInSystemBrowser?(url: string): Promise<void>;
 }
 
 declare global {
@@ -65,6 +66,32 @@ export function loadPi(): Promise<PiSDK | null> {
 export function inPiBrowser(): boolean {
   if (typeof navigator === "undefined") return false;
   return /PiBrowser/i.test(navigator.userAgent) || (PI_SANDBOX && window.self !== window.top);
+}
+
+/**
+ * Open an outside link (Telegram, WhatsApp…). The Pi Browser can't follow a tab opened as
+ * about:blank and filled later (it searches for "about:blank"), so inside it we hand the link
+ * to the phone's own browser/apps via the SDK; elsewhere a normal new tab.
+ */
+export async function openExternal(url: string): Promise<void> {
+  if (inPiBrowser()) {
+    await loadPi();
+    const Pi = window.Pi;
+    if (Pi?.openUrlInSystemBrowser) {
+      try {
+        await Pi.openUrlInSystemBrowser(url);
+        return;
+      } catch {
+        /* fall through */
+      }
+    }
+    window.location.href = url;
+    return;
+  }
+  // (no "noopener" feature: with it window.open always returns null and we can't tell a blocked popup)
+  const w = window.open(url, "_blank");
+  if (w) w.opener = null;
+  else window.location.href = url;
 }
 
 /** Opens the Pi auth dialog and resolves with the access token (verified later by our server). */
