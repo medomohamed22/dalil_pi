@@ -1,5 +1,5 @@
 import "server-only";
-import { supabase, supabaseEnabled } from "./supabase";
+import { allRows, supabase, supabaseEnabled } from "./supabase";
 
 /**
  * Traffic Dalil Pi sends to stores (visits + orders) and searches that found nothing.
@@ -75,12 +75,11 @@ export async function adminStats(days = 30): Promise<AdminStats> {
     misses = [...mem.misses.values()].sort((a, b) => b.n - a.n).slice(0, 50);
   } else {
     const [a, b] = await Promise.all([
-      supabase().from("click_events").select("at, store, url, title, kind, country").gte("at", since).order("at", { ascending: false }).limit(50000),
+      allRows<(typeof clicks)[number]>((from, to) => supabase().from("click_events").select("at, store, url, title, kind, country").gte("at", since).order("at", { ascending: false }).order("id").range(from, to)),
       supabase().from("search_misses").select("q, country, n, last_at").gte("last_at", since).order("n", { ascending: false }).limit(50),
     ]);
-    if (a.error) throw new Error(a.error.message);
     if (b.error) throw new Error(b.error.message);
-    clicks = a.data ?? [];
+    clicks = a;
     misses = b.data ?? [];
   }
   const week = Date.now() - 7 * 864e5;

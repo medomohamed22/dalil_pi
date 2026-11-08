@@ -461,11 +461,19 @@ function HomeView({ s, lang, country, go, onOpen }: CommonProps) {
   const annText = ann?.on ? (lang === "ar" ? ann.ar || ann.en : ann.en || ann.ar) : "";
   const fe = site.data?.featured ?? (site.loading ? null : DEFAULT_FEATURED);
   const featuredUrl = fe ? `/api/search?country=${country}&limit=12${fe.store ? `&store=${fe.store}` : ""}${fe.cats ? `&cat=${encodeURIComponent(fe.cats)}` : ""}` : null;
-  const featured = useJson<SearchResponse>(featuredUrl);
+  const featuredMain = useJson<SearchResponse>(featuredUrl);
+  // The owner's row may not reach this country (Salla ships to Egypt, the Middle East and Africa):
+  // then the same categories from any store here, then whatever is sold here.
+  const none = (r: { data?: SearchResponse | null }) => !!r.data && r.data.offers.length === 0;
+  const featuredAny = useJson<SearchResponse>(fe && none(featuredMain) ? `/api/search?country=${country}&limit=12${fe.cats ? `&cat=${encodeURIComponent(fe.cats)}` : ""}` : null);
+  const featuredLocal = useJson<SearchResponse>(none(featuredMain) && none(featuredAny) ? `/api/search?country=${country}&limit=12` : null);
+  const fallback = !none(featuredMain) ? "main" : !featuredAny.data ? "wait" : !none(featuredAny) ? "any" : "local";
+  const featured = { data: fallback === "main" ? featuredMain.data : fallback === "any" ? featuredAny.data : fallback === "local" ? featuredLocal.data : null };
+  const feLocal = fallback === "any" || fallback === "local";
   const deals = useJson<SearchResponse>(`/api/search?deals=1&limit=12&country=${country}`);
   const stores = useJson<StoresResponse>(`/api/stores?country=${country}`);
-  const feStore = (stores.data?.stores ?? []).find((x) => x.source === fe?.store);
-  const feTitle = fe ? (lang === "ar" ? fe.title_ar : fe.title_en) : "";
+  const feStore = feLocal ? undefined : (stores.data?.stores ?? []).find((x) => x.source === fe?.store);
+  const feTitle = fallback === "local" ? s.popular : fe ? (lang === "ar" ? fe.title_ar : fe.title_en) : "";
   return (
     <div className="pb-24 pt-1" data-testid="home">
       {annText && (
@@ -497,7 +505,7 @@ function HomeView({ s, lang, country, go, onOpen }: CommonProps) {
       <SectionTitle
         action={
           fe && (
-            <button onClick={() => go({ v: "search", q: "", cat: fe.cats || undefined, store: fe.store || undefined, title: feTitle })} className="text-[13px] font-medium text-accent" data-testid="featured-all">
+            <button onClick={() => go({ v: "search", q: "", cat: fallback === "local" ? undefined : fe.cats || undefined, store: feLocal ? undefined : fe.store || undefined, title: feTitle })} className="text-[13px] font-medium text-accent" data-testid="featured-all">
               {s.seeAll}
             </button>
           )
@@ -527,7 +535,7 @@ function HomeView({ s, lang, country, go, onOpen }: CommonProps) {
 
       <SectionTitle action={<button onClick={() => go({ v: "stores" })} className="text-[13px] font-medium text-accent">{s.seeAll}</button>}>{s.piStores}</SectionTitle>
       <div className="grid grid-cols-2 gap-2.5" data-testid="home-stores">
-        {(stores.data?.stores ?? []).filter((x) => x.source).slice(0, 4).map((st, i) => (
+        {(stores.data?.stores ?? []).filter((x) => x.source).sort((a, b) => (b.products ? 1 : 0) - (a.products ? 1 : 0)).slice(0, 4).map((st, i) => (
           <m.button
             key={st.id}
             initial={{ opacity: 0, scale: 0.97 }}

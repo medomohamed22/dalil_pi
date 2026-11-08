@@ -100,7 +100,18 @@ export default function AdminPage() {
         }}
       />
     );
-  if (setup) return <ChoosePassword api={api} onDone={() => setSetup(false)} first />;
+  const relogin = async (password: string) => {
+    // A new password signs old sessions out: sign in again with it.
+    const r = await fetch("/api/admin/login", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ password }) });
+    const j = await r.json().catch(() => ({}));
+    setSetup(false);
+    setToken(r.ok ? j.token : null);
+    try {
+      if (r.ok) localStorage.setItem(TOKEN, j.token);
+      else localStorage.removeItem(TOKEN);
+    } catch {}
+  };
+  if (setup) return <ChoosePassword api={api} onDone={relogin} first />;
 
   const tabs: Array<[Tab, string, typeof Store]> = [
     ["overview", "نظرة عامة", BarChart3],
@@ -145,7 +156,7 @@ export default function AdminPage() {
         {tab === "stores" && <StoresTab api={api} />}
         {tab === "merchants" && <MerchantsTab api={api} />}
         {tab === "searches" && <SearchesTab api={api} />}
-        {tab === "settings" && <SettingsTab api={api} />}
+        {tab === "settings" && <SettingsTab api={api} relogin={relogin} />}
       </main>
     </div>
   );
@@ -236,7 +247,8 @@ function Login({ onDone }: { onDone: (token: string, setup: boolean) => void }) 
   );
 }
 
-function ChoosePassword({ api, onDone, first }: { api: Api; onDone: () => void; first?: boolean }) {
+function ChoosePassword({ api, onDone, first }: { api: Api; onDone: (password: string) => void; first?: boolean }) {
+  const [cur, setCur] = useState("");
   const [a, setA] = useState("");
   const [b, setB] = useState("");
   const [msg, setMsg] = useState("");
@@ -248,16 +260,18 @@ function ChoosePassword({ api, onDone, first }: { api: Api; onDone: () => void; 
         if (a.length < 8) return setMsg("لازم 8 حروف على الأقل");
         if (a !== b) return setMsg("الباسوردين مش زي بعض");
         try {
-          await api("/api/admin/password", { method: "POST", body: JSON.stringify({ password: a }) });
-          setMsg("✓ اتحفظ");
+          await api("/api/admin/password", { method: "POST", body: JSON.stringify({ password: a, ...(first ? {} : { current: cur }) }) });
+          setMsg(first ? "✓ اتحفظ" : "✓ اتحفظ — ادخل تاني بالباسورد الجديد");
+          setCur("");
           setA("");
           setB("");
-          onDone();
+          onDone(a);
         } catch (e) {
           setMsg((e as Error).message);
         }
       }}
     >
+      {!first && <input type="password" value={cur} onChange={(e) => setCur(e.target.value)} placeholder="الباسورد الحالي" className="w-full rounded-xl border border-line bg-bg px-3 py-2.5 outline-none focus:border-fg" dir="ltr" data-testid="current-password" />}
       <input type="password" value={a} onChange={(e) => setA(e.target.value)} placeholder="باسورد جديد (8 حروف أو أكتر)" className="w-full rounded-xl border border-line bg-bg px-3 py-2.5 outline-none focus:border-fg" dir="ltr" data-testid="new-password" />
       <input type="password" value={b} onChange={(e) => setB(e.target.value)} placeholder="اكتبه تاني" className="w-full rounded-xl border border-line bg-bg px-3 py-2.5 outline-none focus:border-fg" dir="ltr" data-testid="new-password2" />
       {msg && <p className="text-[13px]">{msg}</p>}
@@ -483,7 +497,7 @@ function SearchesTab({ api }: { api: Api }) {
 
 /* ---------- settings ---------- */
 
-function SettingsTab({ api }: { api: Api }) {
+function SettingsTab({ api, relogin }: { api: Api; relogin: (password: string) => Promise<void> }) {
   const set = useData<SiteSettings>(api, "/api/admin/settings");
   const [f, setF] = useState<SiteSettings | null>(null);
   const [msg, setMsg] = useState("");
@@ -560,7 +574,7 @@ function SettingsTab({ api }: { api: Api }) {
 
       <Card>
         <H>تغيير باسورد اللوحة</H>
-        <ChoosePassword api={api} onDone={() => setMsg("✓ الباسورد اتغير")} />
+        <ChoosePassword api={api} onDone={(pw) => relogin(pw).then(() => setMsg("✓ الباسورد اتغير"))} />
       </Card>
     </div>
   );

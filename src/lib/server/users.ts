@@ -363,6 +363,50 @@ export async function recordSearch(uid: string): Promise<Usage> {
   return spendCredit(uid, "search");
 }
 
+/**
+ * Takes the AI credit BEFORE the AI runs (one atomic, locked database call), so parallel requests
+ * or a closed connection can't get a free answer. Throws QuotaExceeded when no credit is left
+ * (then nothing runs); returns a receipt to give the credit back if the server itself fails.
+ */
+export async function reserveSearch(uid: string): Promise<{ usage: Usage; source: string }> {
+  if (supabaseEnabled) {
+    const r = await supabase().rpc("use_credit", { p_uid: uid, p_kind: "search", p_period: currentPeriod() });
+    if (r.error) throw new Error(`usage: ${r.error.message}`);
+    const d = r.data as DbState & { source?: string | null };
+    if (!d.source) throw new QuotaExceeded(stateToUsage(d));
+    return { usage: stateToUsage(d), source: d.source };
+  }
+  const before = await getUsage(uid);
+  if (before.searchesUsed >= before.searchLimit) throw new QuotaExceeded(before);
+  const k = `${uid}:${currentPeriod()}`;
+  const cur = memUsage.get(k) ?? { searches: 0, orders: 0, bonus: 0 };
+  const packs = memPacks.map((p) => p.searchesLeft);
+  await consume(uid, "search");
+  const after = memUsage.get(k) ?? cur;
+  const pack = memPacks.findIndex((p, i) => p.searchesLeft !== packs[i]);
+  return { usage: await getUsage(uid), source: after.searches !== cur.searches ? "free" : pack >= 0 ? `mem:${pack}` : "free" };
+}
+
+/** Gives back a reserved credit (the server failed before answering). Never throws. */
+export async function refundSearch(uid: string, source: string): Promise<void> {
+  try {
+    if (supabaseEnabled) {
+      await supabase().rpc("refund_credit", { p_uid: uid, p_kind: "search", p_period: currentPeriod(), p_source: source });
+      return;
+    }
+    if (source === "free") {
+      const k = `${uid}:${currentPeriod()}`;
+      const cur = memUsage.get(k);
+      if (cur && cur.searches > 0) memUsage.set(k, { ...cur, searches: cur.searches - 1 });
+    } else if (source.startsWith("mem:")) {
+      const p = memPacks[Number(source.slice(4))];
+      if (p) p.searchesLeft++;
+    }
+  } catch {
+    /* best effort */
+  }
+}
+
 export class OrderQuotaExceeded extends Error {
   status = 402;
   code = "ORDER_QUOTA_EXCEEDED";

@@ -12,13 +12,13 @@ const Body = z.object({
 });
 
 export async function GET(req: Request) {
-  const denied = requireAdmin(req);
+  const denied = await requireAdmin(req);
   if (denied) return denied;
   return Response.json(await siteSettings(), { headers: { "Cache-Control": "no-store" } });
 }
 
 export async function PUT(req: Request) {
-  const denied = requireAdmin(req);
+  const denied = await requireAdmin(req);
   if (denied) return denied;
   try {
     const b = Body.parse(await req.json());

@@ -172,18 +172,35 @@ export class BrowserSession {
       if (this.lite && type === "image") return void req.abort();
       void req.continue();
     });
+    // DNS rebinding: Chromium resolves the host again after our check. The address it really
+    // connected to is reported with each response; a private one taints the page (never read).
+    page.on("response", (res) => {
+      const ip = res.remoteAddress()?.ip?.replace(/^\[|\]$/g, "");
+      if (ip && isPrivateIp(ip) && !isTestHost(res.url())) this.tainted = true;
+    });
     page.setDefaultNavigationTimeout(NAV_TIMEOUT);
     page.setDefaultTimeout(8000);
     this.page = page;
     return page;
   }
 
+  private tainted = false;
+  /** Throws (and leaves the page) if any response came from an internal address. */
+  private async assertClean(page: Page) {
+    if (!this.tainted) return;
+    this.tainted = false;
+    await page.goto("about:blank").catch(() => {});
+    throw new Error("Host not allowed");
+  }
+
   async open(rawUrl: string): Promise<PageState> {
     const url = (await checkUrl(rawUrl)).toString();
     const page = await this.ensurePage();
+    this.tainted = false;
     const res = await page.goto(url, { waitUntil: "domcontentloaded" });
     this.pagesVisited++;
     await this.settle(page);
+    await this.assertClean(page);
     return this.state(page, res?.status());
   }
 
@@ -214,6 +231,7 @@ export class BrowserSession {
       throw new Error(`Unknown action ${action}`);
     }
     await this.settle(page);
+    await this.assertClean(page);
     return this.state(page);
   }
 

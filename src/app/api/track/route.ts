@@ -16,7 +16,8 @@ const Body = z.object({
 
 /** A visit or order Dalil Pi sent to a store (sent with keepalive when the link opens). Guests too. */
 export async function POST(req: Request) {
-  const limited = await rateLimit(req, "track", 60, 60);
+  // A person opens a few stores a minute; 300 a day per visitor keeps the table small.
+  const limited = (await rateLimit(req, "track", 30, 60)) ?? (await rateLimit(req, "track-day", 300, 86400));
   if (limited) return limited;
   try {
     const b = Body.parse(await req.json());

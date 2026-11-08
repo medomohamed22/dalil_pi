@@ -7,7 +7,7 @@ export const dynamic = "force-dynamic";
 
 /** Owner dashboard data. Needs an admin token (or ADMIN_SECRET / CRON_SECRET). */
 export async function GET(req: Request) {
-  const denied = requireAdmin(req);
+  const denied = await requireAdmin(req);
   if (denied) return denied;
   const days = Math.min(180, Math.max(1, Number(new URL(req.url).searchParams.get("days")) || 30));
   try {

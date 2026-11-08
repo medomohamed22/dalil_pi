@@ -152,7 +152,56 @@ export async function fetchPcm(): Promise<CatalogItem[]> {
     }
     if (!rows.length) break;
   }
+  // Listings in none of the known country lists (a country id we haven't met yet): ask the
+  // product itself — its sizeJson names the sales country ("salesCountryName") and the fee.
+  const unknown = out.filter((it) => !it.country).slice(0, 80);
+  for (let i = 0; i < unknown.length; i += 6) {
+    await Promise.all(
+      unknown.slice(i, i + 6).map(async (it) => {
+        const where = await pcmWhere(api, it.id.slice(4)).catch(() => null);
+        if (!where) return;
+        it.country = where.country;
+        if (Object.keys(where.shipping).length) it.shipping = where.shipping;
+      }),
+    );
+  }
   return out;
+}
+
+/** English country name → ISO code ("United States" → "US"), built once from Intl. */
+let isoByName: Map<string, string> | null = null;
+export function isoOfCountryName(name: string): string | null {
+  if (!isoByName) {
+    isoByName = new Map();
+    const dn = new Intl.DisplayNames(["en"], { type: "region" });
+    const A = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+    for (const a of A)
+      for (const b of A) {
+        const n = dn.of(a + b);
+        if (n && n !== a + b) isoByName.set(n.toLowerCase().replace(/[^a-z]/g, ""), a + b);
+      }
+  }
+  return isoByName.get(name.toLowerCase().replace(/[^a-z]/g, "")) ?? null;
+}
+
+/** One Pi Chain Mall product's sales country + fee per country (in Pi) from its own page data. */
+async function pcmWhere(api: string, id: string): Promise<{ country: string | null; shipping: Record<string, number> } | null> {
+  if (!/^[\w-]{1,64}$/.test(id)) return null;
+  const j = await getJson<{ object?: { sizeJson?: string; contryId?: string } }>(`${api}/api/commodity/commodity/getById?id=${encodeURIComponent(id)}`);
+  let size: Record<string, { salesCountryName?: string; expenses?: string; shipStatus?: number }> = {};
+  try {
+    size = JSON.parse(j.object?.sizeJson || "{}");
+  } catch {
+    /* no sizes */
+  }
+  const shipping: Record<string, number> = {};
+  for (const [pcmId, v] of Object.entries(size ?? {})) {
+    const iso = PCM_COUNTRY_IDS[pcmId] ?? (v?.salesCountryName ? isoOfCountryName(v.salesCountryName) : null);
+    const fee = Number(v?.expenses);
+    if (iso) shipping[iso] = Number.isFinite(fee) && fee >= 0 ? Math.round(fee * 100) / 100 : 0;
+  }
+  const home = j.object?.contryId ? PCM_COUNTRY_IDS[j.object.contryId] : undefined;
+  return { country: home ?? Object.keys(shipping)[0] ?? null, shipping };
 }
 
 /** Global Trade Pi: its public product list. */
@@ -194,17 +243,19 @@ export async function fetchGtp(): Promise<CatalogItem[]> {
 
 /**
  * Piketplace (mpiket.pinet.com, the Pi Mainnet app of piketplace.com): the product list its app
- * loads for visitors, filtered to the countries Dalil Pi serves (PIKET_COUNTRIES, default EG) —
+ * loads for visitors, every country (PKT_COUNTRIES narrows it) —
  * the whole catalog is ~2,600 products in 450 kB pages, Egypt's share ~740. Pages are read 5 at
  * a time. Each listing says which countries it ships to and the fee in Pi.
  */
 export async function fetchPkt(): Promise<CatalogItem[]> {
   const api = base(process.env.PKT_API_URL) || "https://mainnet-backend.piketplace.com/api/v1";
-  const countries = (process.env.PIKET_COUNTRIES || "EG").split(",").map((c) => c.trim().toUpperCase()).filter((c) => /^[A-Z]{2}$/.test(c)).slice(0, 6);
+  // Every country by default (one list of ~2,600 products, 87 pages); PKT_COUNTRIES=EG,SA narrows it.
+  const only = (process.env.PKT_COUNTRIES || "").split(",").map((c) => c.trim().toUpperCase()).filter((c) => /^[A-Z]{2}$/.test(c)).slice(0, 6);
+  const countries: Array<string | null> = only.length ? only : [null];
   const iso3 = (c: string) => ({ EG: "EGY", SA: "SAU", AE: "ARE", NG: "NGA", MA: "MAR", DZ: "DZA", TN: "TUN", JO: "JOR", KW: "KWT", QA: "QAT", IQ: "IRQ", VN: "VNM", US: "USA", IN: "IND", PH: "PHL" })[c] ?? c;
-  const url = (c: string, page: number) => {
+  const url = (c: string | null, page: number) => {
     const u = new URL(`${api}/index-loading`);
-    const q: Record<string, string> = { page: String(page), status: "validated", verified_shops: "1", locale: "en", "filter[iso2]": c, "filter[iso3]": iso3(c), "filter[show_products_type]": "all", "filter[sort_by]": "recent", "filter[is_updated]": "0" };
+    const q: Record<string, string> = { page: String(page), status: "validated", verified_shops: "1", locale: "en", ...(c ? { "filter[iso2]": c, "filter[iso3]": iso3(c) } : {}), "filter[show_products_type]": "all", "filter[sort_by]": "recent", "filter[is_updated]": "0" };
     for (const [k, v] of Object.entries(q)) u.searchParams.set(k, v);
     return u.toString();
   };
@@ -213,10 +264,10 @@ export async function fetchPkt(): Promise<CatalogItem[]> {
   for (const c of countries) {
     const first = await getJson<Page>(url(c, 1));
     for (const r of first.products?.data ?? []) rows.set(String(r.id), r);
-    const last = Math.min(Number(first.products?.last_page) || 1, 60);
+    const last = Math.min(Number(first.products?.last_page) || 1, 150);
     const pages = Array.from({ length: last - 1 }, (_, i) => i + 2);
-    for (let i = 0; i < pages.length; i += 5) {
-      const got = await Promise.all(pages.slice(i, i + 5).map((pg) => getJson<Page>(url(c, pg)).catch(() => ({}) as Page)));
+    for (let i = 0; i < pages.length; i += 8) {
+      const got = await Promise.all(pages.slice(i, i + 8).map((pg) => getJson<Page>(url(c, pg)).catch(() => ({}) as Page)));
       for (const g of got) for (const r of g.products?.data ?? []) rows.set(String(r.id), r);
     }
   }
@@ -487,6 +538,17 @@ export async function refreshCatalog(opts: { force?: boolean; sources?: CatalogS
   }
 }
 
+/**
+ * refreshCatalog for the request paths (search, chat): checks the stores' age at most once a
+ * minute per server instance, so a flood of searches doesn't become a flood of database reads.
+ */
+let lastCheck = 0;
+export function refreshInBackground(sources?: CatalogSource[]): Promise<unknown> {
+  if (Date.now() - lastCheck < 60_000) return Promise.resolve();
+  lastCheck = Date.now();
+  return refreshCatalog({ sources }).catch(() => {});
+}
+
 function isStale(s: SourceState | undefined, source: CatalogSource): boolean {
   if (!s?.refreshed_at) return true;
   return Date.now() - Date.parse(s.refreshed_at) > TTL_MIN[source] * 60_000;
@@ -594,13 +656,19 @@ async function index(): Promise<NonNullable<typeof loaded>> {
   let items: CatalogItem[];
   if (!supabaseEnabled) items = [...mem.items.values()].filter((i) => i.active);
   else {
-    const { data, error } = await supabase()
-      .from("catalog_items")
-      .select("id, source, title, title_ar, description, price, price_egp, list_price_egp, url, image, images, seller, country, category, tags, in_stock, stock, digital, ships_global, shipping, brand, model, norm_category, title_en, keywords, twin_key")
-      .eq("active", true)
-      .limit(20000);
-    if (error) throw new Error(`catalog load: ${error.message}`);
-    items = (data ?? []) as CatalogItem[];
+    // The API returns at most 1,000 rows per request: read in pages.
+    items = [];
+    for (let from = 0; from < 50_000; from += 1000) {
+      const { data, error } = await supabase()
+        .from("catalog_items")
+        .select("id, source, title, title_ar, description, price, price_egp, list_price_egp, url, image, images, seller, country, category, tags, in_stock, stock, digital, ships_global, shipping, brand, model, norm_category, title_en, keywords, twin_key")
+        .eq("active", true)
+        .order("id")
+        .range(from, from + 999);
+      if (error) throw new Error(`catalog load: ${error.message}`);
+      items.push(...((data ?? []) as CatalogItem[]));
+      if ((data ?? []).length < 1000) break;
+    }
   }
   // Smart indexing with plain rules (rules.ts): category + brand/model twin key, in memory, no AI.
   for (const it of items) {
@@ -646,8 +714,8 @@ function reaches(it: CatalogItem, country: string): boolean {
   // Piketplace: the countries it ships to (none listed = seller's country only).
   // Sellers there often tick "digital" on physical goods (shoes…), so that flag doesn't widen the reach.
   if (it.source === "pkt") return it.shipping && Object.keys(it.shipping).length ? country in it.shipping : it.country === country;
-  // Pi Chain Mall: global-sale listings everywhere; local ones only in their sales country.
-  return !!it.ships_global || it.country === country;
+  // Pi Chain Mall: global-sale listings everywhere; local ones in their sales countries.
+  return !!it.ships_global || it.country === country || !!(it.shipping && country in it.shipping);
 }
 
 /** Categories of a store's products (for the store page chips), most common first. */

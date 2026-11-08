@@ -1,3 +1,4 @@
+import { rateLimit } from "@/lib/server/ratelimit";
 import { catalogStats } from "@/lib/server/catalog";
 import { geoFromRequest, isCountryCode } from "@/lib/server/geo";
 import { piUsdPrice } from "@/lib/server/price";
@@ -10,6 +11,8 @@ export const runtime = "nodejs";
 
 /** The stores directory: every Pi store Dalil Pi knows, with live product counts and trust. Cached 10 min. */
 export async function GET(req: Request) {
+  const limited = await rateLimit(req, "stores", 60, 60);
+  if (limited) return limited;
   const c = new URL(req.url).searchParams.get("country")?.toUpperCase();
   const country = isCountryCode(c) ? c : geoFromRequest(req).country;
   const stats = await catalogStats(country).catch(() => []);

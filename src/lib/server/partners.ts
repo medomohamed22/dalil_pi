@@ -218,7 +218,10 @@ const PCM_IMG = "https://image.pcmsuper.art/image/";
  * from the products themselves on 2026-11-08 (e.g. 235: an Indian seller's "Ship From: India";
  * 17: an Egyptian-pound phone top-up). Unknown ids → the listing is shown nowhere unless global.
  */
-export const PCM_COUNTRY_IDS: Record<string, string> = { "17": "EG", "235": "IN", "7": "CN", "170": "JP" };
+export const PCM_COUNTRY_IDS: Record<string, string> = {
+  // Each id checked on 2026-11-08 against a product's own "salesCountryName" (getById → sizeJson).
+  "7": "CN", "17": "EG", "51": "BF", "52": "BI", "58": "TG", "70": "PH", "140": "US", "150": "MA", "162": "NG", "170": "JP", "230": "YE", "235": "IN", "236": "ID",
+};
 export const pcmIdOf = (iso: string) => Object.entries(PCM_COUNTRY_IDS).find(([, c]) => c === iso)?.[0];
 
 export function pcmEnabled(): boolean {

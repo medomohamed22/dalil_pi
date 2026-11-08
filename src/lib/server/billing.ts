@@ -173,6 +173,8 @@ export async function completePayment(uid: string, paymentId: string, txid?: str
   const chainTx = p.transaction?.txid;
   if (!chainTx) throw new BillingError("No blockchain transaction yet", 409, "NO_TXID");
   if (txid && txid !== chainTx) throw new BillingError("Transaction id doesn't match");
+  // Pi checks the transaction on the blockchain (amount, receiver); no pack before that.
+  if (!p.transaction?.verified && !p.status.transaction_verified) throw new BillingError("The blockchain hasn't confirmed the payment yet — try again in a moment", 409, "TX_NOT_VERIFIED");
 
   if (!p.status.developer_completed) {
     await piServerCall(`/payments/${encodeURIComponent(paymentId)}/complete`, { method: "POST", body: { txid: chainTx } });

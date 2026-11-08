@@ -1,13 +1,13 @@
 import { after } from "next/server";
 import { z } from "zod";
 import { runAgent } from "@/lib/server/agent";
-import { refreshCatalog } from "@/lib/server/catalog";
+import { refreshInBackground } from "@/lib/server/catalog";
 import { countryName, currencyOf, geoFromRequest, isCountryCode } from "@/lib/server/geo";
 import { hostedConfig, hostedEnabled, hostedLimits, visitorId } from "@/lib/server/hosted";
 import { piUsdPrice } from "@/lib/server/price";
 import { readSession } from "@/lib/server/session";
 import { verifyOffer } from "@/lib/server/sign";
-import { beginSearch, recordSearch } from "@/lib/server/users";
+import { beginSearch, refundSearch, reserveSearch } from "@/lib/server/users";
 import type { AgentEvent, Offer } from "@/lib/types";
 
 export const runtime = "nodejs";
@@ -15,8 +15,8 @@ export const maxDuration = 300;
 
 /**
  * Runs the shopping agent for a signed-in Pi user. The agent always runs on
- * the server's Meta key (META_API_KEY) with one fixed model. Each successful
- * search counts against the user's monthly quota (free: FREE_SEARCHES_PER_MONTH).
+ * the server's Meta key (META_API_KEY) with one fixed model. Each question takes one AI credit
+ * up front (given back only if the server fails).
  */
 const Body = z.object({
   history: z
@@ -63,11 +63,16 @@ export async function POST(req: Request) {
   if (!hostedEnabled()) return Response.json({ error: "The AI is not configured (META_API_KEY).", code: "NO_API_KEY" }, { status: 503 });
 
   // Quota, rate limits and daily AI caps in one database call — no AI call when anything is over.
+  let receipt: Awaited<ReturnType<typeof reserveSearch>>;
   try {
     await beginSearch(session.uid, visitorId(req), hostedLimits());
+    // The credit is taken now, before any AI call (atomic): parallel requests can't overspend
+    // and closing the connection mid-answer doesn't make it free.
+    receipt = await reserveSearch(session.uid);
   } catch (err) {
     return errorResponse(err);
   }
+  const spent = receipt;
 
   const { settings, history } = body;
   const lang = settings.lang ?? "en";
@@ -110,15 +115,10 @@ export async function POST(req: Request) {
           knownOffers,
           trustedSearch: true,
         });
-        // Count the search only once it finished without an error.
-        if (!req.signal.aborted) {
-          try {
-            emit({ type: "usage", usage: await recordSearch(session.uid) });
-          } catch {
-            /* usage write failed — don't fail the user's search */
-          }
-        }
+        emit({ type: "usage", usage: spent.usage });
       } catch (err) {
+        // Our failure (not the user leaving): give the credit back.
+        if (!req.signal.aborted) await refundSearch(session.uid, spent.source);
         emit({ type: "error", message: err instanceof Error ? err.message : String(err) });
       } finally {
         emit({ type: "done" });
@@ -128,7 +128,7 @@ export async function POST(req: Request) {
   });
 
   // After the reply: re-read any trusted store whose copy in Dalil Index is stale (never delays the user).
-  after(() => refreshCatalog().catch(() => {}));
+  after(() => refreshInBackground());
 
   return new Response(stream, {
     headers: {

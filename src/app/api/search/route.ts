@@ -1,5 +1,5 @@
 import { after } from "next/server";
-import { refreshCatalog, SOURCES, type CatalogSource } from "@/lib/server/catalog";
+import { refreshInBackground, SOURCES, type CatalogSource } from "@/lib/server/catalog";
 import { geoFromRequest, isCountryCode } from "@/lib/server/geo";
 import { rateLimit } from "@/lib/server/ratelimit";
 import { searchShop, type ShopSort } from "@/lib/server/shop";
@@ -41,10 +41,12 @@ export async function GET(req: Request) {
       limit: n(u.searchParams.get("limit")),
     });
     // Keep the index fresh without making anyone wait (the JSON stores; Salla is refreshed elsewhere).
-    after(() => refreshCatalog({ sources: ["pcm", "gtp", "pkt"] }).catch(() => {}));
+    after(() => refreshInBackground(["pcm", "gtp", "pkt"]));
     // Nothing found for a typed search (no narrowing filters): record the demand gap.
     const typed = result.parsed.text;
-    if (typed && result.total === 0 && !store && !u.searchParams.get("category") && !u.searchParams.get("offset")) after(() => recordMiss(typed, country).catch(() => {}));
+    // At most 20 recorded per visitor per hour: random queries can't flood the table.
+    if (typed && result.total === 0 && !store && !u.searchParams.get("category") && !u.searchParams.get("offset") && !(await rateLimit(req, "miss", 20, 3600)))
+      after(() => recordMiss(typed, country).catch(() => {}));
     return Response.json({ country, ...result }, { headers: { "Cache-Control": "public, s-maxage=120, stale-while-revalidate=600" } });
   } catch (err) {
     return Response.json({ error: (err as Error).message }, { status: 500 });

@@ -11,9 +11,13 @@ export const maxDuration = 30;
  * Shops near the user that take Pi at the counter (Salla Local), no AI.
  * GET /api/local-shops?lat=&lon=&q=&country= — the shop list is read at most every 15 min.
  */
+/** After a failed read, wait a minute before launching the browser again (no launch storms). */
+let failedAt = 0;
+
 export async function GET(req: Request) {
   const limited = await rateLimit(req, "local", 30, 60);
   if (limited) return limited;
+  if (Date.now() - failedAt < 60_000) return Response.json({ error: "Salla Local is not answering — try again in a minute.", shops: [] }, { status: 503, headers: { "Retry-After": "60" } });
   const u = new URL(req.url);
   const geo = geoFromRequest(req);
   const c = u.searchParams.get("country")?.toUpperCase();
@@ -34,6 +38,7 @@ export async function GET(req: Request) {
     const { shops, matched } = pickLocalShops(raw, { country, at, query: (u.searchParams.get("q") ?? "").slice(0, 60), limit: 20 });
     return Response.json({ country, shops, matched, locatedBy: gps ? "gps" : at ? "ip" : null }, { headers: { "Cache-Control": "private, max-age=120" } });
   } catch (err) {
+    failedAt = Date.now();
     return Response.json({ error: (err as Error).message, shops: [] }, { status: 502 });
   }
 }
