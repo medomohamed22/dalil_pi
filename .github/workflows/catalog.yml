@@ -24,7 +24,7 @@ jobs:
       - name: Refresh stale stores
         env:
           CRON_SECRET: ${{ secrets.CRON_SECRET }}
-          APP_URL: ${{ vars.APP_URL || 'https://pihackathontest.vercel.app' }}
+          APP_URL: ${{ vars.APP_URL || 'https://dalilpi.vercel.app' }}
           FORCE: ${{ github.event.inputs.force == 'true' && '1' || '0' }}
         run: |
           if [ -z "$CRON_SECRET" ]; then echo "CRON_SECRET secret is not set — skipping"; exit 0; fi

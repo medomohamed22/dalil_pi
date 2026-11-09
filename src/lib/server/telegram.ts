@@ -86,7 +86,7 @@ export async function handleUpdate(update: { message?: { chat?: { id?: number };
   const chatId = update.message?.chat?.id;
   const text = (update.message?.text ?? "").trim();
   if (!chatId || !text) return;
-  const app = process.env.APP_URL || "https://pihackathontest.vercel.app";
+  const app = process.env.APP_URL || "https://dalilpi.vercel.app";
   if (text.startsWith("/start")) {
     const code = text.split(/\s+/)[1];
     if (!code) return send(chatId, `👋 Welcome to <b>Dalil Pi</b>.\nOpen ${esc(app)} → My account → Notifications → "Connect Telegram" to link your account.\n\nافتح دليل باي ← حسابي ← الإشعارات ← "اربط تليجرام".`);
@@ -121,7 +121,7 @@ export async function sendDigest(): Promise<{ users: number; sent: number }> {
   }
   if (!links.length) return { users: 0, sent: 0 };
   const [watches, answers] = await Promise.all([pendingWatchAlerts(), pendingAnswers()]);
-  const app = process.env.APP_URL || "https://pihackathontest.vercel.app";
+  const app = process.env.APP_URL || "https://dalilpi.vercel.app";
   // Plans ending within 3 days (reminded once).
   let ending: { pi_uid: string; plan: string; ends_at: string }[] = [];
   if (supabaseEnabled) {

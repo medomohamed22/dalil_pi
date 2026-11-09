@@ -82,7 +82,7 @@ interface SourceState {
 /* ------------------------------------------------------------------ */
 
 const allowPrivate = () => !process.env.VERCEL && process.env.DALIL_TEST_ALLOW_PRIVATE_STORES === "1";
-const UA = "Mozilla/5.0 (compatible; DalilPiBot/1.0; +https://pihackathontest.vercel.app)";
+const UA = "Mozilla/5.0 (compatible; DalilPiBot/1.0; +https://dalilpi.vercel.app)";
 
 async function getJson<T>(url: string): Promise<T> {
   if (!allowPrivate()) await assertPublicUrl(url);

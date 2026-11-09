@@ -99,7 +99,7 @@ affiliate arrangement.
 
 ## 3. Messages to send
 
-Fill in your name before sending. App link: https://pihackathontest.vercel.app
+Fill in your name before sending. App link: https://dalilpi.vercel.app
 
 ### Salla Shop — email to `support@salla-shop.com`
 
@@ -108,7 +108,7 @@ Fill in your name before sending. App link: https://pihackathontest.vercel.app
 > Hello Salla Shop team,
 >
 > I'm building **Dalil Pi**, an AI shopping assistant for Pi Network users
-> (https://pihackathontest.vercel.app), for the Pi Next hackathon. Users describe what they need
+> (https://dalilpi.vercel.app), for the Pi Next hackathon. Users describe what they need
 > and Dalil Pi finds it in stores that accept Pi — Salla Shop Mall is the first marketplace we
 > recommend for Egypt, the Middle East and Africa. Every result links straight to the product page
 > on Salla, and the buyer pays Salla with Pi as usual; Dalil Pi never handles the payment.
@@ -133,7 +133,7 @@ Fill in your name before sending. App link: https://pihackathontest.vercel.app
 > أهلاً فريق سلة شوب،
 >
 > أنا بطوّر **دليل باي**، مساعد تسوّق بالذكاء الاصطناعي لمستخدمي Pi Network
-> (https://pihackathontest.vercel.app) لهاكاثون Pi Next. المستخدم بيكتب اللي محتاجه، ودليل باي
+> (https://dalilpi.vercel.app) لهاكاثون Pi Next. المستخدم بيكتب اللي محتاجه، ودليل باي
 > بيدوّر عليه في المتاجر اللي بتقبل الباي، وسلة شوب مول هو أول سوق بنرشّحه في مصر والشرق الأوسط
 > وأفريقيا. كل نتيجة بتفتح صفحة المنتج على سلة مباشرة، والمشتري بيدفع لسلة بالباي عادي، ودليل باي
 > مش بيلمس الدفع خالص.
@@ -154,7 +154,7 @@ Fill in your name before sending. App link: https://pihackathontest.vercel.app
 
 > Hi Map of Pi team,
 >
-> I'm building **Dalil Pi** (https://pihackathontest.vercel.app), an AI shopping assistant for Pi
+> I'm building **Dalil Pi** (https://dalilpi.vercel.app), an AI shopping assistant for Pi
 > users, for the Pi Next hackathon. When a user asks for something "near me", we'd love to show
 > **Map of Pi sellers** — with the shop name, address, distance, rating and item prices — and send
 > the user to the seller's page in the Map of Pi app to buy.
@@ -172,7 +172,7 @@ Fill in your name before sending. App link: https://pihackathontest.vercel.app
 
 > أهلاً فريق Map of Pi،
 >
-> أنا بطوّر **دليل باي** (https://pihackathontest.vercel.app)، مساعد تسوّق بالذكاء الاصطناعي
+> أنا بطوّر **دليل باي** (https://dalilpi.vercel.app)، مساعد تسوّق بالذكاء الاصطناعي
 > لمستخدمي باي، لهاكاثون Pi Next. لما المستخدم يطلب حاجة "قريبة مني"، عاوزين نعرض **بائعين Map of Pi**
 > باسم المحل والعنوان والمسافة والتقييم وأسعار المنتجات، ونودّي المستخدم لصفحة البائع في تطبيق
 > Map of Pi علشان يشتري.
