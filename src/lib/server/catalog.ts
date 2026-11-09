@@ -371,8 +371,13 @@ export function sallaSign(fnPath: string, pathAndQuery: string, secret: string, 
   return { "X-Partner-Id": partner, "X-Timestamp": ts, "X-Nonce": nonce, "X-Signature": sig };
 }
 
+/** The function's base URL; a pasted ".../catalog" or ".../health" or "?query" is trimmed off. */
+const sallaBase = () =>
+  base((process.env.SALLA_BASE_URL ?? "").trim().replace(/[?#].*$/, ""))
+    .replace(/\/(catalog|health)$/i, "");
+
 async function sallaGet(pathAndQuery: string, etag?: string): Promise<Response> {
-  const api = base(process.env.SALLA_BASE_URL);
+  const api = sallaBase();
   const url = new URL(api + pathAndQuery);
   if (url.protocol !== "https:" && !allowPrivate()) throw new Error("SALLA_BASE_URL must be https");
   if (!allowPrivate()) await assertPublicUrl(url.toString());
@@ -398,7 +403,11 @@ export async function fetchSallaApi(etag?: string): Promise<SallaApiResult> {
       const res = await sallaGet(`/catalog?page=${page}&limit=200`, page === 1 ? etag : undefined);
       if (res.status === 304 && page === 1) return { notModified: true, etag };
       if (res.status === 429) throw new Error(`Salla API: too many requests (retry after ${res.headers.get("retry-after") ?? "?"} s)`);
-      if (!res.ok) throw new Error(`Salla API answered ${res.status}`);
+      if (!res.ok) {
+        // Path and Salla's own short answer help find a wrong link; the secret is never part of either.
+        const why = (await res.text().catch(() => "")).replace(/\s+/g, " ").slice(0, 120);
+        throw new Error(`Salla API answered ${res.status} for ${new URL(sallaBase()).host}${new URL(sallaBase()).pathname}/catalog${why ? ` — ${why}` : ""}`);
+      }
       if (page === 1) firstEtag = res.headers.get("etag") ?? undefined;
       const j = (await res.json()) as { products?: Array<Record<string, unknown>>; pages?: number; version?: unknown };
       if (page === 1) version = j.version;
