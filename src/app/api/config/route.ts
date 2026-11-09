@@ -1,6 +1,7 @@
 import { countryName, currencyOf, geoFromRequest } from "@/lib/server/geo";
 import { hostedEnabled } from "@/lib/server/hosted";
-import { mapOfPiConfigured, sallaApiConfigured } from "@/lib/server/partners";
+import { mapOfPiConfigured } from "@/lib/server/partners";
+import { sallaApiReady } from "@/lib/server/catalog";
 import { piConfigured, piNetwork } from "@/lib/server/pi";
 import { piUsdPrice } from "@/lib/server/price";
 import { devLoginAllowed } from "@/lib/server/session";
@@ -20,7 +21,7 @@ export async function GET(req: Request) {
       pi: { configured: piConfigured(), network: piNetwork() },
       database: supabaseEnabled,
       /** Partner data APIs switched on in Vercel (see docs/PARTNER_APIS.md). */
-      partners: { mapOfPi: mapOfPiConfigured(), sallaApi: sallaApiConfigured() },
+      partners: { mapOfPi: mapOfPiConfigured(), sallaApi: sallaApiReady() },
       devLogin: devLoginAllowed(),
       geo: {
         country: geo.country,

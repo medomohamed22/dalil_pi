@@ -1,5 +1,5 @@
 import "server-only";
-import { createHash } from "node:crypto";
+import { createHash, createHmac, randomBytes } from "node:crypto";
 import { BrowserSession, browserAvailable, type SallaCatalogRaw } from "./browser";
 import { expandQuery, synonymGroups } from "./lexicon";
 import { fetchWithTimeout, assertPublicUrl } from "./net";
@@ -40,6 +40,8 @@ export interface CatalogItem {
   title_ar?: string | null;
   description?: string | null;
   price?: number | null;
+  /** "Was" price in Pi (Salla partner API). */
+  list_price?: number | null;
   price_egp?: number | null;
   list_price_egp?: number | null;
   url: string;
@@ -72,7 +74,7 @@ interface SourceState {
   items: number;
   ok: boolean | null;
   error: string | null;
-  meta: { usd_rate?: number; profit_percentage?: number; pi_price_cache?: number; enriched_at?: string };
+  meta: { usd_rate?: number; profit_percentage?: number; pi_price_cache?: number; enriched_at?: string; etag?: string; version?: string; via?: string };
 }
 
 /* ------------------------------------------------------------------ */
@@ -353,55 +355,107 @@ export function parseSalla(raw: SallaCatalogRaw): { items: CatalogItem[]; meta: 
 }
 
 /**
- * Salla Shop's partner API (docs/salla-partner): the same catalog as JSON in ~1 s, no browser.
- * Used when SALLA_API_URL + SALLA_API_KEY are set; the headless page read stays the fallback.
+ * Salla Shop partner catalog API (docs/salla-partner/partner-catalog.md): read-only, every request
+ * signed with HMAC-SHA256 (timestamp + one-time nonce). Prices come in Pi already (no shipping).
+ * Env (server only): SALLA_BASE_URL, SALLA_PARTNER_ID, SALLA_SECRET. The page read stays the fallback.
  */
-export async function fetchSallaApi(): Promise<{ items: CatalogItem[]; meta: SourceState["meta"] }> {
-  const api = base(process.env.SALLA_API_URL);
-  const key = process.env.SALLA_API_KEY;
-  if (!api || !key) throw new Error("Salla API not configured");
-  const rows: Array<Record<string, unknown>> = [];
-  let meta: SourceState["meta"] = {};
-  for (let page = 1, pages = 1; page <= Math.min(pages, 50); page++) {
-    const url = `${api}/catalog?page=${page}&limit=200`;
-    if (!allowPrivate()) await assertPublicUrl(url);
-    const res = await fetchWithTimeout(url, { headers: { Accept: "application/json", Authorization: `Bearer ${key}`, "User-Agent": UA }, redirect: "error", timeoutMs: 10000 });
-    if (!res.ok) throw new Error(`Salla API answered ${res.status}`);
-    const j = (await res.json()) as { products?: Array<Record<string, unknown>>; pages?: number; rates?: Record<string, unknown> };
-    pages = Number(j.pages) || 1;
-    if (j.rates) meta = { usd_rate: num(j.rates.usd_rate) ?? undefined, pi_price_cache: num(j.rates.pi_price_cache) ?? undefined, profit_percentage: num(j.rates.profit_percentage) ?? undefined };
-    const list = Array.isArray(j.products) ? j.products : [];
-    rows.push(...list);
-    if (!list.length) break;
+export const sallaApiReady = () => !!(process.env.SALLA_BASE_URL && process.env.SALLA_PARTNER_ID && process.env.SALLA_SECRET);
+const EMPTY_SHA256 = createHash("sha256").update("").digest("hex");
+
+/** Headers for one signed GET (exported for tests). `fnPath` = "/partner-catalog". */
+export function sallaSign(fnPath: string, pathAndQuery: string, secret: string, partner: string, now = Date.now()) {
+  const ts = String(Math.floor(now / 1000));
+  const nonce = randomBytes(16).toString("hex");
+  const canonical = ["GET", `${fnPath}${pathAndQuery}`, ts, nonce, EMPTY_SHA256].join("\n");
+  const sig = createHmac("sha256", secret).update(canonical).digest("hex");
+  return { "X-Partner-Id": partner, "X-Timestamp": ts, "X-Nonce": nonce, "X-Signature": sig };
+}
+
+async function sallaGet(pathAndQuery: string, etag?: string): Promise<Response> {
+  const api = base(process.env.SALLA_BASE_URL);
+  const url = new URL(api + pathAndQuery);
+  if (url.protocol !== "https:" && !allowPrivate()) throw new Error("SALLA_BASE_URL must be https");
+  if (!allowPrivate()) await assertPublicUrl(url.toString());
+  // The function sees its own name as the path root: ".../functions/v1/partner-catalog" → "/partner-catalog".
+  const fnPath = "/" + (new URL(api).pathname.split("/").filter(Boolean).pop() ?? "");
+  const headers: Record<string, string> = { Accept: "application/json", "User-Agent": UA, ...sallaSign(fnPath, pathAndQuery, process.env.SALLA_SECRET!, process.env.SALLA_PARTNER_ID!) };
+  if (etag) headers["If-None-Match"] = etag;
+  return fetchWithTimeout(url.toString(), { headers, redirect: "error", timeoutMs: 10000 });
+}
+
+export type SallaApiResult = { notModified: true; etag?: string } | { notModified?: false; items: CatalogItem[]; meta: SourceState["meta"] };
+
+/** The whole in-stock catalog (pages of 200). `etag` from the last pull → 304 = nothing changed. */
+export async function fetchSallaApi(etag?: string): Promise<SallaApiResult> {
+  if (!sallaApiReady()) throw new Error("Salla API not configured");
+  // All pages of one pull must share one `version`; if it changes mid-pull, start again (once).
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const rows: Array<Record<string, unknown>> = [];
+    let version: unknown;
+    let firstEtag: string | undefined;
+    let restart = false;
+    for (let page = 1, pages = 1; page <= Math.min(pages, 25); page++) {
+      const res = await sallaGet(`/catalog?page=${page}&limit=200`, page === 1 ? etag : undefined);
+      if (res.status === 304 && page === 1) return { notModified: true, etag };
+      if (res.status === 429) throw new Error(`Salla API: too many requests (retry after ${res.headers.get("retry-after") ?? "?"} s)`);
+      if (!res.ok) throw new Error(`Salla API answered ${res.status}`);
+      if (page === 1) firstEtag = res.headers.get("etag") ?? undefined;
+      const j = (await res.json()) as { products?: Array<Record<string, unknown>>; pages?: number; version?: unknown };
+      if (page === 1) version = j.version;
+      else if (j.version !== version) {
+        restart = true;
+        break;
+      }
+      pages = Math.max(1, Math.floor(Number(j.pages) || 1));
+      const list = Array.isArray(j.products) ? j.products : [];
+      rows.push(...list);
+      if (!list.length) break;
+    }
+    if (restart) continue;
+    const items: CatalogItem[] = [];
+    for (const p of rows) {
+      const id = str(p.id, 64);
+      const title = str(p.title, 200);
+      const pi = num(p.price);
+      const url = str(p.url, 300);
+      if (!id || !/^[0-9a-f-]{36}$/i.test(id) || !title || !(pi && pi > 0) || p.in_stock === false) continue;
+      if (String(p.currency ?? "PI").toUpperCase() !== "PI") continue;
+      if (url !== `https://mall.salla-shop.com/product/${id}`) continue; // only real Salla product links
+      const pics = [p.image, ...(Array.isArray(p.images) ? p.images : [])].map(httpsImg).filter(Boolean) as string[];
+      const was = num(p.list_price);
+      items.push({
+        id: `salla:${id}`,
+        source: "salla",
+        title,
+        title_ar: str(p.title_ar, 200),
+        description: [str(p.description, 300), str(p.description_ar, 300)].filter(Boolean).join(" — ") || null,
+        url,
+        price: Math.round(pi * 1e4) / 1e4,
+        list_price: was && was > pi ? Math.round(was * 1e4) / 1e4 : null,
+        price_egp: null,
+        list_price_egp: null,
+        image: pics[0] ?? null,
+        images: [...new Set(pics)].slice(0, 8),
+        category: [str(p.category, 60), str(p.category_ar, 60)].filter(Boolean).join(" / ") || null,
+        tags: (Array.isArray(p.tags) ? p.tags : []).map((x) => str(x, 40)).filter(Boolean).slice(0, 10) as string[],
+        in_stock: true,
+        stock: null,
+        digital: false,
+      });
+    }
+    return { items, meta: { etag: firstEtag, version: version == null ? undefined : String(version).slice(0, 80), via: "api" } };
   }
-  const items: CatalogItem[] = [];
-  for (const p of rows) {
-    const id = str(p.id, 64);
-    const title = str(p.title, 200);
-    const egp = num(p.price_egp);
-    const url = str(p.url, 300);
-    if (!id || !/^[0-9a-f-]{36}$/i.test(id) || !title || !(egp && egp > 0) || p.in_stock === false) continue;
-    if (url !== `https://mall.salla-shop.com/product/${id}`) continue; // only real Salla product links
-    const pics = [p.image, ...(Array.isArray(p.images) ? p.images : [])].map(httpsImg).filter(Boolean) as string[];
-    items.push({
-      id: `salla:${id}`,
-      source: "salla",
-      title,
-      title_ar: str(p.title_ar, 200),
-      description: [str(p.description, 300), str(p.description_ar, 300)].filter(Boolean).join(" — ") || null,
-      url,
-      price_egp: egp,
-      list_price_egp: (num(p.list_price_egp) ?? 0) > egp ? num(p.list_price_egp) : null,
-      image: pics[0] ?? null,
-      images: [...new Set(pics)].slice(0, 8),
-      category: [str(p.category, 60), str(p.category_ar, 60)].filter(Boolean).join(" / ") || null,
-      tags: (Array.isArray(p.tags) ? p.tags : []).map((x) => str(x, 40)).filter(Boolean).slice(0, 10) as string[],
-      in_stock: true,
-      stock: num(p.stock),
-      digital: false,
-    });
+  throw new Error("Salla catalog kept changing during the pull");
+}
+
+/** Pi price (and "was" price) of an indexed item: Salla page-read rows are in EGP, API rows in Pi. */
+export function piPrices(it: CatalogItem, sallaMeta: SourceState["meta"]): { price: number | null; listPrice?: number } {
+  if (it.source === "salla" && it.price_egp) {
+    return { price: sallaPi(Number(it.price_egp), sallaMeta), listPrice: it.list_price_egp ? (sallaPi(Number(it.list_price_egp), sallaMeta) ?? undefined) : undefined };
   }
-  return { items, meta };
+  const price = it.price != null ? Number(it.price) : null;
+  const list = it.list_price != null ? Number(it.list_price) : undefined;
+  return { price, listPrice: list && price && list > price ? list : undefined };
 }
 
 /** Salla's own formula (checked against its pages): Pi = EGP ÷ usd_rate ÷ Pi price × (1 + profit %). */
@@ -427,7 +481,7 @@ attachMemoryCatalog(
 
 const fingerprint = (it: CatalogItem) =>
   createHash("sha1")
-    .update(JSON.stringify([it.title, it.title_ar, it.description, it.price, it.price_egp, it.list_price_egp, it.image, it.images, it.in_stock, it.stock, it.category, it.tags, it.country, it.ships_global, it.shipping]))
+    .update(JSON.stringify([it.title, it.title_ar, it.description, it.price, it.list_price, it.price_egp, it.list_price_egp, it.image, it.images, it.in_stock, it.stock, it.category, it.tags, it.country, it.ships_global, it.shipping]))
     .digest("hex")
     .slice(0, 16);
 
@@ -491,6 +545,20 @@ async function fail(source: CatalogSource, err: Error, started: number) {
     .eq("source", source);
 }
 
+/** Nothing changed at the store (HTTP 304): only the "last read" time moves. */
+async function touch(source: CatalogSource, meta: SourceState["meta"], items: number, started: number) {
+  const now = new Date().toISOString();
+  if (!supabaseEnabled) {
+    const s = mem.sources.get(source);
+    mem.sources.set(source, { ...(s ?? { source, items, meta }), refreshed_at: now, ok: true, error: null, lock_until: 0 });
+    return;
+  }
+  await supabase()
+    .from("catalog_sources")
+    .update({ refreshed_at: now, ok: true, error: null, duration_ms: Date.now() - started, meta, lock_until: null })
+    .eq("source", source);
+}
+
 export interface RefreshResult {
   source: CatalogSource;
   status: "fresh" | "locked" | "updated" | "failed" | "skipped";
@@ -511,7 +579,7 @@ export async function refreshCatalog(opts: { force?: boolean; sources?: CatalogS
       want.map(async (source): Promise<RefreshResult> => {
         const started = Date.now();
         try {
-          const sallaApi = !!(process.env.SALLA_API_URL && process.env.SALLA_API_KEY);
+          const sallaApi = sallaApiReady();
           if (source === "salla" && !sallaApi && !browserAvailable()) return { source, status: "skipped", error: "no browser" };
           if (!(await claim(source))) return { source, status: "locked" };
           let items: CatalogItem[];
@@ -520,16 +588,23 @@ export async function refreshCatalog(opts: { force?: boolean; sources?: CatalogS
           else if (source === "pkt") items = await fetchPkt();
           else if (source === "gtp") items = await fetchGtp();
           else {
-            // Partner API first (fast, no browser); the public page read is the fallback.
-            const viaApi = sallaApi ? await fetchSallaApi().catch(() => null) : null;
-            let parsed = viaApi?.items.length ? viaApi : null;
-            if (!parsed) {
-              if (!browserAvailable()) throw new Error("Salla API failed and no browser");
-              browser ??= new BrowserSession();
-              parsed = parseSalla(await browser.sallaCatalog());
+            // Partner API first (signed, fast, no browser); the public page read is the fallback.
+            const prev = states.get("salla");
+            const etag = prev?.ok && prev.meta?.via === "api" && prev.items > 0 ? prev.meta.etag : undefined;
+            let apiErr: string | null = null;
+            const viaApi = sallaApi ? await fetchSallaApi(etag).catch((e: Error) => ((apiErr = e.message), null)) : null;
+            if (viaApi?.notModified) {
+              await touch(source, prev!.meta, prev!.items, started);
+              return { source, status: "updated", items: prev!.items, ms: Date.now() - started };
             }
-            if (!parsed.meta.usd_rate || !parsed.meta.pi_price_cache) throw new Error("Salla prices settings not found");
-            ({ items, meta } = parsed);
+            if (viaApi && viaApi.items.length) ({ items, meta } = viaApi);
+            else {
+              if (!browserAvailable()) throw new Error(`Salla API failed (${apiErr ?? "empty"}) and no browser`);
+              browser ??= new BrowserSession();
+              const parsed = parseSalla(await browser.sallaCatalog());
+              if (!parsed.meta.usd_rate || !parsed.meta.pi_price_cache) throw new Error("Salla prices settings not found");
+              ({ items, meta } = parsed);
+            }
           }
           // An empty read is far more likely a broken page than an empty store: keep the old copy.
           if (!items.length) throw new Error("no products read");
@@ -560,7 +635,9 @@ export function refreshInBackground(sources?: CatalogSource[]): Promise<unknown>
 
 function isStale(s: SourceState | undefined, source: CatalogSource): boolean {
   if (!s?.refreshed_at) return true;
-  return Date.now() - Date.parse(s.refreshed_at) > TTL_MIN[source] * 60_000;
+  // With the partner API Salla is cheap to check (304 when nothing changed): hourly, as Salla asks.
+  const ttl = source === "salla" && sallaApiReady() ? 60 : TTL_MIN[source];
+  return Date.now() - Date.parse(s.refreshed_at) > ttl * 60_000;
 }
 
 /** Stores whose copy is older than its TTL (or never read). */
@@ -811,13 +888,7 @@ export async function searchCatalog(
         best = Math.max(best, scores.reduce((a, b) => a + b, 0) / (3 * ws.length));
       }
       if (!best) continue;
-      let price: number | null = it.price ?? null;
-      let listPrice: number | undefined;
-      if (it.source === "salla") {
-        const meta = idx.states.get("salla")?.meta ?? {};
-        price = sallaPi(Number(it.price_egp), meta);
-        listPrice = it.list_price_egp ? (sallaPi(Number(it.list_price_egp), meta) ?? undefined) : undefined;
-      }
+      const { price, listPrice } = piPrices(it, idx.states.get("salla")?.meta ?? {});
       if (!price || !(price > 0)) continue;
       const boost = (it.in_stock ? 0.05 : -0.2) + (it.image ? 0.03 : 0) + (it.source === "pcm" ? 0.04 : 0);
       hits.push({ item: it, score: Math.round((best + boost) * 1000) / 1000, price: Number(price), listPrice, store: STORE_NAME[it.source], ageMin: ages.get(it.source) ?? -1 });
@@ -842,7 +913,7 @@ export async function indexedPrice(url: string): Promise<number | undefined> {
   if (!row) return;
   const st = idx.states.get(row.item.source);
   if (!st?.refreshed_at || Date.now() - Date.parse(st.refreshed_at) > 2 * TTL_MIN[row.item.source] * 60_000) return;
-  return row.item.source === "salla" ? (sallaPi(Number(row.item.price_egp), st.meta ?? {}) ?? undefined) : (row.item.price ?? undefined);
+  return piPrices(row.item, idx.states.get("salla")?.meta ?? {}).price ?? undefined;
 }
 
 /** The same product (brand + model) in OTHER stores that reach the country, cheapest first. */
@@ -855,7 +926,7 @@ export async function twinsOf(itemId: string, country: string): Promise<IndexHit
   for (const r of idx.twins.get(me.twin_key) ?? []) {
     const it = r.item;
     if (it.id === me.id || it.source === me.source || hidden.has(it.source) || !reaches(it, country)) continue;
-    const price = it.source === "salla" ? sallaPi(Number(it.price_egp), idx.states.get("salla")?.meta ?? {}) : (it.price ?? null);
+    const { price } = piPrices(it, idx.states.get("salla")?.meta ?? {});
     if (!price) continue;
     const ship = it.shipping && country in it.shipping ? it.shipping[country] : 0;
     out.push({ item: it, score: 1, price: Math.round((price + (ship || 0)) * 100) / 100, store: STORE_NAME[it.source], ageMin: -1 });
@@ -869,9 +940,8 @@ export async function catalogItem(id: string, country: string): Promise<IndexHit
   const it = idx.rows.find((r) => r.item.id === id)?.item;
   if (!it || !reaches(it, country) || (await hiddenSources()).has(it.source)) return null;
   const meta = idx.states.get("salla")?.meta ?? {};
-  const price = it.source === "salla" ? sallaPi(Number(it.price_egp), meta) : (it.price ?? null);
+  const { price, listPrice } = piPrices(it, meta);
   if (!price) return null;
-  const listPrice = it.source === "salla" && it.list_price_egp ? (sallaPi(Number(it.list_price_egp), meta) ?? undefined) : undefined;
   const at = idx.states.get(it.source)?.refreshed_at;
   return { item: it, score: 1, price, listPrice, store: STORE_NAME[it.source], ageMin: at ? Math.round((Date.now() - Date.parse(at)) / 60_000) : -1 };
 }

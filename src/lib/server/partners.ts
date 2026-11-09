@@ -11,9 +11,9 @@ import { assertPublicUrl, fetchWithTimeout } from "./net";
  *      GET  {api}/sellers/{seller_id}    seller details (address, rating, description)
  *      GET  {api}/sellers/item/{id}      the seller's items with Pi prices and stock
  *
- *  Salla Shop (Pi marketplace)          SALLA_API_URL, SALLA_API_KEY
- *    "Dalil Pi Partner API v1" (docs/PARTNER_APIS.md):
- *      GET  {api}/products?q=&country=&limit=   → { products: PartnerProduct[] }
+ *  Salla Shop (Pi marketplace)          SALLA_BASE_URL, SALLA_PARTNER_ID, SALLA_SECRET
+ *    Salla's own signed catalog API (docs/salla-partner/partner-catalog.md), read hourly into
+ *    Dalil Index by catalog.ts (fetchSallaApi). No search endpoint: searches use the index.
  *
  * See docs/PARTNER_APIS.md for the full contract and the access requests.
  */
@@ -158,45 +158,6 @@ export async function mapOfPiNearby(opts: { lat: number; lon: number; radiusKm?:
       } satisfies LocalShop;
     }),
   );
-}
-
-/* ======================= Salla Shop (Partner API v1) ======================= */
-
-export function sallaApiConfigured(): boolean {
-  return !!process.env.SALLA_API_URL && !!process.env.SALLA_API_KEY;
-}
-
-export interface PartnerProduct {
-  id: string;
-  title: string;
-  url: string;
-  image?: string;
-  price: number;
-  currency: string;
-  in_stock?: boolean;
-  rating?: number;
-  review_count?: number;
-  ships_to?: string[];
-  store?: { id?: string; name?: string; rating?: number; review_count?: number; verified?: boolean };
-}
-
-/** Product search on Salla Shop through its partner API (exact prices, links, images, stock). */
-export async function sallaApiSearch(q: string, opts: { country?: string; limit?: number } = {}): Promise<PartnerProduct[]> {
-  const api = base(process.env.SALLA_API_URL);
-  if (!api || !process.env.SALLA_API_KEY) throw new Error("Salla API not configured");
-  const params = new URLSearchParams({ q: q.slice(0, 80), limit: String(Math.min(24, opts.limit ?? 12)) });
-  if (opts.country) params.set("country", opts.country);
-  const j = await getJson<{ products?: PartnerProduct[] }>(`${api}/products?${params}`, { key: process.env.SALLA_API_KEY, timeoutMs: 5000 });
-  return (j?.products ?? [])
-    .filter((p) => p && p.title && p.url && Number(p.price) > 0)
-    .map((p) => ({ ...p, price: Number(p.price), currency: String(p.currency || "PI").toUpperCase() }))
-    .filter((p) => {
-      try {
-        return ["https:", ...(allowPrivate() ? ["http:"] : [])].includes(new URL(p.url).protocol);
-      } catch {
-        return false;
-      }
-    });
 }
 
 /* ======================= Pi Chain Mall (pipcm.com) ======================= */

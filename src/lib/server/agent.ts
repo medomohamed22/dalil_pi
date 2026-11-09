@@ -14,8 +14,8 @@ import { PriceEvidence } from "./evidence";
 import { cached, norm } from "./cache";
 import { expandQuery } from "./lexicon";
 import { pickLocalShops } from "./salla-local";
-import { searchCatalog } from "./catalog";
-import { marketplacesEnabled, marketplacesSearch, mapOfPiConfigured, mapOfPiNearby, pcmEnabled, pcmSearch, sallaApiConfigured, sallaApiSearch } from "./partners";
+import { searchCatalog, sallaApiReady, type IndexHit } from "./catalog";
+import { marketplacesEnabled, marketplacesSearch, mapOfPiConfigured, mapOfPiNearby, pcmEnabled, pcmSearch } from "./partners";
 import type { AgentEvent, Lang, Offer, Scope, Step, WireMessage } from "../types";
 
 const OFFER_SCHEMA = {
@@ -420,7 +420,7 @@ export async function runAgent(opts: RunOptions): Promise<{ offersShown: boolean
     ...(pcmEnabled() ? [PCM_TOOL] : []),
     ...(marketplacesEnabled() ? [MARKETS_TOOL] : []),
     MERCHANTS_TOOL,
-    ...(hasBrowser || sallaApiConfigured() ? [SALLA_TOOL] : []),
+    ...(hasBrowser || sallaApiReady() ? [SALLA_TOOL] : []),
     ...(mapOfPiConfigured() ? [MAPOFPI_TOOL] : []),
     ...(hasBrowser ? [SALLA_LOCAL_TOOL] : []),
     ...(hasBrowser ? BROWSER_TOOLS : []),
@@ -609,35 +609,16 @@ async function execTool(
       // One language only? Add the Arabic/English translation (Salla's catalog is mixed).
       if (qs.length === 1) qs = expandQuery(qs[0]);
       if (!qs.length) throw new Error("empty query");
-      // Partner API first (exact, ~0.5 s); the headless browser is the fallback.
-      if (sallaApiConfigured()) {
-        try {
-          const lists = await Promise.all(qs.map((q) => cached("salla-api", `${ctx.locale.country}|${norm(q)}`, 5 * 60_000, () => sallaApiSearch(q, { country: ctx.locale.country, limit: 12 }))));
-          const seen = new Set<string>();
-          const out: Array<Record<string, unknown>> = [];
-          for (const p of lists.flat()) {
-            if (seen.has(p.url)) continue;
-            seen.add(p.url);
-            ctx.evidence.addObserved(p.url, p.price);
-            ctx.pages.set(p.url, { image: p.image, rating: p.rating, reviewCount: p.review_count });
-            out.push({
-              title: p.title,
-              store: p.store?.name ? `${p.store.name} (Salla Shop)` : "Salla Shop Mall",
-              url: p.url,
-              image: p.image,
-              price: p.price,
-              currency: p.currency,
-              inStock: p.in_stock,
-              rating: p.rating,
-              reviewCount: p.review_count,
-              storeRating: p.store?.rating,
-              kind: "online",
-              piEvidence: "Pi price from Salla Shop's partner API",
-            });
-          }
-          if (out.length) return out.slice(0, 16);
-        } catch {
-          /* fall back to the browser */
+      // Salla's partner API has no search: with it, the hourly copy in Dalil Index is searched
+      // (exact Pi prices from Salla); the headless browser is the fallback.
+      if (sallaApiReady()) {
+        const { hits } = await searchCatalog(qs, { country: ctx.locale.country, limit: 16, sources: ["salla"] }).catch(() => ({ hits: [] as IndexHit[] }));
+        if (hits.length) {
+          return hits.map((h) => {
+            ctx.evidence.addObserved(h.item.url, h.price);
+            ctx.pages.set(h.item.url, { image: h.item.image ?? undefined });
+            return { title: h.item.title, ...(h.item.title_ar ? { title_ar: h.item.title_ar } : {}), store: "Salla Shop Mall", url: h.item.url, image: h.item.image ?? undefined, price: h.price, currency: "PI", listPrice: h.listPrice, inStock: h.item.in_stock, kind: "online", piEvidence: "Pi price from Salla Shop's partner catalog" };
+          });
         }
       }
       if (!ctx.browser || !ctx.viaBrowser) throw new Error("Salla search unavailable right now");

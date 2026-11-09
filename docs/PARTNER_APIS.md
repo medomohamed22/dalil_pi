@@ -11,7 +11,7 @@ Check it worked at `https://<your-domain>/api/config` → `"partners": { "mapOfP
 | Partner | Vercel variables | What it powers |
 |---|---|---|
 | Map of Pi | `MAPOFPI_API_URL` (required), `MAPOFPI_API_KEY` (if they give one), `MAPOFPI_APP_URL` (optional, default `https://mapofpi7689.pinet.com`) | "Near me": real Pi shops around the user with address, pin, rating, trust meter and item prices in Pi |
-| Salla Shop | `SALLA_API_URL`, `SALLA_API_KEY` (both required) | Product search on Salla Shop Mall without the headless browser |
+| Salla Shop | `SALLA_BASE_URL`, `SALLA_PARTNER_ID`, `SALLA_SECRET` (all required) | Salla Shop Mall catalog in Dalil Index without the headless browser |
 
 Until then: local shops come from web search, and Salla search uses its public search page in a
 headless browser (slower). Dalil Pi never opens Map of Pi / Pi apps in the browser any more —
@@ -40,7 +40,19 @@ production API base URL, an API key if they want one, and their rate limit.
 
 ---
 
-## 2. Salla Shop — "Dalil Pi Partner API v1"
+## 2. Salla Shop — partner catalog API (live contract from Salla)
+
+> **In use.** Salla sent their own API: [`docs/salla-partner/partner-catalog.md`](salla-partner/partner-catalog.md).
+> Every request is signed (HMAC-SHA256 of method, path, timestamp, one-time nonce and body hash).
+> Set on Vercel (server only): `SALLA_BASE_URL` = `https://<project-ref>.supabase.co/functions/v1/partner-catalog`,
+> `SALLA_PARTNER_ID`, `SALLA_SECRET`. Dalil Index pulls `GET /catalog` once an hour with `If-None-Match`
+> (304 = nothing changed); the headless page read stays the fallback. There is no search endpoint —
+> the `search_salla` tool searches the indexed copy.
+>
+> The older proposal below (and [`docs/salla-partner/README.md`](salla-partner/README.md)) is kept for history only.
+
+### Old proposal (not used)
+
 
 > **Ready-to-deploy version:** [`docs/salla-partner/`](salla-partner/) — a read-only Supabase Edge
 > Function for Salla's own project (no DB changes): `GET /catalog` (whole catalog, paged — Dalil

@@ -33,7 +33,7 @@ PayPal features from Dalil (holds, refunds, watches, family, group buy, demo tou
 6. Merchants who register on `/merchants` start as `pending` — approve them in Supabase → Table editor → `merchants` → `status = approved` (or set `MERCHANTS_AUTO_APPROVE=1`).
 7. Telegram notifications: create a bot with @BotFather, add `TELEGRAM_BOT_TOKEN`, `TELEGRAM_BOT_USERNAME`, `TELEGRAM_WEBHOOK_SECRET` in Vercel, redeploy, then run once:
    `curl -H "Authorization: Bearer $CRON_SECRET" https://<your-domain>/api/telegram/setup` (registers the webhook). Users connect in My account → Preferences → "Connect Telegram"; the daily cron sends each one a digest.
-8. Optional, once the partners give access: Map of Pi and Salla Shop data APIs (`MAPOFPI_API_URL`, `SALLA_API_URL`, …) — see [`docs/PARTNER_APIS.md`](docs/PARTNER_APIS.md), including the request messages to send them. `/api/config` then shows `partners.mapOfPi` / `partners.sallaApi` = `true`.
+8. Optional, once the partners give access: Map of Pi and Salla Shop data APIs (`MAPOFPI_API_URL`, `SALLA_BASE_URL` + `SALLA_PARTNER_ID` + `SALLA_SECRET`, …) — see [`docs/PARTNER_APIS.md`](docs/PARTNER_APIS.md), including the request messages to send them. `/api/config` then shows `partners.mapOfPi` / `partners.sallaApi` = `true`.
 
 ## Run locally
 ```bash
