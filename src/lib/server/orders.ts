@@ -93,6 +93,15 @@ export async function listOrders(uid: string, limit = 50): Promise<Order[]> {
  * Creates an order from a server-signed offer. The address is optional: given
  * an id it uses that one, otherwise the user's default address (if any).
  */
+function hostOfLink(url?: string): string | undefined {
+  if (!url) return;
+  try {
+    return new URL(url).hostname.replace(/^www\./, "").toLowerCase();
+  } catch {
+    return;
+  }
+}
+
 export async function createOrder(uid: string, offer: Offer, addressId?: string, quantity = 1, auto?: { email: string }): Promise<Order> {
   if (!verifyOffer(offer)) throw new BadOffer("This offer expired or was changed. Search again to get a fresh price.");
   if (offer.flags?.includes("price_unverified")) throw new BadOffer("This price wasn't confirmed on the store page.");
@@ -116,7 +125,8 @@ export async function createOrder(uid: string, offer: Offer, addressId?: string,
   const base = {
     status: "draft" as OrderStatus,
     store_name: offer.store,
-    store_domain: offer.storeDomain ?? null,
+    // The store is the signed product link's host (the client can't point reviews at another store).
+    store_domain: hostOfLink(offer.url) ?? null,
     product_title: offer.title,
     product_url: offer.url ?? null,
     product_image: offer.image ?? null,

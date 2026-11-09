@@ -1,4 +1,5 @@
 import { after } from "next/server";
+import { BodyTooLarge, readJson } from "@/lib/server/body";
 import { z } from "zod";
 import { runAgent } from "@/lib/server/agent";
 import { refreshInBackground } from "@/lib/server/catalog";
@@ -12,6 +13,7 @@ import type { AgentEvent, Offer } from "@/lib/types";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
+const CHAT_MAX_BYTES = 4_000_000;
 
 /**
  * Runs the shopping agent for a signed-in Pi user. The agent always runs on
@@ -56,8 +58,10 @@ export async function POST(req: Request) {
 
   let body: z.infer<typeof Body>;
   try {
-    body = Body.parse(await req.json());
-  } catch {
+    // Up to 4 MB (photos included) — under Vercel's 4.5 MB request limit, checked before parsing.
+    body = Body.parse(await readJson(req, CHAT_MAX_BYTES));
+  } catch (e) {
+    if (e instanceof BodyTooLarge) return Response.json({ error: "Request too large — send fewer or smaller photos.", code: e.code }, { status: 413 });
     return Response.json({ error: "Invalid request" }, { status: 400 });
   }
   if (!hostedEnabled()) return Response.json({ error: "The AI is not configured (META_API_KEY).", code: "NO_API_KEY" }, { status: 503 });

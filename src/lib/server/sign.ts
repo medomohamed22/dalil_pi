@@ -12,7 +12,8 @@ const TTL_MS = 24 * 60 * 60 * 1000;
 function secret(): string {
   const s = process.env.OFFER_SIGNING_SECRET;
   if (s) return s;
-  if (process.env.NODE_ENV === "production" && process.env.VERCEL) {
+  // Any production run (Vercel or not) needs its own long secret: the dev one is public in this repo.
+  if (process.env.NODE_ENV === "production" || process.env.VERCEL) {
     throw new Error("OFFER_SIGNING_SECRET must be set");
   }
   return "dalil-pi-local-dev-secret";
@@ -21,7 +22,7 @@ function secret(): string {
 function payload(o: Offer, exp: number): string {
   return JSON.stringify([
     o.id, o.title, o.store, o.url ?? "", o.image ?? "", o.price, o.shipping ?? 0,
-    o.total, o.currency, o.trust, o.trustScore ?? -1, o.checkout ?? "", o.country ?? "", exp,
+    o.total, o.currency, o.trust, o.trustScore ?? -1, o.checkout ?? "", o.country ?? "", o.storeDomain ?? "", exp,
     [...(o.flags ?? [])].sort().join(","),
   ]);
 }

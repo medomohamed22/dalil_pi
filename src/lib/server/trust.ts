@@ -69,12 +69,17 @@ async function fulfilment(domains: string[]): Promise<Map<string, { good: number
   const out = new Map<string, { good: number; bad: number }>();
   if (!supabaseEnabled || !domains.length) return out;
   try {
-    const { data } = await supabase().from("orders").select("store_domain, status").in("store_domain", domains).in("status", ["delivered", "paid", "shipped", "failed", "cancelled"]).limit(5000);
+    // Statuses are the buyers' own word (payment happens in the store): one vote per Pi account per store.
+    const { data } = await supabase().from("orders").select("pi_uid, store_domain, status").in("store_domain", domains).in("status", ["delivered", "failed"]).limit(5000);
+    const seen = new Set<string>();
     for (const r of data ?? []) {
       const k = r.store_domain as string;
+      const who = `${k}|${r.pi_uid}`;
+      if (seen.has(who)) continue;
+      seen.add(who);
       const cur = out.get(k) ?? { good: 0, bad: 0 };
       if (r.status === "delivered") cur.good++;
-      else if (r.status === "failed") cur.bad++;
+      else cur.bad++;
       out.set(k, cur);
     }
   } catch {
@@ -118,8 +123,8 @@ export async function scoreTrust(offers: Offer[], opts: { lookupAge?: boolean; n
     // A Pi payment method in the store's own checkout is first-hand evidence it takes Pi.
     const official = o.trust === "verified" ? 1 : o.checkout === "woo_pi" ? 0.8 : o.piEvidence ? 0.5 : 0;
     const sig = signals.get(o.storeDomain ?? o.store.toLowerCase());
-    // Verified Dalil Pi buyer reviews count 3× a store-page review.
-    const dn = (sig?.reviews ?? 0) * 3;
+    // Dalil Pi buyer reviews (one per Pi account; the purchase is self-reported) count like a store-page review.
+    const dn = sig?.reviews ?? 0;
     const n = (o.reviewCount ?? 0) + dn;
     const sum = (o.rating ?? 0) * (o.reviewCount ?? 0) + (sig?.avg ?? 0) * dn;
     const bayes = n ? (sum + 3.6 * 20) / (n + 20) : o.rating ? o.rating : 3.4;

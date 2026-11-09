@@ -114,9 +114,26 @@ async function ownOrder(uid: string, orderId: string) {
   return o;
 }
 
+/**
+ * Orders are paid in the store's own checkout, so Dalil Pi never sees the payment: an order's
+ * "paid" status is the buyer's own word. Reputation therefore counts each Pi account (one per
+ * verified person) at most once per store, whatever number of orders it marks paid.
+ */
+async function alreadyFor(table: "store_reviews" | "disputes", uid: string, storeDomain: string | null | undefined, storeName: string): Promise<boolean> {
+  if (!supabaseEnabled) {
+    const rows = table === "store_reviews" ? mem.reviews : mem.disputes;
+    return rows.some((r) => r.pi_uid === uid && (storeDomain ? r.store_domain === storeDomain : !r.store_domain && r.store_name.toLowerCase() === storeName.toLowerCase()));
+  }
+  let q = supabase().from(table).select("id", { count: "exact", head: true }).eq("pi_uid", uid);
+  q = storeDomain ? q.eq("store_domain", storeDomain) : q.is("store_domain", null).ilike("store_name", storeName.replace(/[%_\\]/g, ""));
+  const { count } = await q;
+  return (count ?? 0) > 0;
+}
+
 export async function addReview(uid: string, orderId: string, rating: number, comment?: string | null) {
   const o = await ownOrder(uid, orderId);
   if (!["delivered", "paid", "shipped"].includes(o.status)) throw new CommunityError("You can review a store after you paid for the order.");
+  if (await alreadyFor("store_reviews", uid, o.storeDomain, o.storeName)) throw new CommunityError("You already reviewed this store.");
   const row = { pi_uid: uid, order_id: o.id, store_domain: o.storeDomain ?? null, store_name: o.storeName, rating, comment: comment?.trim().slice(0, 500) || null };
   if (!supabaseEnabled) {
     if (mem.reviews.some((r) => r.order_id === o.id)) throw new CommunityError("You already reviewed this order.");
@@ -129,6 +146,8 @@ export async function addReview(uid: string, orderId: string, rating: number, co
 
 export async function addDispute(uid: string, orderId: string, kind: string, details?: string | null) {
   const o = await ownOrder(uid, orderId);
+  if (o.status === "draft") throw new CommunityError("Open the order in the store first.");
+  if (await alreadyFor("disputes", uid, o.storeDomain, o.storeName)) throw new CommunityError("You already reported a problem with this store.");
   const row = { pi_uid: uid, order_id: o.id, store_domain: o.storeDomain ?? null, store_name: o.storeName, kind, details: details?.trim().slice(0, 1000) || null };
   if (!supabaseEnabled) {
     if (mem.disputes.some((r) => r.order_id === o.id)) throw new CommunityError("You already reported this order.");
@@ -158,8 +177,8 @@ export async function storeSignals(stores: { domain?: string; name: string }[]):
   const domains = [...new Set(stores.map((s) => s.domain).filter(Boolean) as string[])];
   const names = [...new Set(stores.filter((s) => !s.domain).map((s) => s.name.toLowerCase()))];
   if (!domains.length && !names.length) return out;
-  let revs: { store_domain: string | null; store_name: string; rating: number }[] = [];
-  let disp: { store_domain: string | null; store_name: string; status: string }[] = [];
+  let revs: { pi_uid: string; store_domain: string | null; store_name: string; rating: number }[] = [];
+  let disp: { pi_uid: string; store_domain: string | null; store_name: string; status: string }[] = [];
   try {
     if (!supabaseEnabled) {
       revs = mem.reviews;
@@ -167,8 +186,8 @@ export async function storeSignals(stores: { domain?: string; name: string }[]):
     } else {
       const or = [domains.length ? `store_domain.in.(${domains.map((d) => `"${d}"`).join(",")})` : "", ...names.slice(0, 10).map((n) => `store_name.ilike.${n.replace(/[,()*%]/g, "")}`)].filter(Boolean).join(",");
       const [a, b] = await Promise.all([
-        supabase().from("store_reviews").select("store_domain, store_name, rating").or(or).limit(2000),
-        supabase().from("disputes").select("store_domain, store_name, status").or(or).neq("status", "rejected").limit(2000),
+        supabase().from("store_reviews").select("pi_uid, store_domain, store_name, rating").or(or).limit(2000),
+        supabase().from("disputes").select("pi_uid, store_domain, store_name, status").or(or).neq("status", "rejected").limit(2000),
       ]);
       revs = a.data ?? [];
       disp = b.data ?? [];
@@ -179,8 +198,10 @@ export async function storeSignals(stores: { domain?: string; name: string }[]):
   for (const s of stores) {
     const key = s.domain ?? s.name.toLowerCase();
     const hit = (r: { store_domain: string | null; store_name: string }) => (s.domain ? r.store_domain === s.domain : r.store_name.toLowerCase() === s.name.toLowerCase());
-    const rs = revs.filter(hit);
-    const ds = disp.filter((d) => hit(d) && (d as { status?: string }).status !== "rejected");
+    // One voice per Pi account per store (older rows from before this rule included).
+    const once = <T extends { pi_uid: string }>(xs: T[]) => [...new Map(xs.map((x) => [x.pi_uid, x])).values()];
+    const rs = once(revs.filter(hit));
+    const ds = once(disp.filter((d) => hit(d) && (d as { status?: string }).status !== "rejected"));
     out.set(key, { reviews: rs.length, avg: rs.length ? Math.round((rs.reduce((a, r) => a + Number(r.rating), 0) / rs.length) * 10) / 10 : null, disputes: ds.length });
   }
   return out;
