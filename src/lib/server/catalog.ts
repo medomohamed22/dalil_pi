@@ -74,7 +74,7 @@ interface SourceState {
   items: number;
   ok: boolean | null;
   error: string | null;
-  meta: { usd_rate?: number; profit_percentage?: number; pi_price_cache?: number; enriched_at?: string; etag?: string; version?: string; via?: string };
+  meta: { usd_rate?: number; profit_percentage?: number; pi_price_cache?: number; enriched_at?: string; etag?: string; version?: string; via?: string; api_error?: string };
 }
 
 /* ------------------------------------------------------------------ */
@@ -562,6 +562,7 @@ async function touch(source: CatalogSource, meta: SourceState["meta"], items: nu
 export interface RefreshResult {
   source: CatalogSource;
   status: "fresh" | "locked" | "updated" | "failed" | "skipped";
+  via?: string;
   items?: number;
   ms?: number;
   error?: string;
@@ -604,12 +605,17 @@ export async function refreshCatalog(opts: { force?: boolean; sources?: CatalogS
               const parsed = parseSalla(await browser.sallaCatalog());
               if (!parsed.meta.usd_rate || !parsed.meta.pi_price_cache) throw new Error("Salla prices settings not found");
               ({ items, meta } = parsed);
+              // Keep why the partner API was not used (shown by the refresh answer / admin), never the secret.
+              if (sallaApi) {
+                meta = { ...meta, api_error: (apiErr ?? "empty catalog").slice(0, 200) };
+                console.warn(`[catalog] Salla API not used: ${meta.api_error}`);
+              }
             }
           }
           // An empty read is far more likely a broken page than an empty store: keep the old copy.
           if (!items.length) throw new Error("no products read");
           await save(source, items, meta, started);
-          return { source, status: "updated", items: items.length, ms: Date.now() - started };
+          return { source, status: "updated", items: items.length, ms: Date.now() - started, ...(meta.api_error ? { error: `Salla API: ${meta.api_error} (page read used)` } : {}), ...(meta.via ? { via: meta.via } : {}) };
         } catch (e) {
           await fail(source, e as Error, started).catch(() => {});
           return { source, status: "failed", error: (e as Error).message, ms: Date.now() - started };
