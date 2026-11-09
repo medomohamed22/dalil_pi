@@ -22,6 +22,9 @@ AI shopping agent for Pi Network. Tell it what you need; it searches stores that
 
 PayPal features from Dalil (holds, refunds, watches, family, group buy, demo tour) were removed.
 
+## Tests
+End-to-end tests against local mock servers (no real AI, Pi or store calls): `npm run build && npm run test:e2e`. See [`tests/e2e/README.md`](tests/e2e/README.md).
+
 ## Setup
 1. **Supabase**: create a project → SQL editor → run the files in [`supabase/migrations`](supabase/migrations) in order (`0001` … `0017` — every file; later ones hold the admin settings, AI-credit refunds and the Salla "was" price). Plan quotas live in the `plans` table. Every paid plan or top-up is a 30-day pack in `subscriptions`; unused searches/orders expire with it. Copy the project URL and the **service-role** key.
 1. **Dalil Index** (instant search over trusted Pi stores): `/api/cron/catalog` copies the public catalogs of Pi Chain Mall, Salla Shop Mall, Piketplace (countries in `PIKET_COUNTRIES`, default `EG`) and Global Trade Pi into `catalog_items` (plain code, no AI). It runs daily from Vercel Cron, after searches when a copy is stale (1 h; Salla 3 h), and hourly from `.github/workflows/catalog.yml` once you add the repository secret `CRON_SECRET`.

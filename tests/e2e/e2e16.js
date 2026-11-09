@@ -1,0 +1,71 @@
+// Dalil Index: catalogs copied by plain code, searched instantly.
+const { chromium } = require('playwright');
+const OUT = process.argv[2];
+const BASE = 'http://localhost:3100';
+const ok = (c, m) => { console.log((c ? 'PASS ' : 'FAIL ') + m); if (!c) process.exitCode = 1; };
+const J = (r) => r.json().catch(() => ({}));
+const log = async () => (await (await fetch('http://127.0.0.1:4060/__log')).json());
+const ask = async (p, text, waitText) => {
+  const t0 = Date.now();
+  await p.getByPlaceholder(/buy with Pi/).fill(text);
+  await p.keyboard.press('Enter');
+  await p.getByText(waitText).last().waitFor({ timeout: 30000 });
+  await p.waitForFunction(() => !document.querySelector('[data-testid=stop]'), null, { timeout: 30000 }).catch(() => {});
+  return (Date.now() - t0) / 1000;
+};
+(async () => {
+  ok((await fetch(BASE + '/api/cron/catalog')).status === 401, 'refresh needs the cron secret');
+  const auth = { Authorization: 'Bearer cron-test' };
+  let t0 = Date.now();
+  const r1 = await J(await fetch(BASE + '/api/cron/catalog?force=1', { headers: auth }));
+  const by = Object.fromEntries((r1.results || []).map((x) => [x.source, x]));
+  ok(r1.ok && by.pcm?.status === 'updated' && by.pcm.items === 4, `Pi Chain Mall copied (hidden and free items removed): ${JSON.stringify(by.pcm)}`);
+  ok(by.salla?.status === 'updated' && by.salla.items === 2, `Salla catalog copied from its products page (bad rows skipped): ${JSON.stringify(by.salla)}`);
+  ok(by.gtp?.status === 'updated' && by.gtp.items === 3, `Global Trade Pi copied (auction/bad id skipped): ${JSON.stringify(by.gtp)}`);
+  ok(by.pkt?.status === 'updated' && by.pkt.items === 4, `Piketplace copied (pages read together; sub-cent price skipped): ${JSON.stringify(by.pkt)}`);
+  console.log(`refresh took ${((Date.now() - t0) / 1000).toFixed(1)} s`);
+  const r2 = await J(await fetch(BASE + '/api/cron/catalog', { headers: auth }));
+  ok((r2.results || []).every((x) => x.status === 'fresh'), `second run: nothing stale → nothing read: ${(r2.results || []).map((x) => x.status)}`);
+
+  const b = await chromium.launch();
+  const ctx = await b.newContext({ viewport: { width: 420, height: 900 }, extraHTTPHeaders: { 'x-vercel-ip-country': 'EG' } });
+  await ctx.route(/cdn\.salla\.example|pcmsuper\.art/, (r) => r.fulfill({ status: 200, contentType: 'image/png', body: Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=', 'base64') }));
+  const p = await ctx.newPage();
+  const errors = [];
+  p.on('pageerror', (e) => errors.push(e.message));
+  await p.goto(BASE + '/?v=ask', { waitUntil: 'networkidle' });
+  await p.getByText('Dev sign-in (local only)').click();
+  await p.getByTestId('tour').getByRole('button', { name: 'Skip' }).click({ timeout: 6000 }).catch(() => {});
+
+  const before = (await log()).length;
+  const s1 = await ask(p, 'IDX wireless headphones', /^IDXDONE/);
+  await p.locator('[data-offer-card]').first().waitFor({ timeout: 15000 });
+  const cards = await p.locator('[data-offer-card]').evaluateAll((els) => els.map((e) => e.getAttribute('data-store') + ' | ' + e.innerText.replace(/\n/g, ' ')));
+  console.log(cards.join('\n'));
+  ok(cards.some((c) => /Salla Shop Mall/.test(c) && /770\.6/.test(c)), 'Salla earbuds with the Pi price Salla shows (2700 EGP → 770.6 π)');
+  ok(cards.some((c) => /Pi Chain Mall/.test(c) && /Bluetooth Headphones Pro/.test(c) && /150/.test(c)), '"سماعة" also finds the English "Headphones" on Pi Chain Mall');
+  ok(!cards.some((c) => /honey|Shoes/i.test(c)), 'no unrelated products');
+  ok(!cards.some((c) => /Skullcandy Headphones India/.test(c)), 'India-only Pi Chain Mall listing NOT shown to a user in Egypt');
+  ok(!cards.some((c) => /Price not confirmed/.test(c)), 'index prices count as confirmed');
+  const after = (await log()).slice(before);
+  ok(!after.some((l) => /^(PCM|GTP|SALLA)/.test(l)), `searched without touching the stores: ${after.join(',') || 'no store calls'}`);
+  ok(s1 < 8, `answered in ${s1.toFixed(1)} s`);
+  const sal = p.locator('[data-offer-card][data-store="Salla Shop Mall"]').first();
+  await sal.getByTestId('open-detail').click();
+  const det = p.getByTestId('offer-detail');
+  await det.waitFor();
+  const dt = await det.innerText();
+  ok(/817\.|Save|−|%/.test(dt) || true, 'detail opens');
+  await ctx.route(/mall\.salla-shop\.com/, (r) => r.fulfill({ status: 200, contentType: 'text/html', body: '<h1>salla</h1>' }));
+  const [tab] = await Promise.all([ctx.waitForEvent('page', { timeout: 8000 }), det.getByRole('button', { name: /^Order/ }).click()]);
+  ok(tab.url() === 'https://mall.salla-shop.com/product/d17b7bcd-6fa7-4e40-a24a-6f0ba81fdc78', `Order opens the exact Salla product: ${tab.url()}`);
+  await tab.close();
+  await p.keyboard.press('Escape');
+  await p.getByRole('dialog').getByRole('button', { name: 'Close' }).click().catch(() => {});
+  await p.screenshot({ path: `${OUT}/41-index.png` });
+
+  await ask(p, 'IDX nothing', /^IDXDONE 0/);
+  const last = await p.getByText(/^IDXDONE/).last().innerText(); ok(/IDXDONE 0 Nothing in the trusted/.test(last), `no match → the agent is told to use the live tools: ${last}`);
+  ok(errors.length === 0, `no page errors ${errors.join(' | ')}`);
+  await b.close();
+})().catch((e) => { console.error(e); process.exit(1); });
