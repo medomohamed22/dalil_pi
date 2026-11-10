@@ -18,6 +18,9 @@ export const metadata: Metadata = {
     "Tell Dalil Pi what you need. It searches stores that accept Pi in your country, checks how trustworthy each store is, and shows ratings and reviews.",
   applicationName: "Dalil Pi",
   manifest: "/manifest.webmanifest",
+  verification: {
+    google: "uK-AN23ynGlpUOs2LoZ-xU3t97DTlawaUKpuJOT_UjA",
+  },
 };
 
 export const viewport: Viewport = {
