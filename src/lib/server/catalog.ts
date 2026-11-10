@@ -822,12 +822,17 @@ function wordScore(w: string, row: Indexed): number {
   return best;
 }
 
-/** Regions Salla Shop Mall ships to (Egypt, the Middle East, Africa). */
-const SALLA_REGION = new Set(
-  "EG SA AE KW QA BH OM YE JO LB SY IQ PS IL TR IR LY TN DZ MA MR SD SS ER DJ SO ET KE UG TZ RW BI CD CG CM NG GH CI SN ML NE TD BF GN GW SL LR TG BJ GA GQ CF AO ZM ZW MW MZ NA BW ZA LS SZ MG MU SC KM CV ST".split(" "),
-);
+/**
+ * Salla Shop Mall is a global mall: its products reach every country unless SALLA_COUNTRIES
+ * lists the ISO codes it should be limited to (e.g. "EG,SA,AE").
+ */
+const SALLA_ONLY = (process.env.SALLA_COUNTRIES ?? "")
+  .split(/[\s,]+/)
+  .map((c) => c.trim().toUpperCase())
+  .filter((c) => /^[A-Z]{2}$/.test(c));
+const sallaReaches = (country: string) => !SALLA_ONLY.length || SALLA_ONLY.includes(country);
 function reaches(it: CatalogItem, country: string): boolean {
-  if (it.source === "salla") return SALLA_REGION.has(country);
+  if (it.source === "salla") return sallaReaches(country);
   if (it.source === "gtp") return it.digital || !it.country || it.country === country;
   // Piketplace: the countries it ships to (none listed = seller's country only).
   // Sellers there often tick "digital" on physical goods (shoes…), so that flag doesn't widen the reach.

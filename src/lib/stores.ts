@@ -46,7 +46,7 @@ export const STORE_DIRECTORY: StoreEntry[] = [
     mono: "S",
     logo: "/stores/salla.webp",
     source: "salla",
-    regions: { en: "Egypt · Middle East · Africa", ar: "مصر · الشرق الأوسط · أفريقيا" },
+    regions: { en: "Worldwide", ar: "عالمي" },
     about: { en: "Multi-vendor Pi mall with Pi SDK checkout and buyer protection.", ar: "مول متعدد البائعين بدفع باي وحماية للمشتري." },
   },
   {

@@ -462,7 +462,7 @@ function HomeView({ s, lang, country, go, onOpen }: CommonProps) {
   const fe = site.data?.featured ?? (site.loading ? null : DEFAULT_FEATURED);
   const featuredUrl = fe ? `/api/search?country=${country}&limit=12${fe.store ? `&store=${fe.store}` : ""}${fe.cats ? `&cat=${encodeURIComponent(fe.cats)}` : ""}` : null;
   const featuredMain = useJson<SearchResponse>(featuredUrl);
-  // The owner's row may not reach this country (Salla ships to Egypt, the Middle East and Africa):
+  // The owner's row may not reach this country (a store limited to some countries):
   // then the same categories from any store here, then whatever is sold here.
   const none = (r: { data?: SearchResponse | null }) => !!r.data && r.data.offers.length === 0;
   const featuredAny = useJson<SearchResponse>(fe && none(featuredMain) ? `/api/search?country=${country}&limit=12${fe.cats ? `&cat=${encodeURIComponent(fe.cats)}` : ""}` : null);
