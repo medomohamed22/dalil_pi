@@ -471,7 +471,12 @@ function HomeView({ s, lang, country, go, onOpen }: CommonProps) {
   const featured = { data: fallback === "main" ? featuredMain.data : fallback === "any" ? featuredAny.data : fallback === "local" ? featuredLocal.data : null };
   const feLocal = fallback === "any" || fallback === "local";
   const deals = useJson<SearchResponse>(`/api/search?deals=1&limit=12&country=${country}`);
+  // Salla Shop Mall's own row (every category), unless the owner's row above is already all of Salla.
+  const sallaAll = useJson<SearchResponse>(fe && !(fe.store === "salla" && !fe.cats) ? `/api/search?country=${country}&store=salla&limit=24` : null);
+  const shownAbove = new Set((featured.data?.offers ?? []).map((o) => o.url));
+  const sallaRow = (sallaAll.data?.offers ?? []).filter((o) => !shownAbove.has(o.url)).slice(0, 12);
   const stores = useJson<StoresResponse>(`/api/stores?country=${country}`);
+  const sallaStore = (stores.data?.stores ?? []).find((x) => x.source === "salla");
   const feStore = feLocal ? undefined : (stores.data?.stores ?? []).find((x) => x.source === fe?.store);
   const feTitle = fallback === "local" ? s.popular : fe ? (lang === "ar" ? fe.title_ar : fe.title_en) : "";
   return (
@@ -523,6 +528,29 @@ function HomeView({ s, lang, country, go, onOpen }: CommonProps) {
       <div className="no-scrollbar -mx-4 flex snap-x gap-2.5 overflow-x-auto px-4 pb-1" data-testid="home-featured">
         {!featured.data ? <TileSkeletons n={3} wide /> : featured.data.offers.map((o, i) => <ProductTile key={o.id} o={o} s={s} onOpen={onOpen} i={i} wide />)}
       </div>
+
+      {sallaRow.length >= 3 && (
+        <>
+          <SectionTitle
+            action={
+              <button onClick={() => go({ v: "search", q: "", store: "salla", title: STORE_NAMES.salla })} className="text-[13px] font-medium text-accent" data-testid="salla-all">
+                {s.seeAll}
+              </button>
+            }
+          >
+            <span className="flex items-center gap-1.5">
+              {sallaStore?.logo && (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={sallaStore.logo} alt="" className="size-5 rounded-md bg-white object-contain ring-1 ring-line" />
+              )}
+              {lang === "ar" ? "من سلة شوب" : "From Salla Shop"}
+            </span>
+          </SectionTitle>
+          <div className="no-scrollbar -mx-4 flex snap-x gap-2.5 overflow-x-auto px-4 pb-1" data-testid="home-salla">
+            {sallaRow.map((o, i) => <ProductTile key={o.id} o={o} s={s} onOpen={onOpen} i={i} wide />)}
+          </div>
+        </>
+      )}
 
       {!!deals.data?.offers.length && (
         <>

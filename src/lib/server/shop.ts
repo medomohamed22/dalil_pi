@@ -180,7 +180,8 @@ export async function searchShop(f: ShopFilters): Promise<ShopResult> {
   // The heavy part (match + trust + sign) depends only on the words, country and store → cached.
   const base = await cached("shop", `${f.country}|${f.store ?? "*"}|${norm(f.category ?? "")}|${(cats ?? []).join(",")}|${queries.map(norm).join("+")}`, 5 * 60_000, async () => {
     const [{ hits }, piUsd] = await Promise.all([
-      searchCatalog(queries, { country: f.country, limit: 400, browse: browse && !cats?.length, category: f.category, cats }),
+      // Browsing one store (no words): read that store only, or the 400 cap may hold none of it.
+      searchCatalog(queries, { country: f.country, limit: 400, browse: browse && !cats?.length, category: f.category, cats, ...(browse && f.store ? { sources: [f.store] } : {}) }),
       piUsdPrice().catch(() => null),
     ]);
     const relevance = new Map(hits.map((h, i) => [h.item.url, { score: h.score, rank: i, ageMin: h.ageMin, source: h.item.source, listPrice: h.listPrice }]));

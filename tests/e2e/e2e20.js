@@ -129,6 +129,8 @@ const ip = (n) => ({ 'x-real-ip': `10.9.${Math.floor(n / 250)}.${n % 250}` });
     const all = await J(await fetch(BASE + `/api/search?country=${c}&limit=50`, { headers: ip(110) }));
     ok(all.offers?.length > 0, `${c}: products ready on the home page (${all.offers?.length}) from ${[...new Set((all.offers || []).map((o) => o.store))].join(', ')}`);
   }
+  const sb = await J(await fetch(BASE + '/api/search?country=EG&store=salla&limit=24', { headers: ip(110) }));
+  ok(sb.offers?.length > 0 && sb.offers.every((o) => o.store === 'Salla Shop Mall'), `browsing one store with no words lists that store (${sb.offers?.length} Salla products)`);
   const vn = await J(await fetch(BASE + '/api/search?country=VN&store=salla&cat=phones', { headers: ip(110) }));
   ok(vn.offers?.length === 0, 'Salla (ships to Egypt/Middle East/Africa) is not offered in Vietnam');
 })().catch((e) => { console.error(e); process.exit(1); });
