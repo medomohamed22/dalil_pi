@@ -1,6 +1,6 @@
 "use client";
 
-import { BarChart3, Check, Eye, EyeOff, LogOut, Megaphone, RefreshCw, Search, Settings, Store, Users, X } from "lucide-react";
+import { BarChart3, Check, Copy, Download, FileText, Eye, EyeOff, LogOut, Megaphone, RefreshCw, Search, Settings, Store, Users, X } from "lucide-react";
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import { STORE_DIRECTORY } from "@/lib/stores";
@@ -10,7 +10,7 @@ import { STORE_DIRECTORY } from "@/lib/stores";
  * visibility and refresh, merchant approvals, missed searches, and site settings.
  */
 
-type Tab = "overview" | "stores" | "merchants" | "searches" | "settings";
+type Tab = "overview" | "stores" | "reports" | "merchants" | "searches" | "settings";
 interface Stats {
   days: number;
   totals: { visits: number; orders: number; misses: number };
@@ -58,6 +58,26 @@ const CAT_LABEL: Record<string, string> = {
 };
 const n = (x: number) => x.toLocaleString("en-US");
 
+/**
+ * The Pi Browser shows sites inside its own frame, so the panel may be framed. Inside a frame the
+ * session is kept in memory only and a saved one is never reused: a page that frames the panel to
+ * trick clicks gets the password box, not a signed-in panel. Outside a frame it stays signed in.
+ */
+const framed = () => {
+  try {
+    return window.top !== window.self;
+  } catch {
+    return true;
+  }
+};
+const saved = {
+  get: () => (framed() ? null : localStorage.getItem(TOKEN)),
+  set: (t: string) => {
+    if (!framed()) localStorage.setItem(TOKEN, t);
+  },
+  clear: () => localStorage.removeItem(TOKEN),
+};
+
 export default function AdminPage() {
   const [token, setToken] = useState<string | null>(null);
   const [setup, setSetup] = useState(false);
@@ -67,7 +87,7 @@ export default function AdminPage() {
     document.documentElement.dir = "rtl";
     document.documentElement.lang = "ar";
     try {
-      setToken(localStorage.getItem(TOKEN));
+      setToken(saved.get());
     } catch {}
   }, []);
 
@@ -77,7 +97,7 @@ export default function AdminPage() {
       const j = await r.json().catch(() => ({}));
       if (r.status === 401) {
         try {
-          localStorage.removeItem(TOKEN);
+          saved.clear();
         } catch {}
         setToken(null);
       }
@@ -95,7 +115,7 @@ export default function AdminPage() {
           setSetup(s);
           setTab("overview");
           try {
-            localStorage.setItem(TOKEN, t);
+            saved.set(t);
           } catch {}
         }}
       />
@@ -107,8 +127,8 @@ export default function AdminPage() {
     setSetup(false);
     setToken(r.ok ? j.token : null);
     try {
-      if (r.ok) localStorage.setItem(TOKEN, j.token);
-      else localStorage.removeItem(TOKEN);
+      if (r.ok) saved.set(j.token);
+      else saved.clear();
     } catch {}
   };
   if (setup) return <ChoosePassword api={api} onDone={relogin} first />;
@@ -116,6 +136,7 @@ export default function AdminPage() {
   const tabs: Array<[Tab, string, typeof Store]> = [
     ["overview", "نظرة عامة", BarChart3],
     ["stores", "المتاجر", Store],
+    ["reports", "التقارير", FileText],
     ["merchants", "التجار", Users],
     ["searches", "البحث", Search],
     ["settings", "الإعدادات", Settings],
@@ -133,7 +154,7 @@ export default function AdminPage() {
           <button
             onClick={() => {
               try {
-                localStorage.removeItem(TOKEN);
+                saved.clear();
               } catch {}
               setToken(null);
             }}
@@ -154,6 +175,7 @@ export default function AdminPage() {
       <main className="mx-auto max-w-5xl px-4 py-5">
         {tab === "overview" && <OverviewTab api={api} go={setTab} />}
         {tab === "stores" && <StoresTab api={api} />}
+        {tab === "reports" && <ReportsTab api={api} token={token} />}
         {tab === "merchants" && <MerchantsTab api={api} />}
         {tab === "searches" && <SearchesTab api={api} />}
         {tab === "settings" && <SettingsTab api={api} relogin={relogin} />}
@@ -490,6 +512,110 @@ function SearchesTab({ api }: { api: Api }) {
           </div>
         ))}
         {!st.data?.topProducts.length && <p className="text-sm text-fg-muted">—</p>}
+      </div>
+    </div>
+  );
+}
+
+/* ---------- monthly report per store ---------- */
+
+type Report = {
+  month: string;
+  totals: { visits: number; orders: number };
+  stores: Array<{
+    store: string;
+    visits: number;
+    orders: number;
+    buyers: number;
+    prev: { visits: number; orders: number };
+    countries: Array<{ country: string; n: number }>;
+    topProducts: Array<{ title: string; url: string; visits: number; orders: number }>;
+  }>;
+};
+
+const thisMonth = () => new Date().toISOString().slice(0, 7);
+const change = (now: number, before: number) => (before ? `${now >= before ? "+" : ""}${Math.round(((now - before) / before) * 100)}%` : now ? "جديد" : "—");
+
+function ReportsTab({ api, token }: { api: Api; token: string }) {
+  const [month, setMonth] = useState(thisMonth());
+  const r = useData<Report>(api, `/api/admin/report?month=${month}`);
+  const [copied, setCopied] = useState("");
+  const download = async () => {
+    const res = await fetch(`/api/admin/report?month=${month}&format=csv`, { headers: { Authorization: `Bearer ${token}` } });
+    if (!res.ok) return;
+    const url = URL.createObjectURL(await res.blob());
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `dalil-pi-report-${month}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+  // A short message for the store's team (English: partners are often not Arabic speakers).
+  const message = (s: Report["stores"][number]) =>
+    [
+      `Dalil Pi — ${s.store}, ${month}`,
+      `Visitors sent to your store: ${s.visits} (${change(s.visits, s.prev.visits)} vs last month)`,
+      `Orders started from Dalil Pi: ${s.orders} (${change(s.orders, s.prev.orders)})`,
+      `Signed-in Pi buyers: ${s.buyers}`,
+      s.countries.length ? `Top countries: ${s.countries.map((c) => `${c.country} ${c.n}`).join(", ")}` : "",
+      s.topProducts.length ? `Most wanted: ${s.topProducts.slice(0, 3).map((p) => p.title).join(" · ")}` : "",
+      "https://dalilpi.vercel.app",
+    ]
+      .filter(Boolean)
+      .join("\n");
+  return (
+    <div data-testid="admin-reports">
+      <div className="flex flex-wrap items-center gap-2">
+        <H>تقرير شهري لكل متجر</H>
+        <input type="month" value={month} max={thisMonth()} onChange={(e) => e.target.value && setMonth(e.target.value)} className="ms-auto rounded-xl border border-line bg-bg px-3 py-1.5 text-sm" data-testid="report-month" />
+        <button onClick={download} className="flex items-center gap-1 rounded-xl border border-line px-3 py-1.5 text-sm" data-testid="report-csv">
+          <Download className="size-4" /> CSV
+        </button>
+      </div>
+      <p className="mb-3 text-[12px] text-fg-muted">الزيارات والطلبات اللي دليل باي بعتها لكل متجر في الشهر، مقارنة بالشهر اللي قبله. ابعت الملخص للمتجر بزرار «نسخ».</p>
+      {r.err && <p className="text-sm text-red-600">{r.err}</p>}
+      {r.data && (
+        <div className="mb-3 grid grid-cols-2 gap-2">
+          <Stat label="زيارات الشهر" value={String(r.data.totals.visits)} />
+          <Stat label="طلبات الشهر" value={String(r.data.totals.orders)} />
+        </div>
+      )}
+      <div className="space-y-2">
+        {r.data?.stores.map((s) => (
+          <Card key={s.store}>
+            <div className="flex items-center gap-2">
+              <Logo name={s.store} size={30} />
+              <div className="min-w-0 flex-1 truncate font-semibold" dir="auto">{s.store}</div>
+              <button
+                onClick={() => {
+                  void navigator.clipboard?.writeText(message(s));
+                  setCopied(s.store);
+                  setTimeout(() => setCopied(""), 1500);
+                }}
+                className="flex items-center gap-1 rounded-full border border-line px-3 py-1 text-[12px]"
+                data-testid="report-copy"
+              >
+                {copied === s.store ? <Check className="size-3.5" /> : <Copy className="size-3.5" />} نسخ للمتجر
+              </button>
+            </div>
+            <div className="mt-2 grid grid-cols-3 gap-2 text-center text-sm">
+              <div><div className="text-lg font-bold tabular-nums">{s.visits}</div><div className="text-[11px] text-fg-muted">زيارة · {change(s.visits, s.prev.visits)}</div></div>
+              <div><div className="text-lg font-bold tabular-nums">{s.orders}</div><div className="text-[11px] text-fg-muted">طلب · {change(s.orders, s.prev.orders)}</div></div>
+              <div><div className="text-lg font-bold tabular-nums">{s.buyers}</div><div className="text-[11px] text-fg-muted">مشتري مسجّل</div></div>
+            </div>
+            {!!s.topProducts.length && (
+              <div className="mt-2 space-y-1">
+                {s.topProducts.slice(0, 3).map((p) => (
+                  <a key={p.url} href={p.url} target="_blank" rel="noopener noreferrer" className="flex gap-2 rounded-lg bg-bg-soft px-2.5 py-1.5 text-[12.5px]">
+                    <span className="min-w-0 flex-1 truncate" dir="auto">{p.title}</span>
+                    <span className="shrink-0 tabular-nums text-fg-muted">{p.orders} طلب · {p.visits} زيارة</span>
+                  </a>
+                ))}
+              </div>
+            )}
+          </Card>
+        ))}
+        {r.data && !r.data.stores.length && <p className="text-sm text-fg-muted">مفيش زيارات في الشهر ده.</p>}
       </div>
     </div>
   );

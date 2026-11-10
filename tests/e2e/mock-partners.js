@@ -57,6 +57,7 @@ http.createServer((req, res) => {
   const sigOk = h['x-partner-id'] === SALLA_PARTNER && fresh && nonceOk && typeof h['x-signature'] === 'string' && h['x-signature'] === want;
   log.push(`SALLA ${req.method} ${req.url} sig=${sigOk ? 'ok' : 'bad'} inm=${h['if-none-match'] || ''} auth=${h.authorization ? 'present' : 'none'}`);
   if (u.pathname === '/__salla/version') { sallaVersion = 'v' + Date.now(); return json(res, 200, { version: sallaVersion }); }
+  if (u.pathname === '/__salla/price') { const it = sallaProducts.find((x) => x.id === u.searchParams.get('id')); if (it) it.price = Number(u.searchParams.get('price')); sallaVersion = 'v' + Date.now(); return json(res, 200, { ok: !!it, version: sallaVersion }); }
   if (req.method !== 'GET') return json(res, 405, { error: 'method' });
   if (!sigOk) return json(res, 401, { error: 'bad signature' });
   nonces.add(h['x-nonce']);

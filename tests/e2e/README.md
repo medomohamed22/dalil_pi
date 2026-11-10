@@ -35,5 +35,6 @@ Needs Node 20+, `fuser` (package `psmisc`) and free ports 3100, 4020-4070. Resul
 | `e2e17.js` | Shop UI: home, search + filters, stores, store page, services |
 | `e2e18.js` | AI-credit plans, store traffic + admin, twins, product page, missed searches |
 | `e2e19.js` | Owner panel, AI paywall, compact cards |
+| `e2e21.js` | Public product pages + sitemap/robots, monthly store report + CSV, admin inside a frame, instant watch alerts |
 
 `mock-*.js` are the fake servers the runner starts for every file.

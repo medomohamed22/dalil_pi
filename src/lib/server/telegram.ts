@@ -111,6 +111,44 @@ export async function handleUpdate(update: { message?: { chat?: { id?: number };
 /* ---- daily digest ---- */
 const money = (n: number, cur: string) => `${Math.round(n * 100) / 100} ${cur === "PI" ? "π" : cur}`;
 
+/** One watch alert line (price drop or reached target). */
+function watchLine(w: Awaited<ReturnType<typeof pendingWatchAlerts>>[number], ar: boolean): string {
+  const hit = w.targetHit && w.targetPrice != null;
+  return hit
+    ? `🎯 ${ar ? "وصل للسعر اللي حددته" : "Reached your target"}: <b>${esc(w.title)}</b> — ${money(w.lastPrice, w.currency)} (${esc(w.store)})\n${esc(w.url)}`
+    : `📉 ${ar ? "السعر نزل" : "Price dropped"}: <b>${esc(w.title)}</b> — ${money(w.price, w.currency)} → ${money(w.lastPrice, w.currency)} (${esc(w.store)})\n${esc(w.url)}`;
+}
+
+/** Right away (after a catalog refresh): only the price alerts of these users. */
+export async function sendWatchAlerts(uids: string[]): Promise<{ sent: number }> {
+  if (!telegramConfigured() || !uids.length) return { sent: 0 };
+  let links: (Link & { lang?: string })[];
+  if (!supabaseEnabled) links = mem.filter((x) => x.chat_id && uids.includes(x.pi_uid));
+  else {
+    const { data } = await supabase().from("telegram_links").select("*, users(lang)").in("pi_uid", uids.slice(0, 500)).not("chat_id", "is", null);
+    links = ((data ?? []) as (Link & { users?: { lang?: string } })[]).map((l) => ({ ...l, lang: l.users?.lang }));
+  }
+  if (!links.length) return { sent: 0 };
+  const watches = (await pendingWatchAlerts()).filter((w) => uids.includes(w.uid));
+  const app = process.env.APP_URL || "https://dalilpi.vercel.app";
+  let sent = 0;
+  const done: string[] = [];
+  for (const l of links) {
+    const mine = watches.filter((w) => w.uid === l.pi_uid);
+    if (!mine.length || !l.chat_id) continue;
+    const ar = l.lang === "ar";
+    try {
+      await send(l.chat_id, `<b>Dalil Pi</b>\n\n${mine.map((w) => watchLine(w, ar)).join("\n\n")}\n\n${esc(app)}`);
+      sent++;
+      done.push(...mine.map((w) => w.id));
+    } catch {
+      /* blocked the bot — the daily digest tries again */
+    }
+  }
+  await markWatchesNotified(done);
+  return { sent };
+}
+
 export async function sendDigest(): Promise<{ users: number; sent: number }> {
   if (!telegramConfigured()) return { users: 0, sent: 0 };
   let links: (Link & { lang?: string })[];
@@ -141,12 +179,7 @@ export async function sendDigest(): Promise<{ users: number; sent: number }> {
     const ar = l.lang === "ar";
     const lines: string[] = [];
     for (const w of watches.filter((x) => x.uid === l.pi_uid)) {
-      const hit = w.targetHit && w.targetPrice != null;
-      lines.push(
-        hit
-          ? `🎯 ${ar ? "وصل للسعر اللي حددته" : "Reached your target"}: <b>${esc(w.title)}</b> — ${money(w.lastPrice, w.currency)} (${esc(w.store)})\n${esc(w.url)}`
-          : `📉 ${ar ? "السعر نزل" : "Price dropped"}: <b>${esc(w.title)}</b> — ${money(w.price, w.currency)} → ${money(w.lastPrice, w.currency)} (${esc(w.store)})\n${esc(w.url)}`,
-      );
+      lines.push(watchLine(w, ar));
       doneWatches.push(w.id);
     }
     for (const a of answers.filter((x) => x.pi_uid === l.pi_uid)) {

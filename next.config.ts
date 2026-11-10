@@ -19,15 +19,12 @@ const nextConfig: NextConfig = {
         ],
       },
       {
-        // The owner panel is never framed (clickjacking) nor indexed.
+        // The owner panel is not indexed. It may be framed (the Pi Browser shows sites in a frame);
+        // inside a frame it never reuses a saved session (admin/page.tsx).
         source: "/admin/:path*",
-        headers: [
-          { key: "X-Frame-Options", value: "DENY" },
-          { key: "Content-Security-Policy", value: "frame-ancestors 'none'" },
-          { key: "X-Robots-Tag", value: "noindex, nofollow" },
-        ],
+        headers: [{ key: "X-Robots-Tag", value: "noindex, nofollow" }],
       },
-      { source: "/admin", headers: [{ key: "X-Frame-Options", value: "DENY" }, { key: "Content-Security-Policy", value: "frame-ancestors 'none'" }, { key: "X-Robots-Tag", value: "noindex, nofollow" }] },
+      { source: "/admin", headers: [{ key: "X-Robots-Tag", value: "noindex, nofollow" }] },
       { source: "/api/admin/:path*", headers: [{ key: "Cache-Control", value: "no-store" }, { key: "X-Robots-Tag", value: "noindex" }] },
     ];
   },

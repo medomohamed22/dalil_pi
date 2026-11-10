@@ -19,6 +19,7 @@ const eslintConfig = [
       "build/**",
       "next-env.d.ts",
       "docs/**",
+      "tests/**", // plain Node scripts (CommonJS) run by tests/e2e/run.sh, not app code
     ],
   },
 ];

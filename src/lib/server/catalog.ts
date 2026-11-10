@@ -554,6 +554,22 @@ async function fail(source: CatalogSource, err: Error, started: number) {
     .eq("source", source);
 }
 
+/** Watched products in a fresh catalog copy: new price now, Telegram alert right away. */
+async function alertWatchers(items: CatalogItem[], meta: SourceState["meta"]) {
+  const prices = new Map<string, number>();
+  for (const it of items) {
+    const p = piPrices(it, meta).price;
+    if (p && p > 0) prices.set(it.url, Math.round(p * 1e4) / 1e4);
+  }
+  // Lazy imports: watches/telegram import this module.
+  const { applyCatalogPrices } = await import("./watches");
+  const uids = await applyCatalogPrices(prices);
+  if (uids.length) {
+    const { sendWatchAlerts } = await import("./telegram");
+    await sendWatchAlerts(uids);
+  }
+}
+
 /** Nothing changed at the store (HTTP 304): only the "last read" time moves. */
 async function touch(source: CatalogSource, meta: SourceState["meta"], items: number, started: number) {
   const now = new Date().toISOString();
@@ -624,6 +640,7 @@ export async function refreshCatalog(opts: { force?: boolean; sources?: CatalogS
           // An empty read is far more likely a broken page than an empty store: keep the old copy.
           if (!items.length) throw new Error("no products read");
           await save(source, items, meta, started);
+          await alertWatchers(items, meta).catch((e: Error) => console.warn(`[catalog] watch alerts: ${e.message}`));
           return { source, status: "updated", items: items.length, ms: Date.now() - started, ...(meta.api_error ? { error: `Salla API: ${meta.api_error} (page read used)` } : {}), ...(meta.via ? { via: meta.via } : {}) };
         } catch (e) {
           await fail(source, e as Error, started).catch(() => {});
@@ -762,7 +779,7 @@ async function index(): Promise<NonNullable<typeof loaded>> {
     for (let from = 0; from < 50_000; from += 1000) {
       const { data, error } = await supabase()
         .from("catalog_items")
-        .select("id, source, title, title_ar, description, price, price_egp, list_price_egp, url, image, images, seller, country, category, tags, in_stock, stock, digital, ships_global, shipping, brand, model, norm_category, title_en, keywords, twin_key")
+        .select("id, source, title, title_ar, description, price, list_price, price_egp, list_price_egp, updated_at, url, image, images, seller, country, category, tags, in_stock, stock, digital, ships_global, shipping, brand, model, norm_category, title_en, keywords, twin_key")
         .eq("active", true)
         .order("id")
         .range(from, from + 999);
@@ -967,4 +984,29 @@ export function resetCatalogMemory() {
   mem.sources.clear();
   loaded = null;
   version++;
+}
+
+/** The country a product is shown for on its public page (search engines have no country). */
+function homeCountryOf(it: CatalogItem): string {
+  if (it.source === "salla") return "EG";
+  if (it.country) return it.country;
+  const ship = it.shipping ? Object.keys(it.shipping)[0] : undefined;
+  return ship ?? "US";
+}
+
+/** Public product page: the item's own country (or null when gone / hidden). */
+export async function productHomeCountry(id: string): Promise<string | null> {
+  const idx = await index();
+  const it = idx.rows.find((r) => r.item.id === id)?.item;
+  if (!it || (await hiddenSources()).has(it.source)) return null;
+  return homeCountryOf(it);
+}
+
+/** Every listed product for the sitemap (id + last change), hidden stores left out. */
+export async function sitemapProducts(): Promise<Array<{ id: string; updated?: string }>> {
+  const idx = await index();
+  const hidden = await hiddenSources();
+  return idx.rows
+    .filter((r) => !hidden.has(r.item.source) && piPrices(r.item, idx.states.get("salla")?.meta ?? {}).price)
+    .map((r) => ({ id: r.item.id, updated: (r.item as CatalogItem & { updated_at?: string }).updated_at }));
 }

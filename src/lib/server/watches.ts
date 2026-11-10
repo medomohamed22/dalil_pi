@@ -197,3 +197,39 @@ export async function checkWatches(limit = 40): Promise<{ checked: number; drops
   }
   return { checked: rows.length, drops };
 }
+
+/**
+ * Right after a store's catalog is re-read (Salla: hourly): watched products of that store get
+ * their new price from the fresh copy, without a page load. Returns the users with a new drop
+ * or a reached target, for an immediate Telegram alert.
+ */
+export async function applyCatalogPrices(prices: Map<string, number>): Promise<string[]> {
+  if (!prices.size) return [];
+  let rows: Row[];
+  if (!supabaseEnabled) rows = mem.filter((r) => prices.has(r.url));
+  else {
+    // All watches in one read (a few thousand at most), matched here — not one query per URL.
+    const { data, error } = await supabase().from("watches").select(`pi_uid, ${COLS}`).limit(5000);
+    if (error) throw new Error(`watches: ${error.message}`);
+    rows = ((data ?? []) as Row[]).filter((r) => prices.has(r.url));
+  }
+  const alerted = new Set<string>();
+  const now = new Date().toISOString();
+  for (const r of rows) {
+    const p = prices.get(r.url)!;
+    if (!(p > 0)) continue;
+    const patch: Partial<Row> = { last_checked_at: now };
+    if (p <= Number(r.last_price) * DROP) {
+      Object.assign(patch, { dropped_at: now, seen_drop: false });
+      alerted.add(r.pi_uid);
+    }
+    if (r.target_price != null && p <= Number(r.target_price) && !r.target_hit_at) {
+      Object.assign(patch, { target_hit_at: now, seen_drop: false });
+      alerted.add(r.pi_uid);
+    }
+    if (p !== Number(r.last_price)) patch.last_price = p;
+    if (!supabaseEnabled) Object.assign(r, patch);
+    else await supabase().from("watches").update(patch).eq("id", r.id);
+  }
+  return [...alerted];
+}

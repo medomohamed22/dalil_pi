@@ -52,7 +52,7 @@ const admin = async () => {
   await p.getByTestId('share').click();
   await p.waitForTimeout(300);
   const clip = await p.evaluate(() => navigator.clipboard.readText()).catch(() => '');
-  ok(/\?v=p&id=salla%3A/.test(clip), `share copies the product link: ${clip}`);
+  ok(/\/p\/salla%3A/.test(clip), `share copies the public product page link: ${clip}`);
   await p.screenshot({ path: `${OUT}/60-product.png` });
   // Order from the product page → free (no credit), tracked
   const [tab] = await Promise.all([ctx.waitForEvent('page', { timeout: 8000 }), p.getByTestId('offer-detail').getByRole('button', { name: /^Order/ }).click()]);

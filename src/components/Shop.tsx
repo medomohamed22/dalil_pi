@@ -1037,7 +1037,8 @@ function ProductView({ s, lang, country, go, back, onAsk, id, actions }: CommonP
   const [more, setMore] = useState(false);
   const o = data?.offer;
   const share = async () => {
-    const url = `${window.location.origin}/?v=p&id=${encodeURIComponent(id)}`;
+    // The public product page (readable by search engines and link previews); it opens the app too.
+    const url = `${window.location.origin}/p/${encodeURIComponent(id)}`;
     try {
       if (navigator.share) {
         await navigator.share({ title: o?.title ?? "Dalil Pi", text: o ? `${o.title} · ${fmt(o.total)} π` : undefined, url });

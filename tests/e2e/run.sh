@@ -17,7 +17,7 @@ FAILED=0
 
 run() { # run <free AI searches> <free orders> <file> [extra env]
   pkill -f puppeteer_dev_chrome_profile >/dev/null 2>&1
-  fuser -k 3100/tcp 4062/tcp 4063/tcp 4020/tcp 4030/tcp 4040/tcp 4041/tcp 4060/tcp 4061/tcp 4070/tcp >/dev/null 2>&1
+  fuser -k 3100/tcp 4999/tcp 4062/tcp 4063/tcp 4020/tcp 4030/tcp 4040/tcp 4041/tcp 4060/tcp 4061/tcp 4070/tcp >/dev/null 2>&1
   sleep 1
   for m in mock-meta-pi mock-pi mock-woo mock-partners mock-tg; do (node "$T/$m.js" > "$O/$m.log" 2>&1 &); done
   (env OFFER_SIGNING_SECRET=test-offer-signing-secret-0123456789abcdef ALLOW_DEV_LOGIN=1 CRON_SECRET=cron-test \
@@ -42,9 +42,9 @@ P2="${P%% SALLA_BASE_URL=*}"
 declare -A CFG=(
   [e2e20.js]="1 5 P" [e2e.js]="2 2 -" [e2e3.js]="3 3 -" [e2e5.js]="2 2 -" [e2e6.js]="5 5 -" [e2e7.js]="5 5 -"
   [e2e8.js]="5 5 -" [e2e9.js]="5 5 -" [e2e10.js]="9 5 P" [e2e11.js]="9 5 -" [e2e12.js]="9 5 -" [e2e13.js]="9 5 P"
-  [e2e14.js]="9 5 AUTO1" [e2e15.js]="20 9 AUTO1" [e2e16.js]="9 5 P2" [e2e17.js]="9 5 P2" [e2e18.js]="9 5 P2" [e2e19.js]="0 5 P_AUTO0"
+  [e2e14.js]="9 5 AUTO1" [e2e15.js]="20 9 AUTO1" [e2e16.js]="9 5 P2" [e2e17.js]="9 5 P2" [e2e18.js]="9 5 P2" [e2e19.js]="0 5 P_AUTO0" [e2e21.js]="9 5 P"
 )
-ORDER="e2e20.js e2e.js e2e3.js e2e5.js e2e6.js e2e7.js e2e8.js e2e9.js e2e10.js e2e11.js e2e12.js e2e13.js e2e14.js e2e15.js e2e16.js e2e17.js e2e18.js e2e19.js"
+ORDER="e2e20.js e2e.js e2e3.js e2e5.js e2e6.js e2e7.js e2e8.js e2e9.js e2e10.js e2e11.js e2e12.js e2e13.js e2e14.js e2e15.js e2e16.js e2e17.js e2e18.js e2e19.js e2e21.js"
 for f in ${1:-$ORDER}; do
   read -r s o e <<< "${CFG[$f]}"
   case "$e" in
@@ -52,5 +52,5 @@ for f in ${1:-$ORDER}; do
   esac
   run "$s" "$o" "$f" "$env_"
 done
-fuser -k 3100/tcp 4062/tcp 4063/tcp 4020/tcp 4030/tcp 4040/tcp 4041/tcp 4060/tcp 4061/tcp 4070/tcp >/dev/null 2>&1
+fuser -k 3100/tcp 4999/tcp 4062/tcp 4063/tcp 4020/tcp 4030/tcp 4040/tcp 4041/tcp 4060/tcp 4061/tcp 4070/tcp >/dev/null 2>&1
 exit $FAILED
