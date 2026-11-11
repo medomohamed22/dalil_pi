@@ -191,8 +191,8 @@ http.createServer((req, res) => {
   if (u.pathname === '/rest/v1/rpc/get_public_offline_merchants') {
     log.push('SLOCAL rpc');
     return json(res, 200, [
-      { id: '11111111-1111-4111-8111-111111111111', name: 'Far Natural Shop', description: 'منتجات طبيعيه 100%', image_url: 'https://cdn.salla.example/far.jpg', latitude: 29.42, longitude: 30.85, address: 'الفيوم', country: 'EG', phone: '010', whatsapp: '01555583282', status: 'active' },
-      { id: '22222222-2222-4222-8222-222222222222', name: 'Downtown PlayStation & Cafe', description: 'PlayStation & Cafe', image_url: 'https://cdn.salla.example/l2.jpg', latitude: 30.05, longitude: 31.24, address: '2 Talaat Harb St, Cairo', country: 'EG', phone: '+20 100 222 3333', whatsapp: 'https://wa.me/201212312057', status: 'active' },
+      { id: '11111111-1111-4111-8111-111111111111', name: 'Far Natural Shop', description: 'منتجات طبيعيه 100%', image_url: 'https://cdn.salla.example/far.jpg', latitude: 29.42, longitude: 30.85, address: 'الفيوم', country: 'EG', phone: '010', whatsapp: '01000000001', status: 'active' },
+      { id: '22222222-2222-4222-8222-222222222222', name: 'Downtown PlayStation & Cafe', description: 'PlayStation & Cafe', image_url: 'https://cdn.salla.example/l2.jpg', latitude: 30.05, longitude: 31.24, address: '2 Talaat Harb St, Cairo', country: 'EG', phone: '+20 100 222 3333', whatsapp: 'https://wa.me/201000000002', status: 'active' },
       { id: '33333333-3333-4333-8333-333333333333', name: 'Riyadh Shop', latitude: 24.7, longitude: 46.7, country: 'SA', status: 'active' },
       { id: '44444444-4444-4444-8444-444444444444', name: 'Closed Shop', latitude: 30.04, longitude: 31.23, country: 'EG', status: 'suspended' },
       { id: 'not-a-uuid', name: 'Bad', country: 'EG' },

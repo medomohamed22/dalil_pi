@@ -39,7 +39,7 @@ export function sallaLocalList(read: () => Promise<SallaLocalRaw[]>): Promise<Sa
 
 const CALLING: Record<string, string> = { EG: "20", SA: "966", AE: "971", KW: "965", QA: "974", BH: "973", OM: "968", JO: "962", MA: "212", DZ: "213", TN: "216" };
 
-/** "01557137448" / "https://wa.me/2012…" / "+20 12…" → international digits, or undefined when it isn't a real number. */
+/** "01000000000" / "https://wa.me/2012…" / "+20 12…" → international digits, or undefined when it isn't a real number. */
 export function intlDigits(raw: string | undefined, country?: string): string | undefined {
   if (!raw) return;
   const m = raw.match(/wa\.me\/(\d+)/);

@@ -108,7 +108,7 @@ const ask = async (p, text, waitText) => {
   const cafeCard = shopsBox.locator('[data-shop-card]').first();
   const hrefsL = await cafeCard.locator('a[href]').evaluateAll((els) => els.map((e) => e.getAttribute('href')));
   ok(hrefsL.includes('https://mall.salla-shop.com/local/pay/22222222-2222-4222-8222-222222222222'), 'Pay the shop → Salla Local pay page');
-  ok(hrefsL.some((h) => h.startsWith('https://wa.me/201212312057?text=')), 'WhatsApp with the shop number');
+  ok(hrefsL.some((h) => h.startsWith('https://wa.me/201000000002?text=')), 'WhatsApp with the shop number');
   ok(hrefsL.includes('tel:+201002223333'), 'call button');
   ok(hrefsL.some((h) => h.includes('destination=30.05%2C31.24')), 'directions to the exact pin');
   ok(/matched/.test(await p.getByText(/^SLRESULT/).last().innerText()), 'agent told the shops matched');
