@@ -51,17 +51,31 @@ export default async function ProductSeoPage({ params }: { params: Promise<{ id:
   const { page, id } = r;
   const o = page.offer;
   const appUrl = `/?v=p&id=${encodeURIComponent(id)}`;
-  const jsonLd = {
-    "@context": "https://schema.org",
-    "@type": "Product",
-    name: o.title,
-    ...(page.title_ar ? { alternateName: page.title_ar } : {}),
-    ...(page.images.length ? { image: page.images.slice(0, 4) } : {}),
-    ...(page.description ? { description: clip(page.description, 500) } : {}),
-    ...(page.brand ? { brand: { "@type": "Brand", name: page.brand } } : {}),
-    ...(page.category ? { category: page.category } : {}),
-    url: `${SITE}/p/${encodeURIComponent(id)}`,
-  };
+  // Not schema.org "Product": Google requires it to carry offers with an ISO 4217 currency (Pi has
+  // none) or real product reviews, which we don't have. An item page + breadcrumb is valid and honest.
+  const url = `${SITE}/p/${encodeURIComponent(id)}`;
+  const jsonLd = [
+    {
+      "@context": "https://schema.org",
+      "@type": "ItemPage",
+      name: o.title,
+      ...(page.title_ar ? { alternateName: page.title_ar } : {}),
+      ...(page.description ? { description: clip(page.description, 500) } : {}),
+      ...(page.images.length ? { primaryImageOfPage: { "@type": "ImageObject", url: page.images[0] }, image: page.images.slice(0, 4) } : {}),
+      url,
+      inLanguage: page.title_ar ? ["en", "ar"] : "en",
+      isPartOf: { "@type": "WebSite", name: "Dalil Pi", url: SITE },
+    },
+    {
+      "@context": "https://schema.org",
+      "@type": "BreadcrumbList",
+      itemListElement: [
+        { "@type": "ListItem", position: 1, name: "Dalil Pi", item: SITE },
+        { "@type": "ListItem", position: 2, name: o.store, item: `${SITE}/?v=stores` },
+        { "@type": "ListItem", position: 3, name: clip(o.title, 110), item: url },
+      ],
+    },
+  ];
   return (
     <main className="mx-auto min-h-dvh max-w-3xl bg-bg px-4 pb-16 pt-4 text-fg" data-testid="seo-product">
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd).replace(/</g, "\\u003c") }} />

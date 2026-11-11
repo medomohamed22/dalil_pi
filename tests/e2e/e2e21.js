@@ -16,7 +16,7 @@ const post = (url, body, tok) => fetch(BASE + url, { method: 'POST', headers: { 
   const page = await fetch(BASE + `/p/${encodeURIComponent(anker.ref)}`);
   const html = await page.text();
   ok(page.status === 200 && /<h1[^>]*>Anker Wireless Headphones Q20<\/h1>/.test(html), `/p/<id> is plain HTML with the product name (${page.status})`);
-  ok(/application\/ld\+json/.test(html) && /"@type":"Product"/.test(html), 'structured data (schema.org Product)');
+  ok(/application\/ld\+json/.test(html) && /"@type":"ItemPage"/.test(html) && /"@type":"BreadcrumbList"/.test(html) && !/"@type":"Product"/.test(html), 'structured data: ItemPage + breadcrumb (no Product without offers, which Google rejects)');
   ok(/<meta property="og:title" content="Anker Wireless Headphones Q20[^"]*421\.3 π/.test(html) && /<link rel="canonical" href="[^"]*\/p\/salla%3A/.test(html), 'link preview title with the Pi price + canonical URL');
   ok(/href="\/\?v=p&amp;id=salla%3A/.test(html), 'button to open the product in the app');
   ok((await fetch(BASE + '/p/salla%3Anot-a-real-product')).status === 404 && (await fetch(BASE + '/p/%3Cscript%3E')).status === 404, 'unknown or malformed id → 404');
