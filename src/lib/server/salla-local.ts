@@ -1,5 +1,7 @@
 import "server-only";
 import type { SallaLocalRaw } from "./browser";
+import { cached } from "./cache";
+import { kvGet, kvSet } from "./kv";
 import { expandQuery } from "./lexicon";
 import { haversineKm } from "./rank";
 import type { LocalShop } from "../types";
@@ -10,6 +12,30 @@ import type { LocalShop } from "../types";
  * list, so they are shown as shop cards, not product offers.
  */
 export const SALLA_LOCAL_SITE = "https://mall.salla-shop.com/local";
+
+const FRESH_MS = 60 * 60_000;
+const STALE_OK_MS = 24 * 60 * 60_000;
+
+/**
+ * The shop list needs a headless browser (the most expensive thing the site runs), so it is read
+ * at most once an hour for ALL server instances: kept in the database (`kv_cache`) and for 10
+ * minutes in each instance's memory. If a read fails, the last list (up to a day old) is used.
+ */
+export function sallaLocalList(read: () => Promise<SallaLocalRaw[]>): Promise<SallaLocalRaw[]> {
+  return cached("salla-local", "all", 10 * 60_000, async () => {
+    const hit = await kvGet<SallaLocalRaw[]>("salla_local");
+    const have = hit && Array.isArray(hit.value) && hit.value.length ? hit : null;
+    if (have && have.ageMs < FRESH_MS) return have.value;
+    try {
+      const fresh = await read();
+      if (fresh.length) await kvSet("salla_local", fresh);
+      return fresh.length || !have ? fresh : have.value;
+    } catch (e) {
+      if (have && have.ageMs < STALE_OK_MS) return have.value;
+      throw e;
+    }
+  });
+}
 
 const CALLING: Record<string, string> = { EG: "20", SA: "966", AE: "971", KW: "965", QA: "974", BH: "973", OM: "968", JO: "962", MA: "212", DZ: "213", TN: "216" };
 

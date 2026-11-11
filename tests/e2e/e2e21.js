@@ -48,6 +48,14 @@ const post = (url, body, tok) => fetch(BASE + url, { method: 'POST', headers: { 
   const sal = (rep.stores || []).find((s) => s.store === 'Salla Shop Mall');
   ok(sal && sal.visits >= 3 && sal.orders >= 1 && sal.buyers >= 1 && sal.topProducts[0]?.title === anker.title, `month report per store (Salla: ${sal?.visits} visits, ${sal?.orders} orders, ${sal?.buyers} buyers)`);
   ok((await fetch(BASE + '/api/admin/report?month=2026-13', { headers: { Authorization: `Bearer ${at}` } })).status === 400, 'bad month refused');
+  // performance tab data: admin only, never the cron secret
+  ok((await fetch(BASE + '/api/admin/perf')).status === 401 && (await fetch(BASE + '/api/admin/perf', { headers: { Authorization: 'Bearer cron-test' } })).status === 401, 'performance numbers need the admin token');
+  const perf = await J(await fetch(BASE + '/api/admin/perf', { headers: { Authorization: `Bearer ${at}` } }));
+  ok(perf.instance && typeof perf.instance.calls === 'number' && Array.isArray(perf.instance.by), `performance numbers for the admin (${JSON.stringify(perf.instance).slice(0, 80)})`);
+  // Salla Local list is kept (shared cache): two calls, one browser read
+  const ls1 = await fetch(BASE + '/api/local-shops?country=EG', { headers: { 'x-real-ip': '10.21.0.9' } });
+  const ls2 = await J(await fetch(BASE + '/api/local-shops?country=EG&q=cafe', { headers: { 'x-real-ip': '10.21.0.9' } }));
+  ok(ls1.ok && (ls2.shops || []).length > 0, `Salla Local list served from the saved copy (${(ls2.shops || []).length} shops)`);
   const csvRes = await fetch(BASE + `/api/admin/report?month=${month}&format=csv`, { headers: { Authorization: `Bearer ${at}` } });
   const raw = Buffer.from(await csvRes.arrayBuffer());
   const csv = raw.toString('utf8');

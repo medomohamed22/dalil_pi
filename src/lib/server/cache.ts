@@ -33,3 +33,8 @@ export function cached<T>(ns: string, key: string, ttlMs: number, fn: () => Prom
 
 /** Normalizes a search phrase for cache keys ("  Sماعة  JBL" → "sماعة jbl"). */
 export const norm = (q: string) => q.toLowerCase().replace(/\s+/g, " ").trim();
+
+/** Drop a whole namespace on this instance (e.g. trust signals right after a new review). */
+export function forget(ns: string): void {
+  stores.delete(ns);
+}

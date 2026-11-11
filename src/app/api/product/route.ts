@@ -16,7 +16,7 @@ export async function GET(req: Request) {
   try {
     const page = await productPage(id, country);
     if (!page) return Response.json({ error: "This product isn't available in your country (or is gone).", code: "NOT_FOUND" }, { status: 404 });
-    return Response.json({ country, ...page }, { headers: { "Cache-Control": "public, s-maxage=120, stale-while-revalidate=600" } });
+    return Response.json({ country, ...page }, { headers: { "Cache-Control": "public, s-maxage=600, stale-while-revalidate=1800" } });
   } catch (err) {
     return Response.json({ error: (err as Error).message }, { status: 500 });
   }

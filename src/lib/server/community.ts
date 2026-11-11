@@ -1,4 +1,5 @@
 import "server-only";
+import { cached, forget } from "./cache";
 import { normUrl } from "./evidence";
 import { listOrders } from "./orders";
 import { supabase, supabaseEnabled } from "./supabase";
@@ -28,6 +29,7 @@ export class CommunityError extends Error {
 
 /** Records the confirmed prices of shown offers (best effort, never throws). */
 export async function recordPrices(offers: Offer[], country: string): Promise<void> {
+  forget("price-stats");
   const rows = offers
     .filter((o) => o.url && o.price > 0 && !o.flags.includes("price_unverified") && o.trust !== "suspicious")
     .map((o) => ({ url_key: normUrl(o.url!)!, day: today(), price: o.price, currency: o.currency, title: o.title.slice(0, 160), store: o.store.slice(0, 100), url: o.url, image: o.image ?? null, country }))
@@ -50,14 +52,20 @@ export async function recordPrices(offers: Offer[], country: string): Promise<vo
 
 /** Test hook (local only): add an older price point. */
 export function memAddPricePoint(p: Mem["prices"][number]) {
+  forget("price-stats");
   mem.prices.push(p);
 }
 
 /** 90-day price stats per product URL for the given offers. */
 export async function priceStats(urls: string[]): Promise<Map<string, PriceStats>> {
   const keys = [...new Set(urls.map((u) => normUrl(u)).filter(Boolean) as string[])].slice(0, 30);
+  if (!keys.length) return new Map();
+  // Price history grows by one point a day: 10 minutes per instance is plenty fresh.
+  return cached("price-stats", [...keys].sort().join("|"), 10 * 60_000, () => readPriceStats(keys));
+}
+
+async function readPriceStats(keys: string[]): Promise<Map<string, PriceStats>> {
   const out = new Map<string, PriceStats>();
-  if (!keys.length) return out;
   const since = new Date(Date.now() - 90 * 864e5).toISOString().slice(0, 10);
   let rows: { url_key: string; day: string; price: number | string }[] = [];
   try {
@@ -137,9 +145,11 @@ export async function addReview(uid: string, orderId: string, rating: number, co
   const row = { pi_uid: uid, order_id: o.id, store_domain: o.storeDomain ?? null, store_name: o.storeName, rating, comment: comment?.trim().slice(0, 500) || null };
   if (!supabaseEnabled) {
     if (mem.reviews.some((r) => r.order_id === o.id)) throw new CommunityError("You already reviewed this order.");
+    forget("store-signals");
     mem.reviews.push({ ...row, id: crypto.randomUUID(), created_at: new Date().toISOString() });
     return;
   }
+  forget("store-signals");
   const { error } = await supabase().from("store_reviews").insert(row);
   if (error) throw new CommunityError(/duplicate/.test(error.message) ? "You already reviewed this order." : error.message);
 }
@@ -151,9 +161,11 @@ export async function addDispute(uid: string, orderId: string, kind: string, det
   const row = { pi_uid: uid, order_id: o.id, store_domain: o.storeDomain ?? null, store_name: o.storeName, kind, details: details?.trim().slice(0, 1000) || null };
   if (!supabaseEnabled) {
     if (mem.disputes.some((r) => r.order_id === o.id)) throw new CommunityError("You already reported this order.");
+    forget("store-signals");
     mem.disputes.push({ ...row, id: crypto.randomUUID(), status: "open", created_at: new Date().toISOString() });
     return;
   }
+  forget("store-signals");
   const { error } = await supabase().from("disputes").insert(row);
   if (error) throw new CommunityError(/duplicate/.test(error.message) ? "You already reported this order." : error.message);
 }
@@ -173,10 +185,15 @@ export interface StoreSignals {
 
 /** Dalil Pi buyer reviews and reported problems per store (by domain, else by name). */
 export async function storeSignals(stores: { domain?: string; name: string }[]): Promise<Map<string, StoreSignals>> {
+  const domains = [...new Set(stores.map((s) => s.domain).filter(Boolean) as string[])].sort();
+  const names = [...new Set(stores.filter((s) => !s.domain).map((s) => s.name.toLowerCase()))].sort();
+  if (!domains.length && !names.length) return new Map();
+  // Reviews and reports change rarely: 5 minutes per instance (a new one on this instance clears it).
+  return cached("store-signals", `${domains.join(",")}|${names.join(",")}`, 5 * 60_000, () => readStoreSignals(stores, domains, names));
+}
+
+async function readStoreSignals(stores: { domain?: string; name: string }[], domains: string[], names: string[]): Promise<Map<string, StoreSignals>> {
   const out = new Map<string, StoreSignals>();
-  const domains = [...new Set(stores.map((s) => s.domain).filter(Boolean) as string[])];
-  const names = [...new Set(stores.filter((s) => !s.domain).map((s) => s.name.toLowerCase()))];
-  if (!domains.length && !names.length) return out;
   let revs: { pi_uid: string; store_domain: string | null; store_name: string; rating: number }[] = [];
   let disp: { pi_uid: string; store_domain: string | null; store_name: string; status: string }[] = [];
   try {

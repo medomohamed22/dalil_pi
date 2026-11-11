@@ -1,4 +1,5 @@
 import "server-only";
+import { cached } from "./cache";
 import { fetchWithTimeout } from "./net";
 import { supabase, supabaseEnabled } from "./supabase";
 import type { Offer, TrustParts } from "../types";
@@ -65,9 +66,14 @@ export async function domainAgeYears(host: string): Promise<number | null> {
 }
 
 /* ---- Dalil Pi's own order history per store ---- */
-async function fulfilment(domains: string[]): Promise<Map<string, { good: number; bad: number }>> {
+function fulfilment(domains: string[]): Promise<Map<string, { good: number; bad: number }>> {
+  if (!supabaseEnabled || !domains.length) return Promise.resolve(new Map());
+  // 5 minutes per instance; an order status change on this instance clears it (orders.ts).
+  return cached("fulfilment", [...domains].sort().join(","), 5 * 60_000, () => readFulfilment(domains));
+}
+
+async function readFulfilment(domains: string[]): Promise<Map<string, { good: number; bad: number }>> {
   const out = new Map<string, { good: number; bad: number }>();
-  if (!supabaseEnabled || !domains.length) return out;
   try {
     // Statuses are the buyers' own word (payment happens in the store): one vote per Pi account per store.
     const { data } = await supabase().from("orders").select("pi_uid, store_domain, status").in("store_domain", domains).in("status", ["delivered", "failed"]).limit(5000);

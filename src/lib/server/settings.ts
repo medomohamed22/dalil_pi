@@ -19,7 +19,7 @@ export const DEFAULTS: SiteSettings = {
 };
 
 const mem = ((globalThis as unknown as { __dalilSettings?: Map<string, unknown> }).__dalilSettings ??= new Map());
-let cache: { at: number; rows: Map<string, unknown> } | null = null;
+let cache: { at: number; rows: Map<string, unknown>; failed?: boolean } | null = null;
 
 async function rows(): Promise<Map<string, unknown>> {
   if (!supabaseEnabled) return mem;
@@ -29,10 +29,17 @@ async function rows(): Promise<Map<string, unknown>> {
     if (error) throw error;
     cache = { at: Date.now(), rows: new Map((data ?? []).map((r) => [r.key as string, r.value])) };
   } catch {
-    // Table missing (migration 0015 not run yet) → defaults.
-    cache = { at: Date.now(), rows: new Map() };
+    // Database unreachable: keep the last settings read (hidden stores stay hidden); with none yet,
+    // defaults, marked as unknown so the admin password is never treated as "not set".
+    cache = cache && !cache.failed ? { at: Date.now() - 45_000, rows: cache.rows } : { at: Date.now() - 45_000, rows: new Map(), failed: true };
   }
   return cache.rows;
+}
+
+/** False when the settings could not be read at all (no last copy). */
+export async function settingsKnown(): Promise<boolean> {
+  await rows();
+  return !cache?.failed;
 }
 
 export async function getSetting<T>(key: string, fallback: T): Promise<T> {

@@ -23,3 +23,12 @@
   - `/catalog`: products of the store + mall merchants; `ships_to` decides the countries, `shipping_by_country` the fee (null = at checkout); `url` already has `?ref=dalilpi` — keep it, never add another.
   - `/services`: Salla apps directory (restaurants, services, health, delivery, mall services, Telegram) → `partner_services` table, `/api/services`, Services tab, and in `search_salla`.
   - Optional `SALLA_COUNTRIES` limits Salla to some countries.
+
+## Load and caching (keep it cheap)
+- Public read APIs (search, product, services) are CDN-cached 10 min + stale-while-revalidate; offer signatures last 24 h.
+- Rate limit uses the database counter only after half the limit on an instance.
+- Catalog pulls write only changed rows (hash); the search index reloads only when `meta.data_at` changes.
+- Trust signals / order history / price stats: 5–10 min per-instance cache, cleared on new review, dispute or order status.
+- Salla Local (headless browser) is read at most hourly, shared via `kv_cache`; the last list (≤ 1 day) is used if a read fails.
+- If the database is down, search keeps the last loaded index; admin password checks fail closed.
+- Admin → "الأداء" shows DB calls per instance and writes/reads per table (`admin_db_stats()`).

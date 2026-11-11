@@ -13,7 +13,7 @@ import { detectWooPi } from "./woo";
 import { PriceEvidence } from "./evidence";
 import { cached, norm } from "./cache";
 import { expandQuery } from "./lexicon";
-import { pickLocalShops } from "./salla-local";
+import { pickLocalShops, sallaLocalList } from "./salla-local";
 import { searchCatalog, sallaApiReady, type IndexHit } from "./catalog";
 import { sallaServices, type SallaService } from "./salla-services";
 import { marketplacesEnabled, marketplacesSearch, mapOfPiConfigured, mapOfPiNearby, pcmEnabled, pcmSearch } from "./partners";
@@ -804,10 +804,12 @@ async function execTool(
       };
     }
     case "salla_local": {
-      if (!ctx.browser || !ctx.viaBrowser) throw new Error("Salla Local unavailable right now");
       const at = ctx.coords ?? ctx.ipCoords;
-      // The shop list is the same for everyone: read it at most every 15 min (cheap on Active CPU).
-      const raw = await cached("salla-local", "all", 15 * 60_000, () => ctx.viaBrowser!(() => ctx.browser!.sallaLocalShops()));
+      // The shop list is the same for everyone: read at most once an hour for all instances.
+      const raw = await sallaLocalList(() => {
+        if (!ctx.browser || !ctx.viaBrowser) throw new Error("Salla Local unavailable right now");
+        return ctx.viaBrowser(() => ctx.browser!.sallaLocalShops());
+      });
       const { shops, matched } = pickLocalShops(raw, { country: ctx.locale.country, at, query: String(args.query ?? "") });
       if (!shops.length) return { shops: [], hint: `No Salla Local shops in ${ctx.locale.countryName} yet — use the other sources.` };
       ctx.emit({ type: "block", block: { type: "shops", shops, source: "salla_local", locatedBy: ctx.coords ? "gps" : at ? "ip" : undefined } });

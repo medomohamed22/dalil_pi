@@ -1,6 +1,6 @@
 import "server-only";
 import { randomBytes, scryptSync, timingSafeEqual } from "node:crypto";
-import { getSetting, setSetting } from "./settings";
+import { getSetting, setSetting, settingsKnown } from "./settings";
 import { signToken, verifyToken } from "./sign";
 import { counters } from "./store";
 import { allRows, supabase, supabaseEnabled } from "./supabase";
@@ -25,7 +25,11 @@ interface AdminToken {
 
 const hashOf = (password: string, salt: string) => scryptSync(password, salt, 32).toString("hex");
 const versionOf = (stored: PasswordHash | null) => (stored?.hash ? stored.hash.slice(0, 12) : "boot");
-const stored = () => getSetting<PasswordHash | null>("admin_password", null);
+const stored = async () => {
+  // Database unreachable: never act as if no password were set (that would open the panel).
+  if (!(await settingsKnown())) throw Object.assign(new Error("Settings are unavailable right now — try again in a minute."), { status: 503 });
+  return getSetting<PasswordHash | null>("admin_password", null);
+};
 
 function same(a: string, b: string): boolean {
   const x = Buffer.from(a);

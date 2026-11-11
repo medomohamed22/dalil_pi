@@ -16,7 +16,7 @@ const n = (v: string | null) => (v != null && v !== "" && Number.isFinite(Number
 /**
  * Instant product search in Dalil Index — no AI, no sign-in, no credit used.
  * GET /api/search?q=&country=&store=&category=&sort=&min=&max=&stock=1&any=a|b&offset=&limit=
- * Public and identical for everyone with the same URL, so the CDN caches it for 2 minutes.
+ * Public and identical for everyone with the same URL, so the CDN keeps it 10 minutes and then serves the old copy while it fetches a new one (stores are re-read hourly).
  */
 export async function GET(req: Request) {
   const limited = await rateLimit(req, "search", 90, 60);
@@ -54,7 +54,7 @@ export async function GET(req: Request) {
         if ((await counters.incr(`miss:${who}:${Math.floor(Date.now() / 3_600_000)}`, 3700).catch(() => 99)) <= 20) await recordMiss(typed, country).catch(() => {});
       });
     }
-    return Response.json({ country, ...result }, { headers: { "Cache-Control": "public, s-maxage=120, stale-while-revalidate=600" } });
+    return Response.json({ country, ...result }, { headers: { "Cache-Control": "public, s-maxage=600, stale-while-revalidate=1800" } });
   } catch (err) {
     return Response.json({ error: (err as Error).message }, { status: 500 });
   }

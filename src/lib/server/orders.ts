@@ -1,4 +1,5 @@
 import "server-only";
+import { forget } from "./cache";
 import { MIN_ORDER_TRUST } from "./trust";
 import { detectWooPi, wooCheckout } from "./woo";
 import { getAddress, listAddresses, NotFound } from "./addresses";
@@ -186,6 +187,7 @@ export async function updateOrder(uid: string, id: string, patch: { status?: Ord
   if (patch.status) row.status = patch.status;
   if (patch.txid !== undefined) row.txid = patch.txid;
   if (patch.trackingNumber !== undefined) row.tracking_number = patch.trackingNumber;
+  forget("fulfilment");
   const { data, error } = await supabase().from("orders").update(row).eq("pi_uid", uid).eq("id", id).select(ORDER_COLUMNS).single();
   if (error) throw new Error(`orders: ${error.message}`);
   return fromRow(data as Row);

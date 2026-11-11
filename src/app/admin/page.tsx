@@ -1,6 +1,6 @@
 "use client";
 
-import { BarChart3, Check, Copy, Download, FileText, Eye, EyeOff, LogOut, Megaphone, RefreshCw, Search, Settings, Store, Users, X } from "lucide-react";
+import { Activity, BarChart3, Check, Copy, Download, FileText, Eye, EyeOff, LogOut, Megaphone, RefreshCw, Search, Settings, Store, Users, X } from "lucide-react";
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import { STORE_DIRECTORY } from "@/lib/stores";
@@ -10,7 +10,7 @@ import { STORE_DIRECTORY } from "@/lib/stores";
  * visibility and refresh, merchant approvals, missed searches, and site settings.
  */
 
-type Tab = "overview" | "stores" | "reports" | "merchants" | "searches" | "settings";
+type Tab = "overview" | "stores" | "reports" | "merchants" | "searches" | "perf" | "settings";
 interface Stats {
   days: number;
   totals: { visits: number; orders: number; misses: number };
@@ -139,6 +139,7 @@ export default function AdminPage() {
     ["reports", "التقارير", FileText],
     ["merchants", "التجار", Users],
     ["searches", "البحث", Search],
+    ["perf", "الأداء", Activity],
     ["settings", "الإعدادات", Settings],
   ];
   return (
@@ -178,6 +179,7 @@ export default function AdminPage() {
         {tab === "reports" && <ReportsTab api={api} token={token} />}
         {tab === "merchants" && <MerchantsTab api={api} />}
         {tab === "searches" && <SearchesTab api={api} />}
+        {tab === "perf" && <PerfTab api={api} />}
         {tab === "settings" && <SettingsTab api={api} relogin={relogin} />}
       </main>
     </div>
@@ -513,6 +515,88 @@ function SearchesTab({ api }: { api: Api }) {
         ))}
         {!st.data?.topProducts.length && <p className="text-sm text-fg-muted">—</p>}
       </div>
+    </div>
+  );
+}
+
+/* ---------- performance ---------- */
+
+interface Perf {
+  instance: { upMin: number; calls: number; avgMs: number; errors: number; by: Array<{ name: string; calls: number; avgMs: number }> };
+  db: { db_bytes?: number; tables?: Array<{ name: string; rows: number; dead: number; inserts: number; updates: number; deletes: number; writes: number; reads: number; bytes: number }>; error?: string } | null;
+}
+const mb = (b: number) => `${(b / 1048576).toFixed(b < 10 * 1048576 ? 1 : 0)} MB`;
+const k = (n: number) => (n >= 10_000 ? `${Math.round(n / 1000)}k` : n.toLocaleString("en-US"));
+
+function PerfTab({ api }: { api: Api }) {
+  const p = useData<Perf>(api, "/api/admin/perf");
+  const d = p.data;
+  return (
+    <div data-testid="admin-perf">
+      <div className="flex items-center justify-between">
+        <H>السيرفر اللي رد عليك دلوقتي</H>
+        <button onClick={p.reload} className="flex items-center gap-1 text-[13px] text-accent">
+          <RefreshCw className="size-3.5" /> تحديث
+        </button>
+      </div>
+      <p className="mb-2 text-[12px] text-fg-muted">كل سيرفر بيعد لنفسه من ساعة ما اشتغل. الأرقام القليلة هنا معناها إن الكاش شغال.</p>
+      {d && (
+        <>
+          <div className="grid grid-cols-4 gap-2 text-center">
+            {[
+              ["شغال من", `${d.instance.upMin} د`],
+              ["طلبات للداتابيز", k(d.instance.calls)],
+              ["متوسط الرد", `${d.instance.avgMs} ms`],
+              ["أخطاء", k(d.instance.errors)],
+            ].map(([l, v]) => (
+              <div key={l} className="rounded-xl bg-bg-soft p-2">
+                <div className="text-[16px] font-bold tabular-nums">{v}</div>
+                <div className="text-[11px] text-fg-muted">{l}</div>
+              </div>
+            ))}
+          </div>
+          <div className="mt-2 space-y-1">
+            {d.instance.by.map((r) => (
+              <div key={r.name} className="flex justify-between rounded-lg bg-bg-soft px-3 py-1.5 text-[12.5px]" dir="ltr">
+                <span className="font-mono">{r.name}</span>
+                <span className="tabular-nums text-fg-muted">
+                  {r.calls} × {r.avgMs} ms
+                </span>
+              </div>
+            ))}
+          </div>
+          <H>قاعدة البيانات {d.db?.db_bytes ? `· ${mb(d.db.db_bytes)}` : ""}</H>
+          <p className="mb-2 text-[12px] text-fg-muted">من آخر تصفير لعدادات Supabase. الكتابات هي اللي بتستهلك أكتر.</p>
+          {d.db?.error && <p className="text-sm text-red-600">{d.db.error}</p>}
+          <div className="overflow-x-auto">
+            <table className="w-full text-[12.5px] tabular-nums" dir="ltr">
+              <thead className="text-fg-muted">
+                <tr>
+                  <th className="py-1 text-left">table</th>
+                  <th>rows</th>
+                  <th>writes</th>
+                  <th>reads</th>
+                  <th>dead</th>
+                  <th>size</th>
+                </tr>
+              </thead>
+              <tbody>
+                {d.db?.tables?.slice(0, 15).map((t) => (
+                  <tr key={t.name} className="border-t border-line">
+                    <td className="py-1 font-mono">{t.name}</td>
+                    <td className="text-center">{k(t.rows)}</td>
+                    <td className="text-center">{k(t.writes)}</td>
+                    <td className="text-center">{k(t.reads)}</td>
+                    <td className="text-center">{k(t.dead)}</td>
+                    <td className="text-center">{mb(t.bytes)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </>
+      )}
+      {p.err && <p className="text-sm text-red-600">{p.err}</p>}
     </div>
   );
 }

@@ -247,7 +247,14 @@ async function all(): Promise<SallaService[]> {
   const rows: SallaService[] = [];
   for (let from = 0; from < 20_000; from += 1000) {
     const { data, error } = await supabase().from("partner_services").select(COLS).eq("partner", "salla").eq("active", true).order("key").range(from, from + 999);
-    if (error) throw new Error(`services load: ${error.message}`);
+    if (error) {
+      // Database slow or down: the last copy of this instance, tried again in a minute.
+      if (loaded) {
+        loaded.at = Date.now();
+        return loaded.rows;
+      }
+      throw new Error(`services load: ${error.message}`);
+    }
     rows.push(...((data ?? []) as SallaService[]).map((r) => ({ ...r, price: r.price == null ? null : Number(r.price), rating: r.rating == null ? null : Number(r.rating) })));
     if ((data ?? []).length < 1000) break;
   }

@@ -30,7 +30,8 @@ export type CatalogSource = "pcm" | "salla" | "gtp" | "pkt";
 export const SOURCES: CatalogSource[] = ["pcm", "salla", "gtp", "pkt"];
 /** How old a store's copy may get before a search triggers a background refresh. */
 // Piketplace pages are heavy (~450 kB each, the country list rides along), so it is read less often.
-export const TTL_MIN: Record<CatalogSource, number> = { pcm: 60, gtp: 60, salla: 180, pkt: 360 };
+// Global Trade Pi is a handful of products that rarely change: every 3 h is enough.
+export const TTL_MIN: Record<CatalogSource, number> = { pcm: 60, gtp: 180, salla: 180, pkt: 360 };
 const STORE_NAME: Record<CatalogSource, string> = { pcm: "Pi Chain Mall", salla: "Salla Shop Mall", gtp: "Global Trade Pi", pkt: "Piketplace" };
 
 export interface CatalogItem {
@@ -74,7 +75,7 @@ interface SourceState {
   items: number;
   ok: boolean | null;
   error: string | null;
-  meta: { usd_rate?: number; profit_percentage?: number; pi_price_cache?: number; enriched_at?: string; etag?: string; version?: string; via?: string; api_error?: string; map?: number };
+  meta: { usd_rate?: number; profit_percentage?: number; pi_price_cache?: number; enriched_at?: string; etag?: string; version?: string; via?: string; api_error?: string; map?: number; data_at?: string };
 }
 
 /* ------------------------------------------------------------------ */
@@ -558,7 +559,7 @@ async function claim(source: CatalogSource): Promise<boolean> {
   return !!data?.length;
 }
 
-async function save(source: CatalogSource, items: CatalogItem[], meta: SourceState["meta"], started: number) {
+async function save(source: CatalogSource, items: CatalogItem[], meta: SourceState["meta"], started: number, prev?: SourceState) {
   const now = new Date().toISOString();
   if (!supabaseEnabled) {
     const ids = new Set(items.map((i) => i.id));
@@ -574,13 +575,36 @@ async function save(source: CatalogSource, items: CatalogItem[], meta: SourceSta
     return;
   }
   const db = supabase();
-  for (let i = 0; i < items.length; i += 200) {
-    const rows = items.slice(i, i + 200).map((it) => ({ ...it, active: true, hash: fingerprint(it), seen_at: now, updated_at: now }));
+  // Only what changed is written: most hourly pulls change a handful of products, so re-writing
+  // every row (and its indexes) each hour was most of the database's write load.
+  const stored = new Map<string, { hash: string | null; active: boolean }>();
+  for (let from = 0; from < 100_000; from += 1000) {
+    const { data, error } = await db.from("catalog_items").select("id, hash, active").eq("source", source).order("id").range(from, from + 999);
+    if (error) throw new Error(`catalog read: ${error.message}`);
+    for (const r of (data ?? []) as Array<{ id: string; hash: string | null; active: boolean }>) stored.set(r.id, { hash: r.hash, active: r.active });
+    if ((data ?? []).length < 1000) break;
+  }
+  const changed = items
+    .map((it) => ({ it, hash: fingerprint(it) }))
+    .filter(({ it, hash }) => {
+      const old = stored.get(it.id);
+      return !old || !old.active || old.hash !== hash;
+    });
+  for (let i = 0; i < changed.length; i += 200) {
+    const rows = changed.slice(i, i + 200).map(({ it, hash }) => ({ ...it, active: true, hash, seen_at: now, updated_at: now }));
     const { error } = await db.from("catalog_items").upsert(rows, { onConflict: "id" });
     if (error) throw new Error(`catalog save: ${error.message}`);
   }
   // Gone from the store → inactive (kept for price history and old links).
-  await db.from("catalog_items").update({ active: false }).eq("source", source).eq("active", true).lt("seen_at", now);
+  const ids = new Set(items.map((i) => i.id));
+  const gone = [...stored].filter(([id, r]) => r.active && !ids.has(id)).map(([id]) => id);
+  for (let i = 0; i < gone.length; i += 200) {
+    const { error } = await db.from("catalog_items").update({ active: false, updated_at: now }).in("id", gone.slice(i, i + 200));
+    if (error) throw new Error(`catalog deactivate: ${error.message}`);
+  }
+  if (changed.length || gone.length) console.info(`[catalog] ${source}: ${changed.length} written, ${gone.length} gone, ${items.length - changed.length} unchanged`);
+  // When the rows last changed: the search index of every instance reloads only then.
+  meta = { ...meta, enriched_at: meta.enriched_at ?? prev?.meta?.enriched_at, data_at: changed.length || gone.length || !prev?.meta?.data_at ? now : prev.meta.data_at };
   await db
     .from("catalog_sources")
     .update({ refreshed_at: now, items: items.length, ok: true, error: null, duration_ms: Date.now() - started, meta, lock_until: null })
@@ -691,7 +715,7 @@ export async function refreshCatalog(opts: { force?: boolean; sources?: CatalogS
           }
           // An empty read is far more likely a broken page than an empty store: keep the old copy.
           if (!items.length) throw new Error("no products read");
-          await save(source, items, meta, started);
+          await save(source, items, meta, started, states.get(source));
           await alertWatchers(items, meta).catch((e: Error) => console.warn(`[catalog] watch alerts: ${e.message}`));
           return { source, status: "updated", items: items.length, ms: Date.now() - started, ...(meta.api_error ? { error: `Salla API: ${meta.api_error} (page read used)` } : {}), ...(meta.via ? { via: meta.via } : {}) };
         } catch (e) {
@@ -813,11 +837,30 @@ let loaded: { at: number; checkedAt: number; key: string; rows: Indexed[]; state
 
 /** The in-memory index; reloaded only when a store was refreshed (checked at most once a minute). */
 async function index(): Promise<NonNullable<typeof loaded>> {
+  try {
+    return await loadIndex();
+  } catch (e) {
+    // Database slow or down: keep answering from the copy this instance already has, and only
+    // try the database again in a minute. With no copy yet, the error goes to the caller.
+    if (!loaded) throw e;
+    console.warn(`[catalog] index reload failed, serving the copy from ${Math.round((Date.now() - loaded.at) / 60_000)} min ago: ${(e as Error).message}`);
+    loaded.checkedAt = Date.now();
+    return loaded;
+  }
+}
+
+async function loadIndex(): Promise<NonNullable<typeof loaded>> {
   const now = Date.now();
   if (loaded && now - loaded.checkedAt < 60_000 && (supabaseEnabled || loaded.key === `mem${version}`)) return loaded;
   const states = await sourceStates();
   // Reload when a store was re-read or products were enriched.
-  const key = supabaseEnabled ? SOURCES.map((s) => `${states.get(s)?.refreshed_at ?? "-"}/${states.get(s)?.meta?.enriched_at ?? "-"}`).join("|") : `mem${version}`;
+  // Reload only when a store's rows (or Salla's EGP→Pi settings) changed, not on every hourly pull.
+  const key = supabaseEnabled
+    ? SOURCES.map((s) => {
+        const m = states.get(s)?.meta ?? {};
+        return `${m.data_at ?? states.get(s)?.refreshed_at ?? "-"}/${m.enriched_at ?? "-"}/${m.usd_rate ?? ""}/${m.pi_price_cache ?? ""}/${m.profit_percentage ?? ""}`;
+      }).join("|")
+    : `mem${version}`;
   if (loaded && loaded.key === key) {
     loaded.checkedAt = now;
     loaded.states = states;

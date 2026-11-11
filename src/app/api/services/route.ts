@@ -20,7 +20,7 @@ export async function GET(req: Request) {
   const limit = Math.max(1, Math.min(100, Number(u.searchParams.get("limit")) || 30));
   try {
     const r = await sallaServices({ country, type: t && SERVICE_TYPES.includes(t) ? t : undefined, q: (u.searchParams.get("q") ?? "").slice(0, 80), limit });
-    return Response.json({ country, ...r }, { headers: { "Cache-Control": "public, s-maxage=300, stale-while-revalidate=900" } });
+    return Response.json({ country, ...r }, { headers: { "Cache-Control": "public, s-maxage=600, stale-while-revalidate=1800" } });
   } catch (err) {
     return Response.json({ error: (err as Error).message, services: [], types: {}, total: 0 }, { status: 500 });
   }
