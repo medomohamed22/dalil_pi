@@ -54,16 +54,18 @@ const ask = async (p, text, waitText) => {
   const sc = await p.locator('[data-offer-card]').evaluateAll((els) => els.map((e) => e.innerText));
   ok(sc.some((t) => t.includes('Anker Wireless Headphones Q20') && t.includes('420.5')), 'Salla products from the partner catalog (Pi price as sent)');
   ok(!sc.some((t) => t.includes('evil')), 'unsafe / non-Salla partner links dropped');
-  const slog = (await (await fetch('http://127.0.0.1:4060/__log')).json()).filter((l) => l.startsWith('SALLA'));
-  ok(slog.length >= 1 && slog.every((l) => l.includes('sig=ok') && l.includes('auth=none') && l.includes('GET /functions/v1/partner-catalog/catalog?page=1&limit=200')), `every Salla call signed (HMAC), no key sent, only /catalog (${slog.length} calls)`);
+  const sallaLog = async () => (await (await fetch('http://127.0.0.1:4060/__log')).json()).filter((l) => l.startsWith('SALLA') && !l.includes('__salla'));
+  const all1 = await sallaLog();
+  const slog = all1.filter((l) => l.includes('/catalog'));
+  ok(all1.length >= 2 && all1.every((l) => l.includes('sig=ok') && l.includes('auth=none') && /GET \/functions\/v1\/partner-catalog\/(catalog|services)\?page=1&limit=200/.test(l)), `every Salla call signed (HMAC), no key sent, only /catalog and /services (${all1.length} calls)`);
   // Hourly re-read with the ETag → 304, nothing re-downloaded; a new version → full read again.
   const before = slog.length;
   const re1 = await (await fetch('http://localhost:3100/api/admin/refresh?source=salla', { method: 'POST', headers: { Authorization: 'Bearer cron-test' } })).json();
-  const slog2 = (await (await fetch('http://127.0.0.1:4060/__log')).json()).filter((l) => l.startsWith('SALLA')).slice(before);
+  const slog2 = (await sallaLog()).filter((l) => l.includes('/catalog')).slice(before);
   ok(slog2.length === 1 && slog2[0].includes('inm="v1"') && slog2[0].includes('sig=ok'), `re-read sends the ETag → 304, one call (${slog2.join(' | ')}) ${JSON.stringify(re1).slice(0, 120)}`);
   await fetch('http://127.0.0.1:4061/__salla/version');
   await fetch('http://localhost:3100/api/admin/refresh?source=salla', { method: 'POST', headers: { Authorization: 'Bearer cron-test' } });
-  const slog3 = (await (await fetch('http://127.0.0.1:4060/__log')).json()).filter((l) => l.startsWith('SALLA')).slice(before + 1).filter((l) => !l.includes('__salla'));
+  const slog3 = (await sallaLog()).filter((l) => l.includes('/catalog')).slice(before + 1);
   const sr = await (await fetch('http://localhost:3100/api/search?country=EG&q=Anker%20Q20')).json();
   ok(slog3.length >= 1 && slog3.every((l) => l.includes('sig=ok')) && (sr.offers || []).some((o) => o.price === 420.5 && o.listPrice === 480), `new catalog version → full read; search shows 420.5 PI (was 480) (${slog3.join(' | ')})`);
   const fx = await (await fetch('http://localhost:3100/api/search?country=EG&q=evil')).json();

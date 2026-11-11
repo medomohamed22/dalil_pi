@@ -56,8 +56,8 @@ export interface CatalogItem {
   digital: boolean;
   /** Ships to every country (Pi Chain Mall "global sale"); otherwise only `country`. */
   ships_global?: boolean;
-  /** Countries it ships to → fee in Pi (0 = free). Empty = only `country` (local / pickup). */
-  shipping?: Record<string, number> | null;
+  /** Countries it ships to → fee in Pi (0 = free, null = worked out at checkout). Empty = only `country` (local / pickup). */
+  shipping?: Record<string, number | null> | null;
   /** Filled once per product by AI (enrich.ts). */
   brand?: string | null;
   model?: string | null;
@@ -74,7 +74,7 @@ interface SourceState {
   items: number;
   ok: boolean | null;
   error: string | null;
-  meta: { usd_rate?: number; profit_percentage?: number; pi_price_cache?: number; enriched_at?: string; etag?: string; version?: string; via?: string; api_error?: string };
+  meta: { usd_rate?: number; profit_percentage?: number; pi_price_cache?: number; enriched_at?: string; etag?: string; version?: string; via?: string; api_error?: string; map?: number };
 }
 
 /* ------------------------------------------------------------------ */
@@ -105,6 +105,10 @@ const num = (v: unknown) => {
   const n = typeof v === "string" ? Number(v) : v;
   return typeof n === "number" && Number.isFinite(n) ? n : null;
 };
+/** Shared with the Salla services directory (salla-services.ts). */
+export const cleanStr = (v: unknown, max = 400) => str(v, max);
+export const cleanNum = (v: unknown) => num(v);
+export const cleanImg = (v: unknown) => httpsImg(v);
 const httpsImg = (v: unknown) => (typeof v === "string" && /^https:\/\/[^\s"'<>]+$/.test(v.trim()) ? v.trim() : null);
 const base = (v?: string) => (v ? v.replace(/\/+$/, "") : "");
 
@@ -374,9 +378,9 @@ export function sallaSign(fnPath: string, pathAndQuery: string, secret: string, 
 /** The function's base URL; a pasted ".../catalog" or ".../health" or "?query" is trimmed off. */
 const sallaBase = () =>
   base((process.env.SALLA_BASE_URL ?? "").trim().replace(/[?#].*$/, ""))
-    .replace(/\/(catalog|health)$/i, "");
+    .replace(/\/(catalog|health|services|status)$/i, "");
 
-async function sallaGet(pathAndQuery: string, etag?: string): Promise<Response> {
+export async function sallaGet(pathAndQuery: string, etag?: string): Promise<Response> {
   const api = sallaBase();
   const url = new URL(api + pathAndQuery);
   if (url.protocol !== "https:" && !allowPrivate()) throw new Error("SALLA_BASE_URL must be https");
@@ -386,6 +390,12 @@ async function sallaGet(pathAndQuery: string, etag?: string): Promise<Response> 
   const headers: Record<string, string> = { Accept: "application/json", "User-Agent": UA, ...sallaSign(fnPath, pathAndQuery, process.env.SALLA_SECRET!, process.env.SALLA_PARTNER_ID!) };
   if (etag) headers["If-None-Match"] = etag;
   return fetchWithTimeout(url.toString(), { headers, redirect: "error", timeoutMs: 10000 });
+}
+
+/** A failed answer, readable in the admin: the path and Salla's own short reason (never the secret). */
+export function sallaError(status: number, path: string, why: string): string {
+  const b = new URL(sallaBase());
+  return `Salla API answered ${status} for ${b.host}${b.pathname}${path}${why ? ` — ${why}` : ""}`;
 }
 
 export type SallaApiResult = { notModified: true; etag?: string } | { notModified?: false; items: CatalogItem[]; meta: SourceState["meta"] };
@@ -406,7 +416,7 @@ export async function fetchSallaApi(etag?: string): Promise<SallaApiResult> {
       if (!res.ok) {
         // Path and Salla's own short answer help find a wrong link; the secret is never part of either.
         const why = (await res.text().catch(() => "")).replace(/\s+/g, " ").slice(0, 120);
-        throw new Error(`Salla API answered ${res.status} for ${new URL(sallaBase()).host}${new URL(sallaBase()).pathname}/catalog${why ? ` — ${why}` : ""}`);
+        throw new Error(sallaError(res.status, "/catalog", why));
       }
       if (page === 1) firstEtag = res.headers.get("etag") ?? undefined;
       const j = (await res.json()) as { products?: Array<Record<string, unknown>>; pages?: number; version?: unknown };
@@ -423,38 +433,73 @@ export async function fetchSallaApi(etag?: string): Promise<SallaApiResult> {
     if (restart) continue;
     const items: CatalogItem[] = [];
     for (const p of rows) {
-      const id = str(p.id, 64);
-      const title = str(p.title, 200);
-      const pi = num(p.price);
-      const url = str(p.url, 300);
-      if (!id || !/^[0-9a-f-]{36}$/i.test(id) || !title || !(pi && pi > 0) || p.in_stock === false) continue;
-      if (String(p.currency ?? "PI").toUpperCase() !== "PI") continue;
-      if (url !== `https://mall.salla-shop.com/product/${id}`) continue; // only real Salla product links
-      const pics = [p.image, ...(Array.isArray(p.images) ? p.images : [])].map(httpsImg).filter(Boolean) as string[];
-      const was = num(p.list_price);
-      items.push({
-        id: `salla:${id}`,
-        source: "salla",
-        title,
-        title_ar: str(p.title_ar, 200),
-        description: [str(p.description, 300), str(p.description_ar, 300)].filter(Boolean).join(" — ") || null,
-        url,
-        price: Math.round(pi * 1e4) / 1e4,
-        list_price: was && was > pi ? Math.round(was * 1e4) / 1e4 : null,
-        price_egp: null,
-        list_price_egp: null,
-        image: pics[0] ?? null,
-        images: [...new Set(pics)].slice(0, 8),
-        category: [str(p.category, 60), str(p.category_ar, 60)].filter(Boolean).join(" / ") || null,
-        tags: (Array.isArray(p.tags) ? p.tags : []).map((x) => str(x, 40)).filter(Boolean).slice(0, 10) as string[],
-        in_stock: true,
-        stock: null,
-        digital: false,
-      });
+      const it = sallaApiItem(p);
+      if (it) items.push(it);
     }
-    return { items, meta: { etag: firstEtag, version: version == null ? undefined : String(version).slice(0, 80), via: "api" } };
+    return { items, meta: { etag: firstEtag, version: version == null ? undefined : String(version).slice(0, 80), via: "api", map: SALLA_MAP } };
   }
   throw new Error("Salla catalog kept changing during the pull");
+}
+
+/**
+ * How we read one partner product. Bump SALLA_MAP when this changes: the next pull then skips the
+ * ETag (a 304 would keep rows read the old way).
+ */
+const SALLA_MAP = 2;
+/** Only real Salla links: the store's own products and the mall merchants' products, with our `?ref=dalilpi`. */
+const SALLA_LINK = /^https:\/\/mall\.salla-shop\.com\/(product|merchant-product)\/([0-9a-f-]{36})(\?ref=dalilpi)?$/i;
+const ISO2 = /^[A-Z]{2}$/;
+
+/** One product of the partner catalog → our row, or null when it is unusable. */
+export function sallaApiItem(p: Record<string, unknown>): CatalogItem | null {
+  const id = str(p.id, 64);
+  const title = str(p.title, 200);
+  const pi = num(p.price);
+  const url = str(p.url, 300);
+  if (!id || !/^[0-9a-f-]{36}$/i.test(id) || !title || !(pi && pi > 0) || p.in_stock === false) return null;
+  if (String(p.currency ?? "PI").toUpperCase() !== "PI") return null;
+  const link = url?.match(SALLA_LINK);
+  // The link must be the product's own page (same id); the ref is kept exactly as Salla sent it.
+  if (!link || link[2].toLowerCase() !== id.toLowerCase()) return null;
+  const merchant = p.source === "merchant" || link[1].toLowerCase() === "merchant-product";
+  const pics = [p.image, ...(Array.isArray(p.images) ? p.images : [])].map(httpsImg).filter(Boolean) as string[];
+  const was = num(p.list_price);
+  // Where it can be ordered (a buyer elsewhere is refused at checkout) and the shipping in Pi there.
+  let shipping: Record<string, number | null> | null = null;
+  if (Array.isArray(p.ships_to)) {
+    const fees = (p.shipping_by_country && typeof p.shipping_by_country === "object" ? p.shipping_by_country : {}) as Record<string, unknown>;
+    shipping = {};
+    for (const c of p.ships_to.slice(0, 250)) {
+      const cc = typeof c === "string" ? c.trim().toUpperCase() : "";
+      if (!ISO2.test(cc)) continue;
+      const fee = num(fees[cc] ?? fees[cc.toLowerCase()]);
+      shipping[cc] = fee != null && fee >= 0 ? Math.round(fee * 1e4) / 1e4 : null;
+    }
+  }
+  const tags = (Array.isArray(p.tags) ? p.tags : []).map((x) => str(x, 40)).filter(Boolean) as string[];
+  return {
+    id: `salla:${id.toLowerCase()}`,
+    source: "salla",
+    title,
+    title_ar: str(p.title_ar, 200),
+    description: [str(p.description, 300), str(p.description_ar, 300)].filter(Boolean).join(" — ") || null,
+    url: url!,
+    price: Math.round(pi * 1e4) / 1e4,
+    list_price: was && was > pi ? Math.round(was * 1e4) / 1e4 : null,
+    price_egp: null,
+    list_price_egp: null,
+    image: pics[0] ?? null,
+    images: [...new Set(pics)].slice(0, 8),
+    seller: merchant ? str(p.seller, 80) : null,
+    country: null,
+    category: [str(p.category, 60), str(p.category_ar, 60)].filter(Boolean).join(" / ") || null,
+    tags: [...new Set(tags)].slice(0, 10),
+    in_stock: true,
+    stock: null,
+    digital: false,
+    ships_global: false,
+    shipping,
+  };
 }
 
 /** Pi price (and "was" price) of an indexed item: Salla page-read rows are in EGP, API rows in Pi. */
@@ -559,7 +604,9 @@ async function alertWatchers(items: CatalogItem[], meta: SourceState["meta"]) {
   const prices = new Map<string, number>();
   for (const it of items) {
     const p = piPrices(it, meta).price;
-    if (p && p > 0) prices.set(it.url, Math.round(p * 1e4) / 1e4);
+    if (!(p && p > 0)) continue;
+    prices.set(it.url, Math.round(p * 1e4) / 1e4);
+    if (it.source === "salla" && it.url !== withoutRef(it.url)) prices.set(withoutRef(it.url), Math.round(p * 1e4) / 1e4);
   }
   // Lazy imports: watches/telegram import this module.
   const { applyCatalogPrices } = await import("./watches");
@@ -585,7 +632,7 @@ async function touch(source: CatalogSource, meta: SourceState["meta"], items: nu
 }
 
 export interface RefreshResult {
-  source: CatalogSource;
+  source: CatalogSource | "salla_services";
   status: "fresh" | "locked" | "updated" | "failed" | "skipped";
   via?: string;
   items?: number;
@@ -600,6 +647,11 @@ export async function refreshCatalog(opts: { force?: boolean; sources?: CatalogS
   const asked = opts.sources ?? SOURCES;
   const skipped = SOURCES.filter((s) => !want.includes(s)).map((s): RefreshResult => ({ source: s, status: asked.includes(s) ? "fresh" : "skipped" }));
   let browser: BrowserSession | null = null;
+  // Salla's apps directory rides along with the Salla catalog (same partner API, own hourly TTL).
+  const services =
+    asked.includes("salla") && sallaApiReady()
+      ? import("./salla-services").then((m) => m.refreshSallaServices({ force: opts.force })).catch((e: Error): RefreshResult => ({ source: "salla_services", status: "failed", error: e.message }))
+      : null;
   try {
     const done = await Promise.all(
       want.map(async (source): Promise<RefreshResult> => {
@@ -616,7 +668,7 @@ export async function refreshCatalog(opts: { force?: boolean; sources?: CatalogS
           else {
             // Partner API first (signed, fast, no browser); the public page read is the fallback.
             const prev = states.get("salla");
-            const etag = prev?.ok && prev.meta?.via === "api" && prev.items > 0 ? prev.meta.etag : undefined;
+            const etag = prev?.ok && prev.meta?.via === "api" && prev.meta.map === SALLA_MAP && prev.items > 0 ? prev.meta.etag : undefined;
             let apiErr: string | null = null;
             const viaApi = sallaApi ? await fetchSallaApi(etag).catch((e: Error) => ((apiErr = e.message), null)) : null;
             if (viaApi?.notModified) {
@@ -648,7 +700,7 @@ export async function refreshCatalog(opts: { force?: boolean; sources?: CatalogS
         }
       }),
     );
-    return [...done, ...skipped];
+    return [...done, ...skipped, ...(services ? [await services] : [])];
   } finally {
     await (browser as BrowserSession | null)?.close();
   }
@@ -832,7 +884,8 @@ const SALLA_ONLY = (process.env.SALLA_COUNTRIES ?? "")
   .filter((c) => /^[A-Z]{2}$/.test(c));
 const sallaReaches = (country: string) => !SALLA_ONLY.length || SALLA_ONLY.includes(country);
 function reaches(it: CatalogItem, country: string): boolean {
-  if (it.source === "salla") return sallaReaches(country);
+  // Salla: the countries the partner API says it can be ordered from (rows from the page read have none → everywhere).
+  if (it.source === "salla") return sallaReaches(country) && (it.shipping && Object.keys(it.shipping).length ? country in it.shipping : true);
   if (it.source === "gtp") return it.digital || !it.country || it.country === country;
   // Piketplace: the countries it ships to (none listed = seller's country only).
   // Sellers there often tick "digital" on physical goods (shoes…), so that flag doesn't widen the reach.
@@ -943,10 +996,13 @@ export async function searchCatalog(
   return { hits: hits.slice(0, opts.limit ?? 12), sources };
 }
 
+/** Salla links carry `?ref=dalilpi` since the partner API; watches saved before still use the bare link. */
+const withoutRef = (u: string) => u.replace(/\?ref=dalilpi$/i, "");
+
 /** Current Pi price of an indexed product page (for watches), or undefined when unknown/stale. */
 export async function indexedPrice(url: string): Promise<number | undefined> {
   const idx = await index();
-  const row = idx.rows.find((r) => r.item.url === url);
+  const row = idx.rows.find((r) => r.item.url === url) ?? idx.rows.find((r) => r.item.source === "salla" && withoutRef(r.item.url) === withoutRef(url));
   if (!row) return;
   const st = idx.states.get(row.item.source);
   if (!st?.refreshed_at || Date.now() - Date.parse(st.refreshed_at) > 2 * TTL_MIN[row.item.source] * 60_000) return;
@@ -966,7 +1022,7 @@ export async function twinsOf(itemId: string, country: string): Promise<IndexHit
     const { price } = piPrices(it, idx.states.get("salla")?.meta ?? {});
     if (!price) continue;
     const ship = it.shipping && country in it.shipping ? it.shipping[country] : 0;
-    out.push({ item: it, score: 1, price: Math.round((price + (ship || 0)) * 100) / 100, store: STORE_NAME[it.source], ageMin: -1 });
+    out.push({ item: it, score: 1, price: Math.round((price + (ship ?? 0)) * 100) / 100, store: STORE_NAME[it.source], ageMin: -1 });
   }
   return out.sort((a, b) => a.price - b.price).slice(0, 4);
 }
@@ -993,7 +1049,7 @@ export function resetCatalogMemory() {
 
 /** The country a product is shown for on its public page (search engines have no country). */
 function homeCountryOf(it: CatalogItem): string {
-  if (it.source === "salla") return "EG";
+  if (it.source === "salla") return !it.shipping || !Object.keys(it.shipping).length || "EG" in it.shipping ? "EG" : Object.keys(it.shipping)[0];
   if (it.country) return it.country;
   const ship = it.shipping ? Object.keys(it.shipping)[0] : undefined;
   return ship ?? "US";

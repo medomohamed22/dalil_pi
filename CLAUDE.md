@@ -20,3 +20,6 @@
 
 ## Partner env vars
 - Salla Shop: `SALLA_BASE_URL`, `SALLA_PARTNER_ID`, `SALLA_SECRET` (HMAC-signed, hourly pull, ETag).
+  - `/catalog`: products of the store + mall merchants; `ships_to` decides the countries, `shipping_by_country` the fee (null = at checkout); `url` already has `?ref=dalilpi` — keep it, never add another.
+  - `/services`: Salla apps directory (restaurants, services, health, delivery, mall services, Telegram) → `partner_services` table, `/api/services`, Services tab, and in `search_salla`.
+  - Optional `SALLA_COUNTRIES` limits Salla to some countries.

@@ -1,9 +1,9 @@
 "use client";
 
 import { m } from "framer-motion";
-import { MapPin, MessageCircle, Navigation, Phone, Store } from "lucide-react";
+import { ExternalLink, MapPin, MessageCircle, Navigation, Phone, Star, Store } from "lucide-react";
 import type { Strings } from "@/lib/i18n";
-import type { LocalShop } from "@/lib/types";
+import type { Lang, LocalShop, SallaApp } from "@/lib/types";
 import { SmartImage } from "./cards";
 import { track } from "@/lib/track";
 
@@ -100,5 +100,56 @@ export function ShopCards({ shops, s, locatedBy }: { shops: LocalShop[]; s: Stri
       </div>
       {locatedBy === "ip" && <p className="text-[11px] text-fg-muted">{s.approxDistance}</p>}
     </div>
+  );
+}
+
+/** Salla apps directory: tap opens it in the Salla app, where ordering and paying happen. */
+export function SallaAppCards({ apps, s, lang }: { apps: SallaApp[]; s: Strings; lang: Lang }) {
+  return (
+    <ul className="space-y-2" data-testid="salla-apps">
+      {apps.map((a, i) => {
+        const name = lang === "ar" && a.name_ar ? a.name_ar : a.name;
+        const sub = [s.svcType[a.type], a.specialty ?? a.category, a.city ?? (a.countries.length ? null : s.svcEverywhere)].filter(Boolean).join(" · ");
+        return (
+          <m.li key={a.key} initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: Math.min(i, 8) * 0.03 }}>
+            <a
+              href={a.url}
+              target="_blank"
+              rel="noopener noreferrer"
+              onClick={() => track("visit", { store: "Salla Shop Mall", url: a.url, title: name })}
+              className="flex items-center gap-3 rounded-2xl border border-line bg-bg p-2.5"
+              data-salla-app={a.key}
+            >
+              <SmartImage src={a.image ?? undefined} alt={name} className="size-14 shrink-0 rounded-xl" fallbackLabel={s.svcType[a.type]} />
+              <span className="min-w-0 flex-1">
+                <span className="block truncate text-[14px] font-semibold" dir="auto">
+                  {name}
+                </span>
+                <span className="block truncate text-[12px] text-fg-muted" dir="auto">
+                  {sub}
+                </span>
+                <span className="mt-0.5 flex items-center gap-2 text-[12px]">
+                  {a.price != null ? (
+                    <span className="font-semibold tabular-nums" dir="ltr">
+                      {a.price.toLocaleString("en-US", { maximumFractionDigits: a.price < 10 ? 2 : 1 })} π{a.price_unit && s.svcUnit[a.price_unit] ? <span className="font-normal text-fg-muted"> · {s.svcUnit[a.price_unit]}</span> : null}
+                    </span>
+                  ) : (
+                    <span className="text-fg-muted">{s.svcPriceInApp}</span>
+                  )}
+                  {a.rating != null && (a.ratings ?? 0) > 0 && (
+                    <span className="flex items-center gap-0.5 text-fg-muted tabular-nums" dir="ltr">
+                      <Star className="size-3 fill-current text-amber-500" /> {a.rating} ({a.ratings})
+                    </span>
+                  )}
+                </span>
+              </span>
+              <span className="flex shrink-0 items-center gap-1 rounded-full bg-bg-soft px-3 py-1.5 text-[12px] font-medium">
+                {s.svcOpen} <ExternalLink className="size-3" />
+              </span>
+            </a>
+          </m.li>
+        );
+      })}
+    </ul>
   );
 }

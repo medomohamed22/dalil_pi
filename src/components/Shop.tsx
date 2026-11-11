@@ -38,9 +38,9 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { countryLabel, type Strings } from "@/lib/i18n";
 import { STORE_DIRECTORY, type StoreEntry } from "@/lib/stores";
 import { track } from "@/lib/track";
-import type { Lang, LocalShop, Offer } from "@/lib/types";
+import type { Lang, LocalShop, Offer, SallaApp } from "@/lib/types";
 import { BottomSheet, OfferDetail, SmartImage } from "./cards";
-import { ShopCards } from "./Shops";
+import { SallaAppCards, ShopCards } from "./Shops";
 
 /* ------------------------------------------------------------------ */
 /* Views + URL                                                          */
@@ -930,7 +930,62 @@ const SERVICES: Array<{ id: keyof Strings["svc"]; Icon: typeof House; any: strin
   { id: "food", Icon: UtensilsCrossed, any: "food|meal|restaurant|اكل|مطعم|وجبة" },
 ];
 
-function ServicesView({ s, country, go, back, coords, onLocate }: CommonProps & { coords?: { lat: number; lon: number } | null; onLocate: () => void }) {
+type AppType = SallaApp["type"];
+const APP_TYPES: AppType[] = ["restaurant", "service", "health", "delivery", "mall_service", "telegram"];
+
+/** Salla apps directory with type chips (only the types that have entries in the country). */
+function SallaAppsSection({ s, lang, country }: { s: Strings; lang: Lang; country: string }) {
+  const [type, setType] = useState<AppType | null>(null);
+  const [more, setMore] = useState(false);
+  const all = useJson<{ services: SallaApp[]; types: Partial<Record<AppType, number>>; total: number }>(`/api/services?country=${country}&limit=60`);
+  const one = useJson<{ services: SallaApp[]; total: number }>(type ? `/api/services?country=${country}&type=${type}&limit=60` : null);
+  const types = APP_TYPES.filter((t) => (all.data?.types?.[t] ?? 0) > 0);
+  const list = (type ? one.data?.services : all.data?.services) ?? [];
+  const loading = type ? one.loading && !one.data : all.loading && !all.data;
+  if (!loading && !all.data?.total) return null;
+  return (
+    <section data-testid="salla-apps-section">
+      <SectionTitle>{s.sallaApps}</SectionTitle>
+      <p className="-mt-1.5 mb-2.5 text-[12.5px] text-fg-muted">{s.sallaAppsSub}</p>
+      {types.length > 1 && (
+        <div className="-mx-4 mb-2.5 flex gap-1.5 overflow-x-auto px-4 pb-1" data-testid="salla-app-types">
+          {[null, ...types].map((t) => (
+            <button
+              key={t ?? "all"}
+              onClick={() => {
+                setType(t);
+                setMore(false);
+              }}
+              className={`shrink-0 rounded-full px-3 py-1.5 text-[12.5px] font-medium ${type === t ? "bg-inv-bg text-inv-fg" : "bg-bg-soft"}`}
+              data-testid={`app-type-${t ?? "all"}`}
+            >
+              {t ? `${s.svcType[t]} · ${all.data?.types?.[t] ?? 0}` : s.svcType.all}
+            </button>
+          ))}
+        </div>
+      )}
+      {loading ? (
+        <div className="space-y-2">
+          <div className="skeleton h-20 rounded-2xl" />
+          <div className="skeleton h-20 rounded-2xl" />
+        </div>
+      ) : list.length ? (
+        <>
+          <SallaAppCards apps={more ? list : list.slice(0, 8)} s={s} lang={lang} />
+          {!more && list.length > 8 && (
+            <button onClick={() => setMore(true)} className="mt-2 flex w-full items-center justify-center gap-1 rounded-2xl bg-bg-soft py-2.5 text-[13px] font-medium" data-testid="salla-apps-more">
+              <ChevronDown className="size-4" /> {list.length - 8}+
+            </button>
+          )}
+        </>
+      ) : (
+        <p className="rounded-2xl bg-bg-soft p-4 text-[13.5px] text-fg-soft">{s.noSallaApps}</p>
+      )}
+    </section>
+  );
+}
+
+function ServicesView({ s, lang, country, go, back, coords, onLocate }: CommonProps & { coords?: { lat: number; lon: number } | null; onLocate: () => void }) {
   const url = `/api/local-shops?country=${country}${coords ? `&lat=${coords.lat}&lon=${coords.lon}` : ""}`;
   const shops = useJson<{ shops: LocalShop[]; locatedBy?: "gps" | "ip" | null }>(url);
   return (
@@ -960,6 +1015,8 @@ function ServicesView({ s, country, go, back, coords, onLocate }: CommonProps & 
           </m.button>
         ))}
       </div>
+
+      <SallaAppsSection s={s} lang={lang} country={country} />
 
       <SectionTitle
         action={

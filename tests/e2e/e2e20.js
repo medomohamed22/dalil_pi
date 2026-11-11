@@ -130,7 +130,7 @@ const ip = (n) => ({ 'x-real-ip': `10.9.${Math.floor(n / 250)}.${n % 250}` });
     ok(all.offers?.length > 0, `${c}: products ready on the home page (${all.offers?.length}) from ${[...new Set((all.offers || []).map((o) => o.store))].join(', ')}`);
   }
   const sb = await J(await fetch(BASE + '/api/search?country=EG&store=salla&limit=24', { headers: ip(110) }));
-  ok(sb.offers?.length > 0 && sb.offers.every((o) => o.store === 'Salla Shop Mall'), `browsing one store with no words lists that store (${sb.offers?.length} Salla products)`);
+  ok(sb.offers?.length > 0 && sb.offers.every((o) => o.store.startsWith('Salla Shop Mall')), `browsing one store with no words lists that store (${sb.offers?.length} Salla products)`);
   const vn = await J(await fetch(BASE + '/api/search?country=VN&store=salla', { headers: ip(110) }));
   ok(vn.offers?.length > 0, `Salla Shop Mall is a global mall: offered in Vietnam too (${vn.offers?.length})`);
 })().catch((e) => { console.error(e); process.exit(1); });

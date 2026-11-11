@@ -15,6 +15,7 @@ import { cached, norm } from "./cache";
 import { expandQuery } from "./lexicon";
 import { pickLocalShops } from "./salla-local";
 import { searchCatalog, sallaApiReady, type IndexHit } from "./catalog";
+import { sallaServices, type SallaService } from "./salla-services";
 import { marketplacesEnabled, marketplacesSearch, mapOfPiConfigured, mapOfPiNearby, pcmEnabled, pcmSearch } from "./partners";
 import type { AgentEvent, Lang, Offer, Scope, Step, WireMessage } from "../types";
 
@@ -307,7 +308,7 @@ ${SCOPE_RULE[scope]}
 
 Where Pi is accepted (check these first; they take payment in Pi):
 - Pi Chain Mall — https://pipcm.com (FIRST PRIORITY: Pi Network's global marketplace, Pi Hackathon winner, every price in Pi). It is in search_dalil_index (live fallback: search_pi_chain_mall); when it has a good match, list it first. Never guess its URLs and never open pipcm.com with browse_url/browser_open (it's an app that needs a Pi login).
-- Salla Shop Mall — https://mall.salla-shop.com (global multi-vendor Pi marketplace, started in Egypt; also services: Telegram Stars/Premium, Salla Care, Salla Go, food, Salla Swap). Its whole catalog is in search_dalil_index; the live search_salla tool is the fallback (and covers merchant products and services) — never guess Salla URLs.
+- Salla Shop Mall — https://mall.salla-shop.com (global multi-vendor Pi marketplace, started in Egypt; also services: Telegram Stars/Premium, Salla Care, Salla Go, food, Salla Swap). Its whole catalog (its own products and the mall merchants') is in search_dalil_index; search_salla also returns its apps directory (restaurants, services, Salla Care clinics/labs/pharmacies, Salla Go delivery cities, Telegram Stars/Premium) — call it for food, delivery, health, services or Telegram requests. Never guess Salla URLs.
 - Shops registered with Dalil Pi: search them with the dalil_merchants tool in your first turn (approved merchants that accept Pi, with Pi prices).
 - Stores using the Sallanet Pay gateway (WooCommerce stores that accept Pi at checkout).
 - Smaller Pi marketplaces: search them with search_pi_marketplaces (Global Trade Pi). Piketplace (https://mpiket.pinet.com — many sellers incl. Egypt; it is in search_dalil_index with shipping fees; some π prices are inflated, compare before recommending), and Pi Mainnet commerce apps on *.pinet.com.${regionalMarkets(loc.country)}
@@ -612,13 +613,43 @@ async function execTool(
       // Salla's partner API has no search: with it, the hourly copy in Dalil Index is searched
       // (exact Pi prices from Salla); the headless browser is the fallback.
       if (sallaApiReady()) {
-        const { hits } = await searchCatalog(qs, { country: ctx.locale.country, limit: 16, sources: ["salla"] }).catch(() => ({ hits: [] as IndexHit[] }));
-        if (hits.length) {
-          return hits.map((h) => {
+        const c = ctx.locale.country;
+        const [{ hits }, apps] = await Promise.all([
+          searchCatalog(qs, { country: c, limit: 16, sources: ["salla"] }).catch(() => ({ hits: [] as IndexHit[] })),
+          // The Salla apps directory (restaurants, services, Salla Care, Salla Go, Telegram): any phrasing that matches.
+          (async () => {
+            const seen = new Map<string, SallaService>();
+            for (const q of qs) for (const a of (await sallaServices({ country: c, q, limit: 6 })).services) seen.set(a.key, a);
+            return [...seen.values()].slice(0, 6);
+          })().catch(() => [] as SallaService[]),
+        ]);
+        if (hits.length || apps.length) {
+          const products = hits.map((h) => {
             ctx.evidence.addObserved(h.item.url, h.price);
             ctx.pages.set(h.item.url, { image: h.item.image ?? undefined });
-            return { title: h.item.title, ...(h.item.title_ar ? { title_ar: h.item.title_ar } : {}), store: "Salla Shop Mall", url: h.item.url, image: h.item.image ?? undefined, price: h.price, currency: "PI", listPrice: h.listPrice, inStock: h.item.in_stock, kind: "online", piEvidence: "Pi price from Salla Shop's partner catalog" };
+            const fee = h.item.shipping && c in h.item.shipping ? h.item.shipping[c] : undefined;
+            return {
+              title: h.item.title,
+              ...(h.item.title_ar ? { title_ar: h.item.title_ar } : {}),
+              store: h.item.seller ? `Salla Shop Mall · ${h.item.seller}` : "Salla Shop Mall",
+              url: h.item.url,
+              image: h.item.image ?? undefined,
+              price: h.price,
+              currency: "PI",
+              listPrice: h.listPrice,
+              ...(fee != null ? { shipping: fee } : fee === null ? { shippingNote: "shipping worked out at checkout" } : {}),
+              inStock: h.item.in_stock,
+              kind: "online",
+              piEvidence: "Pi price from Salla Shop's partner catalog",
+            };
           });
+          if (!apps.length) return products;
+          for (const a of apps) if (a.price != null) ctx.evidence.addObserved(a.url, a.price);
+          return {
+            products,
+            salla_apps: apps.map((a) => ({ type: a.type, name: a.name, ...(a.name_ar ? { name_ar: a.name_ar } : {}), city: a.city ?? undefined, category: a.specialty ?? a.category ?? undefined, price: a.price ?? undefined, priceUnit: a.price_unit ?? undefined, rating: a.rating ?? undefined, ratings: a.ratings ?? undefined, url: a.url, image: a.image ?? undefined })),
+            hint: "salla_apps open in the Salla app, where the user orders, books and pays in Pi. Those with a price can go in show_offers (kind \"service\", store \"Salla Shop Mall\"); otherwise name them with their url in your answer.",
+          };
         }
       }
       if (!ctx.browser || !ctx.viaBrowser) throw new Error("Salla search unavailable right now");
@@ -654,7 +685,7 @@ async function execTool(
         return {
           title: it.title,
           ...(it.title_ar ? { title_ar: it.title_ar } : {}),
-          store: it.seller && it.source !== "salla" ? `${h.store} · ${it.seller}` : h.store,
+          store: it.seller && it.seller !== h.store ? `${h.store} · ${it.seller}` : h.store,
           url: it.url,
           image: it.image ?? undefined,
           price: h.price,
@@ -666,8 +697,8 @@ async function execTool(
           category: it.category ?? undefined,
           about: it.description ? it.description.slice(0, 160) : undefined,
           sellerCountry: it.country ?? undefined,
-          shipping: it.source === "pcm" ? (it.ships_global ? "global sale (ships internationally)" : `sold in ${ctx.locale.countryName}`) : it.shipping && ctx.locale.country in it.shipping ? (it.shipping[ctx.locale.country] ? `${it.shipping[ctx.locale.country]} PI to ${ctx.locale.countryName}` : "free shipping") : undefined,
-          ...(it.shipping && ctx.locale.country in it.shipping ? { shippingPi: it.shipping[ctx.locale.country] } : {}),
+          shipping: it.source === "pcm" ? (it.ships_global ? "global sale (ships internationally)" : `sold in ${ctx.locale.countryName}`) : it.shipping && ctx.locale.country in it.shipping ? (it.shipping[ctx.locale.country] == null ? "shipping worked out at checkout" : it.shipping[ctx.locale.country] ? `${it.shipping[ctx.locale.country]} PI to ${ctx.locale.countryName}` : "free shipping") : undefined,
+          ...(it.shipping && ctx.locale.country in it.shipping && it.shipping[ctx.locale.country] != null ? { shippingPi: it.shipping[ctx.locale.country] } : {}),
           piEvidence: `Pi price from ${h.store}'s catalog (Dalil Index, ${h.ageMin >= 0 ? `${h.ageMin} min old` : "fresh"})`,
           match: h.score,
         };

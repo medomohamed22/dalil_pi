@@ -40,11 +40,28 @@ const crypto = require('crypto');
 const SALLA_SECRET = 'salla-test-secret-0123456789abcdef', SALLA_PARTNER = 'dalil';
 const nonces = new Set();
 let sallaVersion = 'v1';
+const R = '?ref=dalilpi';
 const sallaProducts = [
-  { id: 'aaaaaaaa-1111-4111-8111-000000000001', title: 'Anker Wireless Headphones Q20', title_ar: null, description: 'ANC', url: 'https://mall.salla-shop.com/product/aaaaaaaa-1111-4111-8111-000000000001', image: 'https://cdn.salla.example/q20.jpg', images: ['https://cdn.salla.example/q20.jpg'], price: 420.5, list_price: 480, currency: 'PI', in_stock: true, category: 'Mobile accessories', category_ar: 'اكسسوارات موبايل', tags: [] },
-  { id: 'aaaaaaaa-1111-4111-8111-000000000002', title: 'Soundcore Life headphones', title_ar: 'سماعة ساوندكور', url: 'https://mall.salla-shop.com/product/aaaaaaaa-1111-4111-8111-000000000002', image: 'https://cdn.salla.example/life.jpg', price: 380, currency: 'PI', in_stock: true, category: 'Mobile accessories', tags: [] },
+  { id: 'aaaaaaaa-1111-4111-8111-000000000001', title: 'Anker Wireless Headphones Q20', title_ar: null, description: 'ANC', url: 'https://mall.salla-shop.com/product/aaaaaaaa-1111-4111-8111-000000000001' + R, image: 'https://cdn.salla.example/q20.jpg', images: ['https://cdn.salla.example/q20.jpg'], price: 420.5, list_price: 480, currency: 'PI', in_stock: true, category: 'Mobile accessories', category_ar: 'اكسسوارات موبايل', tags: [], source: 'salla', seller: null, ships_to: ['EG', 'SA', 'AE', 'US', 'NG', 'FR', 'VN'], shipping_by_country: { EG: 0.8123, SA: 0.8123, AE: 0.8123, US: 0.8123, NG: 0.8123, FR: 0.8123, VN: 0.8123 } },
+  // An older row without ships_to (reaches everywhere, like the page read).
+  { id: 'aaaaaaaa-1111-4111-8111-000000000002', title: 'Soundcore Life headphones', title_ar: 'سماعة ساوندكور', url: 'https://mall.salla-shop.com/product/aaaaaaaa-1111-4111-8111-000000000002' + R, image: 'https://cdn.salla.example/life.jpg', price: 380, currency: 'PI', in_stock: true, category: 'Mobile accessories', tags: [] },
   { id: 'aaaaaaaa-1111-4111-8111-000000000003', title: 'evil headphones', url: 'javascript:alert(1)', price: 1, currency: 'PI', in_stock: true },
   { id: 'aaaaaaaa-1111-4111-8111-000000000004', title: 'evil2 headphones', url: 'https://evil.example/product/x', price: 1, currency: 'PI', in_stock: true },
+  // A link to ANOTHER product than its id → dropped.
+  { id: 'aaaaaaaa-1111-4111-8111-000000000006', title: 'evil3 headphones', url: 'https://mall.salla-shop.com/product/aaaaaaaa-1111-4111-8111-000000000001' + R, price: 1, currency: 'PI', in_stock: true },
+  // A mall merchant's product: Egypt only, shipping worked out at checkout.
+  { id: 'aaaaaaaa-1111-4111-8111-000000000005', title: 'Merchant Earbuds X1', title_ar: 'سماعة تاجر', url: 'https://mall.salla-shop.com/merchant-product/aaaaaaaa-1111-4111-8111-000000000005' + R, image: 'https://cdn.salla.example/x1.jpg', price: 150, currency: 'PI', in_stock: true, category: 'Mobile accessories', tags: [], source: 'merchant', seller: 'Cairo Gadgets', ships_to: ['EG'], shipping_by_country: { EG: null } },
+  // Saudi-only product with free shipping.
+  { id: 'aaaaaaaa-1111-4111-8111-000000000007', title: 'Saudi Dates Box', url: 'https://mall.salla-shop.com/product/aaaaaaaa-1111-4111-8111-000000000007' + R, price: 12, currency: 'PI', in_stock: true, category: 'Food', tags: [], source: 'salla', seller: null, ships_to: ['SA'], shipping_by_country: { SA: 0 } },
+];
+let servicesVersion = 's1';
+const sallaServices = [
+  { id: 'cb5eac39-0000-4000-8000-000000000001', type: 'restaurant', name: 'Kebab House', name_ar: 'بيت الكباب', image: 'https://cdn.salla.example/kebab.jpg', countries: ['EG'], city: 'Cairo', category: 'grills', specialty: null, provider: null, price: null, price_unit: null, currency: 'PI', rating: 4.6, ratings: 31, url: 'https://mall.salla-shop.com/restaurants/r/cb5eac39-0000-4000-8000-000000000001' + R },
+  { id: 'hh-1', type: 'health', name: 'Nile Lab', name_ar: 'معمل النيل', image: null, countries: ['EG'], city: 'Giza', category: 'lab', specialty: 'Blood tests', provider: null, price: 3.5, price_unit: 'visit', currency: 'PI', rating: 4.9, ratings: 8, url: 'https://mall.salla-shop.com/care/p/hh-1' + R },
+  { id: 'tg-stars', type: 'telegram', name: 'Telegram Stars', name_ar: 'نجوم تليجرام', image: 'https://cdn.salla.example/stars.png', countries: [], city: null, category: null, specialty: null, provider: 'Salla Shop', price: 0.42, price_unit: '50_stars', currency: 'PI', rating: null, ratings: null, url: 'https://mall.salla-shop.com/telegram/stars' + R },
+  { id: 'cairo', type: 'delivery', name: 'Salla Go Cairo', name_ar: 'سلة جو القاهرة', image: null, countries: ['EG'], city: 'Cairo', category: 'delivery', price: null, currency: 'PI', url: 'https://go.salla-shop.com/' + R },
+  { id: 'evil', type: 'service', name: 'Evil service', countries: [], url: 'https://evil.example/x', currency: 'PI' },
+  { id: 'evil2', type: 'hack', name: 'Bad type', countries: [], url: 'https://mall.salla-shop.com/x', currency: 'PI' },
 ];
 http.createServer((req, res) => {
   const u = new URL(req.url, 'http://x');
@@ -57,6 +74,7 @@ http.createServer((req, res) => {
   const sigOk = h['x-partner-id'] === SALLA_PARTNER && fresh && nonceOk && typeof h['x-signature'] === 'string' && h['x-signature'] === want;
   log.push(`SALLA ${req.method} ${req.url} sig=${sigOk ? 'ok' : 'bad'} inm=${h['if-none-match'] || ''} auth=${h.authorization ? 'present' : 'none'}`);
   if (u.pathname === '/__salla/version') { sallaVersion = 'v' + Date.now(); return json(res, 200, { version: sallaVersion }); }
+  if (u.pathname === '/__salla/services-version') { servicesVersion = 's' + Date.now(); return json(res, 200, { version: servicesVersion }); }
   if (u.pathname === '/__salla/price') { const it = sallaProducts.find((x) => x.id === u.searchParams.get('id')); if (it) it.price = Number(u.searchParams.get('price')); sallaVersion = 'v' + Date.now(); return json(res, 200, { ok: !!it, version: sallaVersion }); }
   if (req.method !== 'GET') return json(res, 405, { error: 'method' });
   if (!sigOk) return json(res, 401, { error: 'bad signature' });
@@ -70,6 +88,17 @@ http.createServer((req, res) => {
     const rows = sallaProducts.slice((page - 1) * limit, page * limit);
     res.setHeader('etag', etag);
     return json(res, 200, { products: rows, page, limit, total: sallaProducts.length, pages: Math.ceil(sallaProducts.length / limit), version: sallaVersion, updated_at: new Date().toISOString() });
+  }
+  if (u.pathname === '/functions/v1/partner-catalog/services') {
+    const type = u.searchParams.get('type');
+    if (type && !['restaurant', 'service', 'health', 'delivery', 'mall_service', 'telegram'].includes(type)) return json(res, 400, { error: 'bad_type' });
+    const etag = `"${servicesVersion}"`;
+    if (h['if-none-match'] === etag) { res.writeHead(304, { etag }); return res.end(); }
+    const all = sallaServices.filter((x) => !type || x.type === type);
+    const limit = Math.min(200, Math.max(1, Number(u.searchParams.get('limit')) || 200));
+    const page = Math.max(1, Number(u.searchParams.get('page')) || 1);
+    res.setHeader('etag', etag);
+    return json(res, 200, { services: all.slice((page - 1) * limit, page * limit), page, limit, total: all.length, pages: Math.ceil(all.length / limit), version: servicesVersion, updated_at: new Date().toISOString() });
   }
   json(res, 404, { error: 'unknown path' });
 }).listen(4061);

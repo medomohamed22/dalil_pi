@@ -49,6 +49,15 @@ production API base URL, an API key if they want one, and their rate limit.
 > (304 = nothing changed); the headless page read stays the fallback. There is no search endpoint —
 > the `search_salla` tool searches the indexed copy.
 >
+> - Products: `ships_to` decides in which countries a product is shown (no field = everywhere);
+>   `shipping_by_country` is added to the total (`0` = free, `null` = "Shipping at checkout").
+>   Mall merchant products (`merchant-product/<id>`) show as "Salla Shop Mall · <seller>".
+>   `url` already ends with `?ref=dalilpi` (Salla labels the orders): kept exactly, never changed.
+> - Apps directory: `GET /services` (restaurants, services, Salla Care, Salla Go, mall services,
+>   Telegram) is pulled with the catalog, hourly with its own ETag, into `partner_services`
+>   (migration 0018). Shown in the Services tab and by `GET /api/services?country=&type=&q=`, and
+>   returned by the `search_salla` tool. Only https links on salla-shop.com are kept.
+>
 > The older proposal below (and [`docs/salla-partner/README.md`](salla-partner/README.md)) is kept for history only.
 
 ### Old proposal (not used)

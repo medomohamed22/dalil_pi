@@ -87,6 +87,25 @@ export interface Offer {
 }
 
 /** A physical shop where you pay in Pi at the counter (Salla Local). No price list. */
+/** An entry of the Salla apps directory (restaurant, service, clinic, delivery city, mall service, Telegram product). */
+export interface SallaApp {
+  key: string;
+  type: "restaurant" | "service" | "health" | "delivery" | "mall_service" | "telegram";
+  name: string;
+  name_ar: string | null;
+  image: string | null;
+  countries: string[];
+  city: string | null;
+  category: string | null;
+  specialty: string | null;
+  provider: string | null;
+  price: number | null;
+  price_unit: string | null;
+  rating: number | null;
+  ratings: number | null;
+  url: string;
+}
+
 export interface LocalShop {
   id: string;
   name: string;

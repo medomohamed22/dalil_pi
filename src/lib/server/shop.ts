@@ -85,12 +85,16 @@ export interface ShopResult {
   ms: number;
 }
 
+/** "Salla Shop Mall · <merchant>" for a mall merchant's product (Salla's own products have no seller). */
+const storeLabel = (store: string, it: IndexHit["item"]) => (it.seller && it.seller !== store ? `${store} · ${it.seller}` : store);
+
 function toRaw(h: IndexHit, country: string): RawOffer {
   const it = h.item;
-  const ship = it.shipping && country in it.shipping ? it.shipping[country] : undefined;
+  const fee = it.shipping && country in it.shipping ? it.shipping[country] : undefined;
+  const ship = fee ?? undefined;
   return {
     title: it.title,
-    store: it.seller && it.source !== "salla" ? `${h.store} · ${it.seller}` : h.store,
+    store: storeLabel(h.store, it),
     url: it.url,
     image: it.image ?? undefined,
     price: h.price,
@@ -99,7 +103,7 @@ function toRaw(h: IndexHit, country: string): RawOffer {
     shipping: ship,
     inStock: it.in_stock,
     kind: it.digital ? "service" : "online",
-    notes: it.source === "pcm" ? (it.ships_global ? "Global sale" : undefined) : undefined,
+    notes: it.source === "pcm" ? (it.ships_global ? "Global sale" : undefined) : fee === null ? "Shipping at checkout" : undefined,
     piEvidence: `Pi price from ${h.store}'s catalog`,
   };
 }
@@ -131,7 +135,7 @@ export async function productPage(id: string, country: string): Promise<ProductP
   if (hit.listPrice && hit.listPrice > scored.price) scored.listPrice = Math.round(hit.listPrice * 100) / 100;
   scored.ref = hit.item.id;
   const tw = await twinsOf(hit.item.id, country);
-  if (tw.length) scored.twins = tw.map((t) => ({ store: t.item.seller && t.item.source !== "salla" ? `${t.store} · ${t.item.seller}` : t.store, title: t.item.title, url: t.item.url, total: t.price, ref: t.item.id }));
+  if (tw.length) scored.twins = tw.map((t) => ({ store: storeLabel(t.store, t.item), title: t.item.title, url: t.item.url, total: t.price, ref: t.item.id }));
   const [offer] = prepareOffers([scored]);
   // Similar: the same AI category, else words from the title; never itself or its twins.
   const it = hit.item;
@@ -204,7 +208,7 @@ export async function searchShop(f: ShopFilters): Promise<ShopResult> {
         o.ref = it.id;
         // Same brand + model elsewhere (from the AI enrichment), cheapest first.
         const tw = it.twin_key ? await twinsOf(it.id, f.country) : [];
-        if (tw.length) o.twins = tw.map((t) => ({ store: t.item.seller && t.item.source !== "salla" ? `${t.store} · ${t.item.seller}` : t.store, title: t.item.title, url: t.item.url, total: t.price, ref: t.item.id }));
+        if (tw.length) o.twins = tw.map((t) => ({ store: storeLabel(t.store, t.item), title: t.item.title, url: t.item.url, total: t.price, ref: t.item.id }));
       }),
     );
     const signed = prepareOffers(scored);
