@@ -282,9 +282,25 @@ export async function fetchPkt(): Promise<CatalogItem[]> {
     for (const r of first.products?.data ?? []) rows.set(String(r.id), r);
     const last = Math.min(Number(first.products?.last_page) || 1, 150);
     const pages = Array.from({ length: last - 1 }, (_, i) => i + 2);
+    const failed: number[] = [];
     for (let i = 0; i < pages.length; i += 8) {
-      const got = await Promise.all(pages.slice(i, i + 8).map((pg) => getJson<Page>(url(c, pg)).catch(() => ({}) as Page)));
-      for (const g of got) for (const r of g.products?.data ?? []) rows.set(String(r.id), r);
+      const batch = pages.slice(i, i + 8);
+      const got = await Promise.all(batch.map((pg) => getJson<Page>(url(c, pg)).catch(() => null)));
+      got.forEach((g, j) => {
+        if (!g) failed.push(batch[j]);
+        else for (const r of g.products?.data ?? []) rows.set(String(r.id), r);
+      });
+    }
+    // A page that didn't load is retried one by one (slower, gentler); if it still fails, the whole
+    // pull fails and the old copy stays — a missing page must never look like deleted products.
+    for (const pg of failed) {
+      let g: Page | null = null;
+      for (let t = 0; t < 2 && !g; t++) {
+        await new Promise((r) => setTimeout(r, 400 * (t + 1)));
+        g = await getJson<Page>(url(c, pg)).catch(() => null);
+      }
+      if (!g) throw new Error(`Piketplace page ${pg} of ${last} did not load`);
+      for (const r of g.products?.data ?? []) rows.set(String(r.id), r);
     }
   }
   const out: CatalogItem[] = [];
@@ -590,14 +606,20 @@ async function save(source: CatalogSource, items: CatalogItem[], meta: SourceSta
       const old = stored.get(it.id);
       return !old || !old.active || old.hash !== hash;
     });
+  // Gone from the store → inactive (kept for price history and old links).
+  const ids = new Set(items.map((i) => i.id));
+  const gone = [...stored].filter(([id, r]) => r.active && !ids.has(id)).map(([id]) => id);
+  // A store doesn't lose 40% of its catalog in an hour: that is a partial read (pages that failed,
+  // an API hiccup). Keep the old copy then — those product pages must not turn into 404s.
+  const wasActive = [...stored.values()].filter((r) => r.active).length;
+  if (wasActive >= 50 && gone.length > wasActive * 0.4) {
+    throw new Error(`partial read: ${items.length} products now vs ${wasActive} before — kept the old copy`);
+  }
   for (let i = 0; i < changed.length; i += 200) {
     const rows = changed.slice(i, i + 200).map(({ it, hash }) => ({ ...it, active: true, hash, seen_at: now, updated_at: now }));
     const { error } = await db.from("catalog_items").upsert(rows, { onConflict: "id" });
     if (error) throw new Error(`catalog save: ${error.message}`);
   }
-  // Gone from the store → inactive (kept for price history and old links).
-  const ids = new Set(items.map((i) => i.id));
-  const gone = [...stored].filter(([id, r]) => r.active && !ids.has(id)).map(([id]) => id);
   for (let i = 0; i < gone.length; i += 200) {
     const { error } = await db.from("catalog_items").update({ active: false, updated_at: now }).in("id", gone.slice(i, i + 200));
     if (error) throw new Error(`catalog deactivate: ${error.message}`);
