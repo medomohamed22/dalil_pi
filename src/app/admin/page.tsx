@@ -29,6 +29,7 @@ interface Overview {
   revenuePi: number;
   orders30: number;
   merchantsPending: number;
+  paymentCheck?: { at: string; checked: number; fixed: number; issues: { paymentId: string; uid: string | null; amount: number; problem: string }[] } | null;
 }
 interface SiteSettings {
   featured: { store: string; cats: string; title_en: string; title_ar: string };
@@ -325,6 +326,19 @@ function OverviewTab({ api, go }: { api: Api; go: (t: Tab) => void }) {
   return (
     <div data-testid="admin-overview">
       {(ov.err || st.err) && <p className="mb-3 text-sm text-danger">{ov.err || st.err}</p>}
+      {!!ov.data?.paymentCheck?.issues.length && (
+        <div className="mb-4 rounded-2xl border border-danger/40 bg-danger/5 p-3 text-sm" data-testid="payment-issues">
+          <p className="font-semibold text-danger">دفعات محتاجة مراجعة ({ov.data.paymentCheck.issues.length})</p>
+          <ul className="mt-1.5 space-y-1 text-[13px]">
+            {ov.data.paymentCheck.issues.slice(0, 10).map((i) => (
+              <li key={i.paymentId + i.problem} dir="ltr" className="break-all">
+                {i.paymentId} · {i.amount} π · {i.problem}
+              </li>
+            ))}
+          </ul>
+          <p className="mt-1.5 text-[11px] text-fg-muted">آخر فحص: {new Date(ov.data.paymentCheck.at).toLocaleString("ar-EG")}</p>
+        </div>
+      )}
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4" data-testid="admin-totals">
         <Stat label="المستخدمين" value={n(ov.data?.users ?? 0)} hint={`+${ov.data?.newUsers7 ?? 0} آخر 7 أيام`} />
         <Stat label="باقات شغالة" value={n(ov.data?.activePacks ?? 0)} />

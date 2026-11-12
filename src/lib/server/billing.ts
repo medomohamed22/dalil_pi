@@ -210,3 +210,74 @@ export async function resolveIncomplete(uid: string, paymentId: string): Promise
   }
   return "ignored";
 }
+
+/* ---------------- daily payment check (cron) ---------------- */
+
+export interface PaymentIssue {
+  paymentId: string;
+  uid: string | null;
+  amount: number;
+  problem: string;
+  at: string;
+}
+export interface PaymentCheck {
+  at: string;
+  checked: number;
+  fixed: number;
+  issues: PaymentIssue[];
+}
+
+/**
+ * Daily: every payment that didn't finish cleanly is checked against Pi's own record.
+ *  - approved + paid on chain but never completed → completed and the pack activated,
+ *  - approved and never paid for a day → cancelled at Pi so the user isn't stuck,
+ *  - completed but no pack → pack activated (activate_payment is idempotent),
+ *  - anything else odd (amount differs, Pi errors) → listed for the owner (Admin → overview).
+ */
+export async function reconcilePayments(): Promise<PaymentCheck> {
+  const out: PaymentCheck = { at: new Date().toISOString(), checked: 0, fixed: 0, issues: [] };
+  if (!supabaseEnabled) return out;
+  const db = supabase();
+  const issue = (r: { payment_id: string; pi_uid: string | null; amount: number | string }, problem: string) =>
+    out.issues.push({ paymentId: r.payment_id, uid: r.pi_uid, amount: Number(r.amount), problem, at: out.at });
+
+  const halfHour = new Date(Date.now() - 30 * 60_000).toISOString();
+  const { data: open } = await db.from("payments").select("payment_id, pi_uid, amount, created_at").eq("status", "approved").lt("created_at", halfHour).limit(50);
+  for (const r of open ?? []) {
+    out.checked++;
+    try {
+      const p = await fetchPayment(r.payment_id);
+      if (!sameAmount(p.amount, Number(r.amount))) {
+        issue(r, `amount at Pi ${p.amount} π ≠ approved ${r.amount} π`);
+        continue;
+      }
+      if (p.status.cancelled || p.status.user_cancelled) {
+        await db.from("payments").update({ status: "cancelled" }).eq("payment_id", r.payment_id);
+        out.fixed++;
+      } else if (p.transaction?.txid && r.pi_uid) {
+        await completePayment(r.pi_uid, r.payment_id, p.transaction.txid);
+        out.fixed++;
+      } else if (Date.now() - Date.parse(r.created_at) > 864e5) {
+        await piServerCall(`/payments/${encodeURIComponent(r.payment_id)}/cancel`, { method: "POST" });
+        await db.from("payments").update({ status: "cancelled" }).eq("payment_id", r.payment_id);
+        out.fixed++;
+      }
+    } catch (e) {
+      issue(r, `could not finish: ${(e as Error).message.slice(0, 160)}`);
+    }
+  }
+
+  const threeDays = new Date(Date.now() - 3 * 864e5).toISOString();
+  const { data: done } = await db.from("payments").select("payment_id, pi_uid, amount, txid").eq("status", "completed").gte("created_at", threeDays).limit(500);
+  if (done?.length) {
+    const { data: subs } = await db.from("subscriptions").select("payment_id").in("payment_id", done.map((d) => d.payment_id));
+    const have = new Set((subs ?? []).map((s) => s.payment_id));
+    for (const r of done.filter((d) => !have.has(d.payment_id))) {
+      out.checked++;
+      const { error } = r.pi_uid ? await db.rpc("activate_payment", { p_payment_id: r.payment_id, p_uid: r.pi_uid, p_txid: r.txid }) : { error: { message: "no user" } };
+      if (error) issue(r, `paid but no pack: ${error.message.slice(0, 160)}`);
+      else out.fixed++;
+    }
+  }
+  return out;
+}

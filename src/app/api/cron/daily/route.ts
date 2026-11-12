@@ -1,6 +1,8 @@
 import { supabase, supabaseEnabled } from "@/lib/server/supabase";
 import { sendDigest } from "@/lib/server/telegram";
 import { checkWatches } from "@/lib/server/watches";
+import { reconcilePayments } from "@/lib/server/billing";
+import { kvSet } from "@/lib/server/kv";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -24,9 +26,12 @@ export async function GET(req: Request) {
   const watches = await checkWatches().catch((e: Error) => ({ checked: 0, drops: 0, error: e.message }));
   // Then tell linked users on Telegram what's new — without them opening the site.
   const telegram = await sendDigest().catch((e: Error) => ({ users: 0, sent: 0, error: e.message }));
-  if (!supabaseEnabled) return Response.json({ ok: true, database: false, watches, telegram });
+  // Payments that didn't finish cleanly: finished, cancelled or listed for the owner (Admin → overview).
+  const payments = await reconcilePayments().catch((e: Error) => ({ at: new Date().toISOString(), checked: 0, fixed: 0, issues: [{ paymentId: "-", uid: null, amount: 0, problem: `check failed: ${e.message}`, at: new Date().toISOString() }] }));
+  await kvSet("payments_check", payments).catch(() => {});
+  if (!supabaseEnabled) return Response.json({ ok: true, database: false, watches, telegram, payments });
   const db = supabase();
   const [counters, packs] = await Promise.all([db.rpc("purge_counters"), db.rpc("expire_packs"), db.rpc("purge_clicks")]);
   const errors = [counters.error?.message, packs.error?.message].filter(Boolean);
-  return Response.json({ ok: !errors.length, expiredPacks: packs.data ?? 0, watches, telegram, errors }, { status: errors.length ? 500 : 200 });
+  return Response.json({ ok: !errors.length, expiredPacks: packs.data ?? 0, watches, telegram, payments: { checked: payments.checked, fixed: payments.fixed, issues: payments.issues.length }, errors }, { status: errors.length ? 500 : 200 });
 }

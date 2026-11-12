@@ -1,4 +1,5 @@
 import "server-only";
+import { kvGet } from "./kv";
 import { randomBytes, scryptSync, timingSafeEqual } from "node:crypto";
 import { getSetting, setSetting, settingsKnown } from "./settings";
 import { signToken, verifyToken } from "./sign";
@@ -121,6 +122,8 @@ export interface Overview {
   revenuePi: number;
   orders30: number;
   merchantsPending: number;
+  /** Last daily payment check (cron): payments that need the owner's eyes. */
+  paymentCheck?: { at: string; checked: number; fixed: number; issues: { paymentId: string; uid: string | null; amount: number; problem: string }[] } | null;
 }
 
 export async function overview(): Promise<Overview> {
@@ -138,5 +141,6 @@ export async function overview(): Promise<Overview> {
     allRows<{ amount: number | string }>((from, to) => db.from("payments").select("amount").eq("status", "completed").order("payment_id").range(from, to)),
   ]);
   const amounts = pays.map((p) => Number(p.amount) || 0);
-  return { users, newUsers7, activePacks, paymentsCompleted: amounts.length, revenuePi: Math.round(amounts.reduce((a, b) => a + b, 0) * 100) / 100, orders30, merchantsPending };
+  const paymentCheck = (await kvGet<NonNullable<Overview["paymentCheck"]>>("payments_check").catch(() => null))?.value ?? null;
+  return { users, newUsers7, activePacks, paymentsCompleted: amounts.length, revenuePi: Math.round(amounts.reduce((a, b) => a + b, 0) * 100) / 100, orders30, merchantsPending, paymentCheck };
 }
