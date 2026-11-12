@@ -122,6 +122,16 @@ export interface ProductPage {
 }
 
 /** One product of Dalil Index as a full page: signed offer + photos + same product elsewhere + similar. */
+/** Rows saved before image links were percent-encoded: encode here too (they can end up in a header). */
+function asciiUrl(u: string): string | null {
+  try {
+    const href = new URL(u).href;
+    return /^[\x21-\x7e]+$/.test(href) ? href : null;
+  } catch {
+    return null;
+  }
+}
+
 export async function productPage(id: string, country: string): Promise<ProductPage | null> {
   const hit = await catalogItem(id, country);
   if (!hit) return null;
@@ -156,7 +166,7 @@ export async function productPage(id: string, country: string): Promise<ProductP
   const sim = await searchShop(simQuery).catch(() => null);
   return {
     offer,
-    images: it.images?.length ? it.images : it.image ? [it.image] : [],
+    images: (it.images?.length ? it.images : it.image ? [it.image] : []).map(asciiUrl).filter((u): u is string => !!u),
     description: it.description ?? undefined,
     title_ar: it.title_ar ?? undefined,
     title_en: it.title_en ?? undefined,

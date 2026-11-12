@@ -2,6 +2,7 @@ import { after } from "next/server";
 import { BodyTooLarge, readJson } from "@/lib/server/body";
 import { z } from "zod";
 import { runAgent } from "@/lib/server/agent";
+import { boundHistory } from "@/lib/server/chat-bounds";
 import { refreshInBackground } from "@/lib/server/catalog";
 import { countryName, currencyOf, geoFromRequest, isCountryCode } from "@/lib/server/geo";
 import { hostedConfig, hostedEnabled, hostedLimits, visitorId } from "@/lib/server/hosted";
@@ -64,6 +65,10 @@ export async function POST(req: Request) {
     if (e instanceof BodyTooLarge) return Response.json({ error: "Request too large — send fewer or smaller photos.", code: e.code }, { status: 413 });
     return Response.json({ error: "Invalid request" }, { status: 400 });
   }
+  const bounded = boundHistory(body.history);
+  if (!bounded) return Response.json({ error: "Photos must be JPEG, PNG or WebP images.", code: "BAD_IMAGE" }, { status: 400 });
+  if (!bounded.length || bounded[bounded.length - 1].role !== "user") return Response.json({ error: "Invalid request" }, { status: 400 });
+  body.history = bounded;
   if (!hostedEnabled()) return Response.json({ error: "The AI is not configured (META_API_KEY).", code: "NO_API_KEY" }, { status: 503 });
 
   // Quota, rate limits and daily AI caps in one database call — no AI call when anything is over.

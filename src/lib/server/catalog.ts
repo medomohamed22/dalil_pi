@@ -110,7 +110,17 @@ const num = (v: unknown) => {
 export const cleanStr = (v: unknown, max = 400) => str(v, max);
 export const cleanNum = (v: unknown) => num(v);
 export const cleanImg = (v: unknown) => httpsImg(v);
-const httpsImg = (v: unknown) => (typeof v === "string" && /^https:\/\/[^\s"'<>]+$/.test(v.trim()) ? v.trim() : null);
+// Percent-encoded (new URL().href): a file name with Arabic digits ("IMG_٢٠٢٤….jpg") must not reach an
+// HTTP header raw — React preloads the main image in a Link header and a non-ASCII value crashed /p/[id].
+const httpsImg = (v: unknown) => {
+  if (typeof v !== "string" || !/^https:\/\/[^\s"'<>]+$/.test(v.trim())) return null;
+  try {
+    const href = new URL(v.trim()).href;
+    return /^[\x21-\x7e]+$/.test(href) ? href : null;
+  } catch {
+    return null;
+  }
+};
 const base = (v?: string) => (v ? v.replace(/\/+$/, "") : "");
 
 /**

@@ -4,7 +4,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const prompts = [];
 let responsesCalls = 0;
 let enrichCalls = 0;
-const chat = { calls: 0, withTools: 0, noTools: 0 };
+const chat = { calls: 0, withTools: 0, noTools: 0, last: null };
 function sse(res, chunks) {
   res.writeHead(200, { 'content-type': 'text/event-stream' });
   for (const c of chunks) res.write(`data: ${JSON.stringify({ choices: [{ delta: c }] })}\n\n`);
@@ -44,6 +44,8 @@ http.createServer((req, res) => {
         return sse(res, [{ content: 'Here you go:\n' + JSON.stringify(out) }]);
       }
       chat.calls++;
+      { const turns = b.messages.filter((m) => m.role === 'user' || m.role === 'assistant'); chat.last = { turns: turns.length, chars: turns.reduce((n, m) => n + (typeof m.content === 'string' ? m.content.length : JSON.stringify(m.content).length), 0) }; }
+      if (JSON.stringify(b.messages.filter((m) => m.role === 'user').slice(-1)).includes('HANGFOREVER')) { await sleep(20000); return sse(res, [{ content: 'too late' }]); }
       if (b.tools?.length) chat.withTools++;
       else {
         // Index-first answers: one short recommendation, no tools offered.

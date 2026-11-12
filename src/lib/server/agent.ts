@@ -448,8 +448,64 @@ const summaries = ((globalThis as unknown as { __dalilSummaries?: Map<string, { 
 const TOOL_OUTPUT_MAX = 7000;
 const TIME_BUDGET_MS = Number(process.env.DALIL_TIME_BUDGET_MS) || 75_000;
 
-/** Resolves with whether at least one offer list was shown. */
+/** Whole answer, hard stop (the function itself is killed at 300 s, mid-answer and without a refund). */
+const HARD_DEADLINE_MS = Number(process.env.DALIL_HARD_DEADLINE_MS) || 150_000;
+/** One tool call (a slow store page, a stuck browser tab) never holds the answer longer than this. */
+const TOOL_MAX_MS = 45_000;
+
+export class AgentTimeout extends Error {
+  code = "AI_TIMEOUT";
+  constructor() {
+    super("Dalil took too long to answer — your AI credit was returned. Please try again.");
+  }
+}
+
+function withDeadline<T>(p: Promise<T>, ms: number, what: string): Promise<T> {
+  let t: ReturnType<typeof setTimeout> | undefined;
+  return Promise.race([
+    p,
+    new Promise<never>((_, reject) => {
+      t = setTimeout(() => reject(Object.assign(new Error(`${what} timed out`), { hint: "Too slow — use the results you already have." })), ms);
+    }),
+  ]).finally(() => clearTimeout(t));
+}
+
+/**
+ * Resolves with whether at least one offer list was shown. A hard deadline aborts everything still
+ * running (model call, tools): the cards already shown stay; with none shown, AgentTimeout is thrown
+ * so the caller returns the credit.
+ */
 export async function runAgent(opts: RunOptions): Promise<{ offersShown: boolean }> {
+  const hard = new AbortController();
+  const userLeft = () => hard.abort();
+  opts.signal?.addEventListener("abort", userLeft, { once: true });
+  let late = false;
+  const timer = setTimeout(() => {
+    late = true;
+    hard.abort();
+  }, HARD_DEADLINE_MS);
+  let shown = false;
+  const emit = (e: AgentEvent) => {
+    if (e.type === "block" && e.block.type === "products") shown = true;
+    opts.emit(e);
+  };
+  try {
+    const r = await runAgentInner({ ...opts, emit, signal: hard.signal });
+    if (late && !opts.signal?.aborted && !shown) throw new AgentTimeout();
+    return r;
+  } catch (err) {
+    if (late && !opts.signal?.aborted) {
+      if (shown) return { offersShown: true };
+      throw new AgentTimeout();
+    }
+    throw err;
+  } finally {
+    clearTimeout(timer);
+    opts.signal?.removeEventListener("abort", userLeft);
+  }
+}
+
+async function runAgentInner(opts: RunOptions): Promise<{ offersShown: boolean }> {
   const { cfg, locale, lang, emit, signal } = opts;
   const started = Date.now();
   const pages = new Map<string, { image?: string; rating?: number; reviewCount?: number }>();
@@ -589,7 +645,12 @@ export async function runAgent(opts: RunOptions): Promise<{ offersShown: boolean
           if (call.name === "search_salla" || call.name === "search_pi_chain_mall" || call.name === "search_pi_marketplaces" || call.name === "search_dalil_index") step.detail = clip((Array.isArray(args.queries) ? args.queries : [args.query]).filter(Boolean).map(String).join(" · "), 90);
           emit({ type: "step", step });
           try {
-            const output = await execTool(call.name, args, { cfg, locale, piUsd: opts.piUsd, coords: opts.coords, ipCoords: opts.ipCoords, emit, signal, pages, state, browser, viaBrowser, evidence, trustedSearch });
+            const toolMs = Math.max(5_000, Math.min(TOOL_MAX_MS, HARD_DEADLINE_MS - 20_000 - (Date.now() - started)));
+            const output = await withDeadline(
+              execTool(call.name, args, { cfg, locale, piUsd: opts.piUsd, coords: opts.coords, ipCoords: opts.ipCoords, emit, signal, pages, state, browser, viaBrowser, evidence, trustedSearch }),
+              toolMs,
+              call.name,
+            );
             const hosts =
               call.name === "search_dalil_index" && output && typeof output === "object" && "results" in output
                 ? Array.from(new Set(((output as { results: Array<{ url?: string }> }).results ?? []).map((r) => hostOf(r.url ?? "")).filter(Boolean))).slice(0, 6)
@@ -634,7 +695,7 @@ export async function runAgent(opts: RunOptions): Promise<{ offersShown: boolean
     }
     return state;
   } finally {
-    await browser.close();
+    await withDeadline(browser.close(), 5_000, "browser close").catch(() => {});
     if (browser.pagesVisited) emit({ type: "browserDone" });
   }
 }
