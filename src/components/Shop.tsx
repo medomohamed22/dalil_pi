@@ -646,7 +646,7 @@ function HomeView({ s, lang, country, go, onOpen }: CommonProps) {
           <SectionTitle>{s.recentViewed}</SectionTitle>
           <div className="no-scrollbar -mx-4 flex snap-x gap-2.5 overflow-x-auto px-4 pb-1" data-testid="home-recent">
             {recent.map((o, i) => (
-              <ProductTile key={o.ref} o={o} s={s} onOpen={onOpen} i={i} />
+              <ProductTile key={o.ref} o={o} s={s} onOpen={onOpen} i={i} wide />
             ))}
           </div>
         </>
