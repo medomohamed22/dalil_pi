@@ -4,6 +4,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const prompts = [];
 let responsesCalls = 0;
 let enrichCalls = 0;
+const chat = { calls: 0, withTools: 0, noTools: 0 };
 function sse(res, chunks) {
   res.writeHead(200, { 'content-type': 'text/event-stream' });
   for (const c of chunks) res.write(`data: ${JSON.stringify({ choices: [{ delta: c }] })}\n\n`);
@@ -15,6 +16,7 @@ http.createServer((req, res) => {
   req.on('data', (c) => (body += c));
   req.on('end', async () => {
     if (req.url === '/__prompts') { res.end(JSON.stringify(prompts)); return; }
+    if (req.url === '/__chat') { res.end(JSON.stringify(chat)); return; }
     if (req.url === '/__count') { res.end(JSON.stringify({ responses: responsesCalls, enrich: enrichCalls })); return; }
     const b = JSON.parse(body || '{}');
     if (req.url === '/responses') {
@@ -40,6 +42,14 @@ http.createServer((req, res) => {
         });
         out.push({ id: 'not-asked:1', brand: 'Evil', model: 'X1', category: 'phones' });
         return sse(res, [{ content: 'Here you go:\n' + JSON.stringify(out) }]);
+      }
+      chat.calls++;
+      if (b.tools?.length) chat.withTools++;
+      else {
+        // Index-first answers: one short recommendation, no tools offered.
+        chat.noTools++;
+        await sleep(100);
+        return sse(res, [{ content: 'QUICKSUMMARY ' + (/Ranked offers/.test(JSON.stringify(b.messages)) ? 'ranked' : 'none') }]);
       }
       if (dev && !b.messages.some((m) => m.role === 'tool')) prompts.push(dev.content);
       const toolMsgs = b.messages.filter((m) => m.role === 'tool').length;

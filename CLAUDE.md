@@ -12,6 +12,7 @@
 - Secrets live only in Vercel env vars. Never commit real values, and never ask for them in chat.
 - Use only documented/authorized partner APIs (e.g. Salla's partner catalog in `docs/salla-partner/partner-catalog.md`).
 - AI is used only in "Ask Dalil" (no AI enrichment of products); AI needs paid credit.
+- Ask Dalil is index-first (`quick.ts`): a plain product request at the start of a chat that Dalil Index answers (2+ in-stock matches, score ≥ 0.7) is shown straight from the index; the AI makes one call with no tools to write the recommendation. Photos, links, barcodes, local/services, questions and follow-ups go to the full agent.
 
 ## After a domain change
 - Telegram: `GET /api/telegram/setup` with `Authorization: Bearer $CRON_SECRET` re-registers the webhook.
