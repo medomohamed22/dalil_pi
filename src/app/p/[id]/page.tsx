@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { PiBagMark } from "@/components/Logo";
 import { notFound } from "next/navigation";
 import { cache } from "react";
 import { productHomeCountry } from "@/lib/server/catalog";
@@ -84,7 +85,7 @@ export default async function ProductSeoPage({ params }: { params: Promise<{ id:
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd).replace(/</g, "\\u003c") }} />
       <nav className="mb-4 flex items-center gap-2 text-[13px] text-fg-muted">
         <Link href="/" className="flex items-center gap-1.5 font-semibold text-fg">
-          <span className="flex size-7 items-center justify-center rounded-lg bg-inv-bg text-[13px] font-bold text-inv-fg">π</span>
+          <PiBagMark size={26} className="text-fg" />
           Dalil Pi
         </Link>
         <span>›</span>

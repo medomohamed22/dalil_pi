@@ -1,3 +1,5 @@
+<p align="center"><img src="public/logo.png" alt="Dalil Pi" width="120"></p>
+
 # Dalil Pi (دليل باي)
 
 AI shopping agent for Pi Network. Tell it what you need; it searches stores that accept Pi **in your country** (detected from your IP, changeable), ranks them without ads, shows Pi prices with the live OKX rate, and sends you to the store's own Pi checkout. English by default, Arabic (RTL) one tap away.

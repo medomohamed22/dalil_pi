@@ -33,7 +33,7 @@
       ]
     },
     {
-      "source": "/(icon.svg|validation-key.txt|manifest.webmanifest)",
+      "source": "/(logo.png|logo-mark.png|icon-192.png|icon-512.png|validation-key.txt|manifest.webmanifest)",
       "headers": [
         {
           "key": "Cache-Control",

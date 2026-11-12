@@ -13,7 +13,7 @@ import dynamic from "next/dynamic";
 const AccountSheet = dynamic(() => import("./Account").then((x) => x.AccountSheet), { ssr: false });
 const AutoOrderSheet = dynamic(() => import("./Account").then((x) => x.AutoOrderSheet), { ssr: false });
 import type { ComposerPayload } from "./Composer";
-import Logo from "./Logo";
+import Logo, { PiBagMark } from "./Logo";
 
 import { AnimatedCheck } from "./cards";
 import { Deals } from "./Extras";
@@ -662,7 +662,7 @@ export default function App() {
         )}
         {me && (
           <div className="flex items-center gap-2 rounded-lg px-2.5 py-2">
-            <span className="flex size-6 items-center justify-center rounded-full bg-inv-bg text-[11px] font-semibold text-inv-fg">π</span>
+            <PiBagMark size={22} className="text-fg" />
             <span className="min-w-0 flex-1 truncate" dir="ltr">
               @{me.username ?? me.uid.slice(0, 8)}
             </span>

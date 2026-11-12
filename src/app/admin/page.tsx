@@ -1,6 +1,7 @@
 "use client";
 
 import { Activity, BarChart3, Check, Copy, Download, FileText, Eye, EyeOff, LogOut, Megaphone, RefreshCw, Search, Settings, Store, Users, X } from "lucide-react";
+import { PiBagMark } from "@/components/Logo";
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import { STORE_DIRECTORY } from "@/lib/stores";
@@ -147,7 +148,7 @@ export default function AdminPage() {
     <div className="min-h-dvh bg-bg" data-testid="admin">
       <header className="sticky top-0 z-10 border-b border-line bg-bg/90 backdrop-blur">
         <div className="mx-auto flex max-w-5xl items-center gap-2 px-4 py-3">
-          <span className="flex size-8 items-center justify-center rounded-xl bg-inv-bg text-[15px] font-bold text-inv-fg">π</span>
+          <PiBagMark size={30} className="text-fg" />
           <div className="flex-1">
             <div className="text-[15px] font-bold leading-tight">دليل باي</div>
             <div className="text-[11px] text-fg-muted">لوحة التحكم</div>
@@ -259,7 +260,7 @@ function Login({ onDone }: { onDone: (token: string, setup: boolean) => void }) 
           }
         }}
       >
-        <span className="mx-auto flex size-12 items-center justify-center rounded-2xl bg-inv-bg text-xl font-bold text-inv-fg">π</span>
+        <span className="mx-auto flex justify-center"><PiBagMark size={48} className="text-fg" /></span>
         <h1 className="mt-3 text-center text-xl font-bold">لوحة تحكم دليل باي</h1>
         <p className="mt-1 text-center text-[13px] text-fg-muted">{first ? "أول مرة: ادخل بقيمة CRON_SECRET، وبعدها هتختار باسورد." : "ادخل الباسورد."}</p>
         <input type="password" autoFocus value={pw} onChange={(e) => setPw(e.target.value)} placeholder="الباسورد" className="mt-4 w-full rounded-xl border border-line bg-bg px-3 py-2.5 text-[15px] outline-none focus:border-fg" dir="ltr" data-testid="admin-password" />
