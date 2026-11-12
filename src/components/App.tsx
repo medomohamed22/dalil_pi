@@ -868,7 +868,7 @@ export default function App() {
             )}
           </div>
         </div>
-        {ready && (token || guest) && (view.v === "home" || view.v === "search") && <AskFab s={s} onClick={() => askDalil()} />}
+        {ready && (token || guest) && (view.v === "home" || view.v === "search") && <AskFab s={s} onClick={() => askDalil()} scrollRef={scrollRef} />}
         </div>
 
         {token && view.v === "ask" && (

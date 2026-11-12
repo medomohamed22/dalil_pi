@@ -194,6 +194,23 @@ export default function Composer({
         addFiles(e.dataTransfer.files);
       }}
     >
+      {/* Budget in one tap: shows while typing a request that has no number in it yet. */}
+      <AnimatePresence>
+        {text.trim().length >= 3 && !/[0-9٠-٩]/.test(text) && !images.length && (
+          <m.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }} exit={{ opacity: 0, height: 0 }} className="no-scrollbar flex gap-1.5 overflow-x-auto px-3 pt-2.5" data-testid="budget-chips">
+            {[100, 500, 1000].map((n) => (
+              <button
+                key={n}
+                type="button"
+                onClick={() => setText((t) => `${t.trim()} ${lang === "ar" ? `تحت ${n} باي` : `under ${n} Pi`}`)}
+                className="shrink-0 rounded-full bg-bg-soft px-2.5 py-1 text-[11.5px] font-medium text-fg-soft"
+              >
+                {lang === "ar" ? `تحت ${n} π` : `under ${n} π`}
+              </button>
+            ))}
+          </m.div>
+        )}
+      </AnimatePresence>
       <AnimatePresence>
         {(images.length > 0 || urls.length > 0) && (
           <m.div

@@ -51,6 +51,15 @@ const ok = (c, m) => { console.log((c ? 'PASS ' : 'FAIL ') + m); if (!c) process
   ok(/Total/.test(ct) && /Trust/.test(ct) && /Soundcore/.test(ct) && /JBL|Soundcore Q30 headphones/.test(ct), 'compare table');
   await p.screenshot({ path: `${OUT}/20-compare.png` });
   await p.getByRole('dialog').getByRole('button', { name: 'Close' }).click();
+  // summary line + cards/list switch
+  ok(await p.getByTestId('results-summary').first().isVisible(), 'summary line over the results');
+  await p.getByTestId('layout-list').first().click();
+  const wList = await p.locator('[data-offer-card]').first().evaluate((e) => e.getBoundingClientRect().width);
+  ok(wList > 300, `list layout: full-width rows (${Math.round(wList)}px)`);
+  await p.screenshot({ path: `${OUT}/20b-list.png` });
+  await p.getByTestId('layout-cards').first().click();
+  const wCard = await p.locator('[data-offer-card]').first().evaluate((e) => e.getBoundingClientRect().width);
+  ok(wCard < 200, `cards layout: two cards side by side (${Math.round(wCard)}px)`);
   // no follow-up chips under answers (each tap cost an AI credit); the user types the next question
   ok((await p.getByTestId('follow-ups').count()) === 0, 'no follow-up chips');
   await p.getByRole('textbox').first().fill('Show me cheaper options for this');

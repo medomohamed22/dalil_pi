@@ -3,6 +3,8 @@
 import { m, AnimatePresence } from "framer-motion";
 import {
   Check,
+  LayoutGrid,
+  List,
   ExternalLink,
   Globe,
   Loader2,
@@ -31,6 +33,7 @@ import { formatMoney, type Strings } from "@/lib/i18n";
 import type { Block, Lang, LinkPreview, Offer, Step } from "@/lib/types";
 import { PiBagMark } from "./Logo";
 import { track } from "@/lib/track";
+import { flyToCart } from "@/lib/fly";
 
 /* ---------- Image with graceful fallback ---------- */
 
@@ -359,7 +362,7 @@ export function StepsTimeline({
                   >
                     <Favicon host={h} className="size-4 border-0" />
                     <span dir="ltr">{h}</span>
-                    {st === "running" && <Loader2 className="size-3 animate-spin text-fg-muted" />}
+                    {st === "running" ? <Loader2 className="size-3 animate-spin text-fg-muted" /> : st !== "error" && <Check className="size-3 text-emerald-600" />}
                   </m.span>
                 );
               })}
@@ -569,7 +572,11 @@ export function BrowserCard({ block, lang, live }: { block: Extract<Block, { typ
 /* ---------- Product offers ---------- */
 
 function trustTone(n: number) {
-  return n >= 60 ? "text-emerald-700 dark:text-emerald-400" : n >= 40 ? "text-amber-700 dark:text-amber-400" : "text-danger";
+  return n >= 70
+    ? "border-emerald-600/25 bg-emerald-600/10 text-emerald-700 dark:text-emerald-400"
+    : n >= 40
+      ? "border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-400"
+      : "border-danger/30 bg-danger/10 text-danger";
 }
 
 /** 🛡️ trust number (0–100). Tap for the breakdown. */
@@ -583,18 +590,21 @@ function TrustPill({ offer, s, open, onToggle }: { offer: Offer; s: Strings; ope
       </span>
     );
   }
-  const Icon = n >= 60 ? ShieldCheck : n >= 40 ? Shield : ShieldAlert;
+  const Icon = n >= 70 ? ShieldCheck : n >= 40 ? Shield : ShieldAlert;
   return (
-    <button
-      type="button"
-      onClick={onToggle}
-      aria-expanded={open}
-      title={`${s.trust} ${n}/100 · ${s.trustLevel(n)}`}
-      data-testid="trust"
-      className={`inline-flex shrink-0 items-center gap-1 rounded-full border border-line px-1.5 py-0.5 text-[11px] font-semibold tabular-nums ${trustTone(n)}`}
-    >
-      <Icon className="size-3" /> <CountUp to={n} />
-    </button>
+    <span className="inline-flex shrink-0 items-center gap-1">
+      <span className={`hidden text-[10px] font-medium min-[380px]:inline ${trustTone(n).split(" ").filter((c) => c.includes("text-")).join(" ")}`}>{s.trustWord(n)}</span>
+      <button
+        type="button"
+        onClick={onToggle}
+        aria-expanded={open}
+        title={`${s.trust} ${n}/100 · ${s.trustLevel(n)}`}
+        data-testid="trust"
+        className={`inline-flex shrink-0 items-center gap-1 rounded-full border px-1.5 py-0.5 text-[11px] font-semibold tabular-nums ${trustTone(n)}`}
+      >
+        <Icon className="size-3" /> <CountUp to={n} />
+      </button>
+    </span>
   );
 }
 
@@ -700,8 +710,56 @@ export function ProductCards({
   const togglePick = (id: string) => setPicked((p) => (p.includes(id) ? p.filter((x) => x !== id) : p.length >= 3 ? [...p.slice(1), id] : [...p, id]));
   const sorts: SortKey[] = ["best", "cheapest", "trust", "rating", ...(offers.some((o) => o.distanceKm != null) ? (["nearest"] as SortKey[]) : [])];
   const shown = sortOffers(offers, sort);
+  const [layout, setLayout] = useState<"cards" | "list">(() => {
+    try {
+      return localStorage.getItem("dalil-layout") === "list" ? "list" : "cards";
+    } catch {
+      return "cards";
+    }
+  });
+  const pickLayout = (l: "cards" | "list") => {
+    setLayout(l);
+    try {
+      localStorage.setItem("dalil-layout", l);
+    } catch {
+      /* private mode */
+    }
+  };
+  const list = layout === "list";
+  // One line over the results: cheapest, most trusted, how many stores — tap to jump to that card.
+  const cheapest = offers.filter((o) => o.trust !== "suspicious").reduce<Offer | null>((a, o) => (!a || o.total < a.total ? o : a), null);
+  const trusted = offers.reduce<Offer | null>((a, o) => (o.trustScore != null && (!a || o.trustScore > (a.trustScore ?? -1)) ? o : a), null);
+  const storeCount = new Set(offers.map((o) => o.store.split(" · ")[0])).size;
+  const jump = (o: Offer | null) => {
+    if (!o) return;
+    const el = document.querySelector(`[data-offer-card="${CSS.escape(o.id)}"]`);
+    el?.scrollIntoView({ behavior: "smooth", block: "nearest", inline: "center" });
+    el?.animate?.([{ transform: "scale(1)" }, { transform: "scale(1.03)" }, { transform: "scale(1)" }], { duration: 450 });
+  };
   return (
     <div className="-mx-4 w-[calc(100%+2rem)] sm:mx-0 sm:w-full">
+      {offers.length >= 2 && (
+        <div className="no-scrollbar mb-1.5 flex items-center gap-1.5 overflow-x-auto px-4 text-[11.5px] sm:px-0" data-testid="results-summary">
+          {cheapest && (
+            <button onClick={() => jump(cheapest)} className="shrink-0 rounded-full bg-bg-soft px-2.5 py-1">
+              {s.summaryCheapest} <b className="tabular-nums" dir="ltr">{formatMoney(cheapest.total, cheapest.currency, lang)}</b>
+            </button>
+          )}
+          {trusted && (
+            <button onClick={() => jump(trusted)} className="shrink-0 rounded-full bg-bg-soft px-2.5 py-1">
+              {s.summaryTrusted} <b className="tabular-nums">{trusted.trustScore}</b>
+            </button>
+          )}
+          <span className="shrink-0 rounded-full bg-bg-soft px-2.5 py-1 text-fg-muted">{s.summaryStores(storeCount)}</span>
+          <span className="ms-auto flex shrink-0 overflow-hidden rounded-full border border-line" role="radiogroup" aria-label={s.viewList}>
+            {(["cards", "list"] as const).map((l) => (
+              <button key={l} role="radio" aria-checked={layout === l} aria-label={l === "cards" ? s.viewCards : s.viewList} title={l === "cards" ? s.viewCards : s.viewList} onClick={() => pickLayout(l)} data-testid={`layout-${l}`} className={`px-2 py-1 ${layout === l ? "bg-inv-bg text-inv-fg" : "text-fg-soft"}`}>
+                {l === "cards" ? <LayoutGrid className="size-3.5" /> : <List className="size-3.5" />}
+              </button>
+            ))}
+          </span>
+        </div>
+      )}
       {offers.length >= 3 && (
         <div className="no-scrollbar mb-1 flex gap-1.5 overflow-x-auto px-4 sm:px-0" role="radiogroup" aria-label={s.sortBy} data-testid="sort">
           {sorts.map((k) => (
@@ -717,7 +775,7 @@ export function ProductCards({
           ))}
         </div>
       )}
-      <div className="no-scrollbar flex snap-x snap-mandatory gap-3 overflow-x-auto px-4 pb-2 pt-1 sm:px-0">
+      <div className={list ? "flex flex-col gap-2 px-4 pb-2 pt-1 sm:px-0" : "no-scrollbar flex snap-x snap-mandatory gap-2.5 overflow-x-auto px-4 pb-2 pt-1 sm:px-0"}>
         {shown.map((o, i) => {
           const isTop = i === 0 && sort === "best" && o.trust !== "suspicious";
           return (
@@ -729,12 +787,17 @@ export function ProductCards({
               initial={{ opacity: 0, y: 14, scale: 0.98 }}
               animate={{ opacity: 1, y: 0, scale: 1 }}
               transition={{ delay: i * 0.06, type: "spring", stiffness: 260, damping: 24 }}
-              className={`relative flex w-[15.5rem] shrink-0 snap-start flex-col overflow-hidden rounded-2xl border bg-bg shadow-card ${
+              className={`relative flex overflow-hidden rounded-2xl border bg-card shadow-card ${list ? "w-full flex-row" : "w-[11.75rem] shrink-0 snap-start flex-col"} ${
                 isTop ? "border-fg" : o.trust === "suspicious" ? "border-danger/40" : "border-line"
               }`}
             >
-              <div className="relative cursor-pointer" onClick={() => setDetail(o)} data-testid="open-detail">
-                <SmartImage src={o.image} alt={o.title} fallbackLabel={o.store} className={o.image ? "h-36 w-full" : "h-24 w-full"} />
+              <div className={`relative cursor-pointer ${list ? "w-28 shrink-0" : ""}`} onClick={() => setDetail(o)} data-testid="open-detail">
+                <SmartImage src={o.image} alt={o.title} fallbackLabel={o.store} className={list ? "h-full min-h-28 w-28" : o.image ? "h-28 w-full" : "h-20 w-full"} />
+                {o.listPrice != null && o.listPrice > o.price && Math.round((1 - o.price / o.listPrice) * 100) >= 3 && (
+                  <span className="absolute bottom-2 end-2 rounded-md bg-danger px-1.5 py-0.5 text-[10.5px] font-bold text-white tabular-nums" dir="ltr" data-testid="discount">
+                    −{Math.round((1 - o.price / o.listPrice) * 100)}%
+                  </span>
+                )}
                 <div className="absolute start-2 top-2 flex flex-wrap gap-1">
                   {o.badges.map((b) => (
                     <span
@@ -748,13 +811,13 @@ export function ProductCards({
                   ))}
                 </div>
               </div>
-              <div className="flex flex-1 flex-col gap-1.5 p-3">
+              <div className="flex min-w-0 flex-1 flex-col gap-1.5 p-2.5">
                 <div className="flex items-center justify-between gap-2">
                   <span className="truncate text-xs font-semibold">{o.store}</span>
                   <TrustPill offer={o} s={s} open={why === o.id} onToggle={() => setWhy((w) => (w === o.id ? null : o.id))} />
                 </div>
                 {why === o.id && <TrustBreakdown offer={o} s={s} />}
-                <button type="button" onClick={() => setDetail(o)} className="line-clamp-2 min-h-[2.5rem] text-start text-[13px] leading-snug text-fg-soft hover:text-fg" dir="auto">
+                <button type="button" onClick={() => setDetail(o)} className={`line-clamp-2 text-start text-[12.5px] leading-snug text-fg-soft hover:text-fg ${list ? "" : "min-h-[2.4rem]"}`} dir="auto">
                   {o.title}
                 </button>
                 <PriceBadge o={o} s={s} />
@@ -765,8 +828,9 @@ export function ProductCards({
                 )}
                 <div className="flex items-end justify-between">
                   <div>
-                    <div className="text-lg font-semibold tabular-nums leading-tight" dir="ltr">
+                    <div className="flex items-baseline gap-1.5 text-base font-semibold tabular-nums leading-tight" dir="ltr">
                       {formatMoney(o.total, o.currency, lang)}
+                      {o.listPrice != null && o.listPrice > o.price && <span className="text-[11px] font-normal text-fg-muted line-through">{formatMoney(o.listPrice, o.currency, lang)}</span>}
                     </div>
                     {o.totalUsd != null && (
                       <div className="text-[11px] tabular-nums text-fg-muted" dir="ltr">
@@ -1177,7 +1241,10 @@ export function OfferDetail({
           >
             {watched === "done" ? (
               <>
-                <AnimatedCheck size={16} /> {s.watching}
+                <m.span initial={{ scale: 0.6 }} animate={{ scale: [0.6, 1.35, 1] }} transition={{ duration: 0.45 }} className="text-danger">
+                  ♥
+                </m.span>{" "}
+                {s.watching}
               </>
             ) : watched === "busy" ? (
               <Loader2 className="size-4 animate-spin" />
@@ -1188,8 +1255,11 @@ export function OfferDetail({
         )}
         {onCart && o.url && o.sig && (
           <button
-            onClick={() => {
-              if (!carted) onCart(o);
+            onClick={(e) => {
+              if (!carted) {
+                onCart(o);
+                flyToCart(e.currentTarget, o.image);
+              }
               setCarted(true);
             }}
             className="flex flex-1 items-center justify-center gap-1 rounded-2xl border border-line py-2.5 text-[12px] font-medium"
@@ -1263,7 +1333,7 @@ export function OfferDetail({
   );
 }
 
-function CompareTable({ offers, s, lang }: { offers: Offer[]; s: Strings; lang: Lang }) {
+export function CompareTable({ offers, s, lang }: { offers: Offer[]; s: Strings; lang: Lang }) {
   const nf = (n?: number) => (n == null ? "—" : n.toLocaleString(lang === "ar" ? "ar-EG-u-nu-latn" : "en-US"));
   const cheapest = Math.min(...offers.map((o) => o.totalUsd ?? o.total));
   const trusted = Math.max(...offers.map((o) => o.trustScore ?? 0));

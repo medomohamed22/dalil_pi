@@ -2,6 +2,7 @@
 
 import { AnimatePresence, m } from "framer-motion";
 import {
+  History,
   ArrowLeft,
   Bookmark,
   CreditCard,
@@ -193,7 +194,7 @@ export function ProductTile({ o, s, onOpen, i = 0, wide }: { o: Offer; s: String
       transition={{ duration: 0.25, delay: Math.min(i, 8) * 0.03 }}
       whileTap={{ scale: 0.98 }}
       onClick={() => onOpen(o)}
-      className={`group flex min-w-0 flex-col overflow-hidden rounded-xl border border-line bg-bg text-start transition-colors hover:border-line-strong ${wide ? "w-[9.5rem] shrink-0 snap-start" : ""}`}
+      className={`group flex min-w-0 flex-col overflow-hidden rounded-xl border border-line bg-card text-start transition-colors hover:border-line-strong ${wide ? "w-[9.5rem] shrink-0 snap-start" : ""}`}
       data-testid="tile"
       data-store={store}
     >
@@ -252,15 +253,69 @@ export function SectionTitle({ children, action }: { children: React.ReactNode; 
   );
 }
 
-export function SearchBox({ s, value, onSubmit, autoFocus, placeholder, onBack, testid = "shop-search" }: { s: Strings; value?: string; onSubmit: (q: string) => void; autoFocus?: boolean; placeholder?: string; onBack?: () => void; testid?: string }) {
+/* ---------- this device's memory: recent searches + recently viewed (localStorage) ---------- */
+
+function readList<T>(key: string): T[] {
+  try {
+    const v = JSON.parse(localStorage.getItem(key) ?? "[]");
+    return Array.isArray(v) ? (v as T[]) : [];
+  } catch {
+    return [];
+  }
+}
+function writeList(key: string, v: unknown[]) {
+  try {
+    localStorage.setItem(key, JSON.stringify(v));
+  } catch {
+    /* private mode */
+  }
+}
+export function rememberSearch(q: string) {
+  const t = q.trim().slice(0, 80);
+  if (t.length < 2) return;
+  writeList("dalil-recent-q", [t, ...readList<string>("dalil-recent-q").filter((x) => x.toLowerCase() !== t.toLowerCase())].slice(0, 8));
+}
+export function rememberViewed(o: Offer) {
+  if (!o.ref) return;
+  const slim = { ...o, reviews: undefined, priceStats: undefined, trustSignals: undefined };
+  writeList("dalil-recent-p", [slim, ...readList<Offer>("dalil-recent-p").filter((x) => x.ref !== o.ref)].slice(0, 12));
+}
+
+export function SearchBox({ s, value, onSubmit, autoFocus, placeholder, onBack, testid = "shop-search", country }: { s: Strings; value?: string; onSubmit: (q: string) => void; autoFocus?: boolean; placeholder?: string; onBack?: () => void; testid?: string; country?: string }) {
   const [q, setQ] = useState(value ?? "");
+  const [focused, setFocused] = useState(false);
+  const [titles, setTitles] = useState<string[]>([]);
   useEffect(() => setQ(value ?? ""), [value]);
+  // Suggestions while typing: past searches on this device + product names from Dalil Index (no AI).
+  useEffect(() => {
+    const t = q.trim();
+    if (!focused || !country || t.length < 2 || t === (value ?? "")) return setTitles([]);
+    const ctl = new AbortController();
+    const id = setTimeout(() => {
+      fetch(`/api/search?country=${country}&limit=6&q=${encodeURIComponent(t)}`, { signal: ctl.signal })
+        .then((r) => (r.ok ? r.json() : null))
+        .then((d: SearchResponse | null) => setTitles([...new Set((d?.offers ?? []).map((o) => o.title.slice(0, 70)))].slice(0, 5)))
+        .catch(() => {});
+    }, 300);
+    return () => {
+      clearTimeout(id);
+      ctl.abort();
+    };
+  }, [q, focused, country, value]);
+  const past = focused ? readList<string>("dalil-recent-q").filter((x) => !q.trim() || x.toLowerCase().includes(q.trim().toLowerCase())).slice(0, q.trim() ? 3 : 5) : [];
+  const submit = (t: string) => {
+    if (!t.trim()) return;
+    rememberSearch(t);
+    setFocused(false);
+    onSubmit(t.trim());
+  };
+  const suggestions = [...past.map((t) => ({ t, past: true })), ...titles.filter((t) => !past.includes(t)).map((t) => ({ t, past: false }))];
   return (
     <form
-      className="flex w-full min-w-0 items-center gap-2"
+      className="relative flex w-full min-w-0 items-center gap-2"
       onSubmit={(e) => {
         e.preventDefault();
-        if (q.trim()) onSubmit(q.trim());
+        submit(q);
       }}
     >
       {onBack && (
@@ -273,6 +328,8 @@ export function SearchBox({ s, value, onSubmit, autoFocus, placeholder, onBack, 
         <input
           value={q}
           onChange={(e) => setQ(e.target.value)}
+          onFocus={() => setFocused(true)}
+          onBlur={() => setTimeout(() => setFocused(false), 150)}
           placeholder={placeholder ?? s.searchPh}
           autoFocus={autoFocus}
           enterKeyHint="search"
@@ -286,6 +343,27 @@ export function SearchBox({ s, value, onSubmit, autoFocus, placeholder, onBack, 
           </button>
         )}
       </label>
+      <AnimatePresence>
+        {focused && suggestions.length > 0 && (
+          <m.ul
+            initial={{ opacity: 0, y: -4 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -4 }}
+            transition={{ duration: 0.15 }}
+            className="absolute inset-x-0 top-full z-30 mt-1.5 overflow-hidden rounded-2xl border border-line bg-bg py-1 shadow-lg"
+            data-testid="suggestions"
+          >
+            {suggestions.map(({ t, past }) => (
+              <li key={(past ? "p:" : "t:") + t}>
+                <button type="button" onMouseDown={(e) => e.preventDefault()} onClick={() => (setQ(t), submit(t))} className="flex w-full items-center gap-2.5 px-4 py-2 text-start text-[14px] hover:bg-bg-soft" dir="auto">
+                  {past ? <History className="size-4 shrink-0 text-fg-muted" /> : <Search className="size-4 shrink-0 text-fg-muted" />}
+                  <span className="truncate">{t}</span>
+                </button>
+              </li>
+            ))}
+          </m.ul>
+        )}
+      </AnimatePresence>
     </form>
   );
 }
@@ -325,18 +403,36 @@ export function BottomNav({ s, active, onNav, watchBadge }: { s: Strings; active
   );
 }
 
-export function AskFab({ s, onClick }: { s: Strings; onClick: () => void }) {
+export function AskFab({ s, onClick, scrollRef }: { s: Strings; onClick: () => void; scrollRef?: React.RefObject<HTMLElement | null> }) {
+  // Scrolling down: shrinks to an icon so it doesn't cover the cards; scrolling up: full label again.
+  const [small, setSmall] = useState(false);
+  useEffect(() => {
+    const el = scrollRef?.current;
+    if (!el) return;
+    let last = el.scrollTop;
+    const onScroll = () => {
+      const y = el.scrollTop;
+      if (Math.abs(y - last) < 8) return;
+      setSmall(y > last && y > 120);
+      last = y;
+    };
+    el.addEventListener("scroll", onScroll, { passive: true });
+    return () => el.removeEventListener("scroll", onScroll);
+  }, [scrollRef]);
   return (
     <m.button
+      layout
       initial={{ scale: 0.8, opacity: 0 }}
       animate={{ scale: 1, opacity: 1 }}
       whileTap={{ scale: 0.95 }}
-      transition={{ type: "spring", stiffness: 400, damping: 24, delay: 0.2 }}
+      transition={{ type: "spring", stiffness: 400, damping: 28 }}
       onClick={onClick}
-      className="absolute bottom-3 end-4 z-20 flex items-center gap-1.5 rounded-full bg-inv-bg px-4 py-3 text-[14px] font-semibold text-inv-fg shadow-lg shadow-black/20"
+      aria-label={s.askDalil}
+      className={`absolute bottom-3 end-4 z-20 flex items-center gap-1.5 rounded-full bg-inv-bg text-[14px] font-semibold text-inv-fg shadow-lg shadow-black/20 ${small ? "p-3" : "px-4 py-3"}`}
       data-testid="ask-fab"
     >
-      {s.askDalil} <Sparkles className="size-4 text-gold" />
+      {!small && <span>{s.askDalil}</span>}
+      <Sparkles className="size-4 text-gold" />
     </m.button>
   );
 }
@@ -380,7 +476,14 @@ export function ShopViews({
 }) {
   const [detail, setDetail] = useState<Offer | null>(null);
   // Products from Dalil Index open their own page (shareable link); others the quick sheet.
-  const open = useCallback((o: Offer) => (o.ref ? go({ v: "p", id: o.ref }) : setDetail(o)), [go]);
+  const open = useCallback(
+    (o: Offer) => {
+      rememberViewed(o);
+      if (o.ref) go({ v: "p", id: o.ref });
+      else setDetail(o);
+    },
+    [go],
+  );
   const common = { s, lang, country, go, back, onOpen: open, onAsk };
   return (
     <>
@@ -440,6 +543,18 @@ export const CATEGORIES: Array<{ id: keyof Strings["cat"]; Icon: typeof House; a
   { id: "services", Icon: Wrench, any: "" },
 ];
 
+/** A soft color per category (light and dark), so the row reads at a glance. */
+const CAT_TONE: Partial<Record<string, string>> = {
+  phones: "bg-sky-500/12 text-sky-700 dark:text-sky-300",
+  headphones: "bg-violet-500/12 text-violet-700 dark:text-violet-300",
+  perfume: "bg-pink-500/12 text-pink-700 dark:text-pink-300",
+  supermarket: "bg-emerald-500/12 text-emerald-700 dark:text-emerald-300",
+  fashion: "bg-amber-500/14 text-amber-700 dark:text-amber-300",
+  topup: "bg-indigo-500/12 text-indigo-700 dark:text-indigo-300",
+  home: "bg-orange-500/12 text-orange-700 dark:text-orange-300",
+  services: "bg-teal-500/12 text-teal-700 dark:text-teal-300",
+};
+
 /** The home page's first row (the owner can change it from /admin → Settings). */
 export interface HomeFeatured {
   store: string;
@@ -473,6 +588,9 @@ function HomeView({ s, lang, country, go, onOpen }: CommonProps) {
   const sallaStore = (stores.data?.stores ?? []).find((x) => x.source === "salla");
   const feStore = feLocal ? undefined : (stores.data?.stores ?? []).find((x) => x.source === fe?.store);
   const feTitle = fallback === "local" ? s.popular : fe ? (lang === "ar" ? fe.title_ar : fe.title_en) : "";
+  // Products this device opened lately (only ones still sold in this country show up in search anyway).
+  const [recent, setRecent] = useState<Offer[]>([]);
+  useEffect(() => setRecent(readList<Offer>("dalil-recent-p").filter((o) => o.ref && o.title)), []);
   return (
     <div className="pb-24 pt-1" data-testid="home">
       {annText && (
@@ -480,7 +598,7 @@ function HomeView({ s, lang, country, go, onOpen }: CommonProps) {
           📣 {annText}
         </m.div>
       )}
-      <SearchBox s={s} onSubmit={(q) => go({ v: "search", q })} />
+      <SearchBox s={s} country={country} onSubmit={(q) => go({ v: "search", q })} />
       <div className="no-scrollbar -mx-4 mt-4 flex gap-3 overflow-x-auto px-4" data-testid="categories">
         {CATEGORIES.map(({ id, Icon, any, cat }, i) => (
           <m.button
@@ -493,7 +611,7 @@ function HomeView({ s, lang, country, go, onOpen }: CommonProps) {
             className="flex w-[4.4rem] shrink-0 flex-col items-center gap-1.5"
             data-testid={`cat-${id}`}
           >
-            <span className="flex size-14 items-center justify-center rounded-full bg-bg-muted text-fg transition-colors hover:bg-accent-soft hover:text-accent">
+            <span className={`flex size-14 items-center justify-center rounded-full transition-transform hover:scale-105 ${CAT_TONE[id] ?? "bg-bg-muted text-fg"}`}>
               <Icon className="size-6" strokeWidth={1.7} />
             </span>
             <span className="text-center text-[11.5px] leading-tight">{s.cat[id]}</span>
@@ -522,6 +640,17 @@ function HomeView({ s, lang, country, go, onOpen }: CommonProps) {
       <div className="no-scrollbar -mx-4 flex snap-x gap-2.5 overflow-x-auto px-4 pb-1" data-testid="home-featured">
         {!featured.data ? <TileSkeletons n={3} wide /> : featured.data.offers.map((o, i) => <ProductTile key={o.id} o={o} s={s} onOpen={onOpen} i={i} wide />)}
       </div>
+
+      {recent.length >= 2 && (
+        <>
+          <SectionTitle>{s.recentViewed}</SectionTitle>
+          <div className="no-scrollbar -mx-4 flex snap-x gap-2.5 overflow-x-auto px-4 pb-1" data-testid="home-recent">
+            {recent.map((o, i) => (
+              <ProductTile key={o.ref} o={o} s={s} onOpen={onOpen} i={i} />
+            ))}
+          </div>
+        </>
+      )}
 
       {sallaRow.length >= 3 && (
         <>

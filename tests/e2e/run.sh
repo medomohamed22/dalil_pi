@@ -28,8 +28,10 @@ run() { # run <free AI searches> <free orders> <file> [extra env]
     FREE_SEARCHES_PER_MONTH=$1 FREE_ORDERS_PER_MONTH=$2 ${4:-} npx next start -p 3100 > "$O/next.log" 2>&1 &)
   sleep 4
   (cd "$T" && timeout 300 node "$3" "$O/shots" > "$O/$3.out" 2>&1)
-  local pass fail
+  local rc=$? pass fail
   pass=$(grep -c ^PASS "$O/$3.out"); fail=$(grep -c ^FAIL "$O/$3.out")
+  # A test file that crashes or times out (non-zero exit) fails even if no FAIL line was printed.
+  if [ "$rc" != "0" ] && [ "$fail" = "0" ]; then fail="1 (exit $rc)"; fi
   echo "$3: $pass pass, $fail fail"
   grep "^FAIL\|Error" "$O/$3.out" | head -3
   if [ "$fail" != "0" ] || [ "$pass" = "0" ]; then FAILED=1; fi

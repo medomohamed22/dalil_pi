@@ -7,6 +7,7 @@
   --bg: #ffffff;
   --bg-soft: #f6f6f6;
   --bg-muted: #efefef;
+  --card: #ffffff;
   --fg: #0a0a0a;
   --fg-soft: #3f3f3f;
   --fg-muted: #8a8a8a;
@@ -28,6 +29,8 @@
   --bg: #0a0a0a;
   --bg-soft: #141414;
   --bg-muted: #1d1d1d;
+  /* Cards a step lighter than the page in dark mode: easier on the eyes than pure black. */
+  --card: #161616;
   --fg: #fafafa;
   --fg-soft: #d4d4d4;
   --fg-muted: #8a8a8a;
@@ -48,6 +51,7 @@
   --color-bg: var(--bg);
   --color-bg-soft: var(--bg-soft);
   --color-bg-muted: var(--bg-muted);
+  --color-card: var(--card);
   --color-fg: var(--fg);
   --color-fg-soft: var(--fg-soft);
   --color-fg-muted: var(--fg-muted);

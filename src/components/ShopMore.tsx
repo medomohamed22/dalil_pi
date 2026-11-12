@@ -2,6 +2,7 @@
 
 import { m } from "framer-motion";
 import {
+  X,
   ArrowLeft,
   Check,
   ChevronDown,
@@ -25,7 +26,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { countryLabel, type Strings } from "@/lib/i18n";
 import { track } from "@/lib/track";
 import type { Lang, LocalShop, Offer, SallaApp } from "@/lib/types";
-import { BottomSheet, OfferDetail, SmartImage } from "./cards";
+import { BottomSheet, CompareTable, OfferDetail, SmartImage } from "./cards";
 import { SallaAppCards, ShopCards } from "./Shops";
 import { fmt, LOGO_BY_NAME, PiPrice, STORE_NAMES, type DirStore, type SearchResponse, type StoresResponse, ProductTile, SearchBox, SectionTitle, StoreLogo, TileSkeletons, TrustChip, useJson, type CommonProps, type ShopActions, type View } from "./Shop";
 
@@ -34,6 +35,8 @@ import { fmt, LOGO_BY_NAME, PiPrice, STORE_NAMES, type DirStore, type SearchResp
 /* ---------- Search results ---------- */
 
 type Sort = "best" | "cheapest" | "trust";
+
+const QUICK_PRICES: Array<{ min?: number; max?: number }> = [{ max: 100 }, { min: 100, max: 500 }, { min: 500, max: 2000 }, { min: 2000 }];
 
 export function SearchView({ s, lang, country, go, back, onOpen, onAsk, view }: CommonProps & { view: Extract<View, { v: "search" }> }) {
   const [sort, setSort] = useState<Sort>("best");
@@ -72,7 +75,7 @@ export function SearchView({ s, lang, country, go, back, onOpen, onAsk, view }: 
 
   return (
     <div className="pb-24 pt-1" data-testid="search-view">
-      <SearchBox s={s} value={view.q || view.title} onBack={back} onSubmit={(q) => go({ v: "search", q })} />
+      <SearchBox s={s} country={country} value={view.q || view.title} onBack={back} onSubmit={(q) => go({ v: "search", q })} />
       <div className="mt-2 h-5 px-1 text-[12.5px] text-fg-muted" data-testid="result-meta">
         {shown ? s.results(shown.total, storeCount, shown.ms) : null}
         {loading && <Loader2 className="ms-1.5 inline size-3.5 animate-spin" />}
@@ -95,6 +98,17 @@ export function SearchView({ s, lang, country, go, back, onOpen, onAsk, view }: 
           {s.sortLabel}: {s.sortNames[sort]} <ChevronDown className="size-3.5" />
         </Chip>
       </div>
+      <div className="no-scrollbar -mx-4 mt-2 flex gap-1.5 overflow-x-auto px-4" data-testid="price-quick">
+        {QUICK_PRICES.map((r) => {
+          const on = price.min === r.min && price.max === r.max;
+          const label = r.min == null ? s.priceUnder(r.max!) : r.max == null ? s.priceOver(r.min) : s.priceBetween(r.min, r.max);
+          return (
+            <button key={label} onClick={() => setPrice(on ? {} : { min: r.min, max: r.max })} className={`shrink-0 rounded-full px-3 py-1 text-[12px] font-medium transition-colors ${on ? "bg-accent text-white" : "bg-bg-soft text-fg-soft"}`}>
+              {label}
+            </button>
+          );
+        })}
+      </div>
 
       {!shown && loading ? (
         <div className="mt-3 grid grid-cols-2 gap-2.5 sm:grid-cols-3 lg:grid-cols-4">
@@ -106,6 +120,21 @@ export function SearchView({ s, lang, country, go, back, onOpen, onAsk, view }: 
             <Search className="size-6 text-fg-muted" />
           </span>
           <p className="text-[14px] text-fg-soft">{s.noResults}</p>
+          {(price.min != null || price.max != null || store || stock) && (
+            <button onClick={() => (setPrice({}), setStore(""), setStock(false))} className="rounded-full border border-line px-4 py-2 text-[13px] font-medium" data-testid="clear-filters">
+              {s.clearFilters}
+            </button>
+          )}
+          {(view.q ?? "").trim().split(/\s+/).length > 1 && (
+            <div className="flex flex-wrap items-center justify-center gap-1.5 text-[13px]" data-testid="try-words">
+              <span className="text-fg-muted">{s.tryWords}</span>
+              {[...new Set((view.q ?? "").trim().split(/\s+/).filter((w) => w.length > 2))].slice(0, 4).map((w) => (
+                <button key={w} onClick={() => go({ v: "search", q: w })} className="rounded-full bg-bg-soft px-3 py-1" dir="auto">
+                  {w}
+                </button>
+              ))}
+            </div>
+          )}
           <button onClick={() => onAsk(title)} className="flex items-center gap-1.5 rounded-full bg-inv-bg px-4 py-2.5 text-[14px] font-semibold text-inv-fg" data-testid="ask-web">
             <Sparkles className="size-4 text-gold" /> {s.searchWeb}
           </button>
@@ -486,8 +515,44 @@ interface ProductResponse {
   similar: Offer[];
 }
 
+/** Full-screen photo: tap to zoom 2.5× at that spot, drag to look around, ✕ or Back to close. */
+function ZoomView({ src, alt, onClose }: { src: string; alt: string; onClose: () => void }) {
+  const [big, setBig] = useState(false);
+  const box = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+  return (
+    <m.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="fixed inset-0 z-50 bg-black/95" role="dialog" aria-label={alt} data-testid="zoom">
+      <div ref={box} className="size-full overflow-auto" style={{ touchAction: big ? "pan-x pan-y" : "manipulation" }}>
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          src={src}
+          alt={alt}
+          onClick={(e) => {
+            const el = box.current;
+            const r = e.currentTarget.getBoundingClientRect();
+            const fx = (e.clientX - r.left) / r.width;
+            const fy = (e.clientY - r.top) / r.height;
+            setBig((b) => !b);
+            // Keep the tapped spot under the finger after zooming in.
+            requestAnimationFrame(() => el && !big && el.scrollTo({ left: fx * el.scrollWidth - el.clientWidth / 2, top: fy * el.scrollHeight - el.clientHeight / 2 }));
+          }}
+          className={`m-auto max-w-none object-contain transition-[width] duration-200 ${big ? "w-[250%] cursor-zoom-out" : "h-full w-full cursor-zoom-in"}`}
+        />
+      </div>
+      <button onClick={onClose} className="absolute end-4 top-4 rounded-full bg-white/15 p-2.5 text-white backdrop-blur" aria-label="Close">
+        <X className="size-5" />
+      </button>
+    </m.div>
+  );
+}
+
 function Gallery({ images, alt, store }: { images: string[]; alt: string; store: string }) {
   const [at, setAt] = useState(0);
+  const [zoom, setZoom] = useState<string | null>(null);
   const ref = useRef<HTMLDivElement>(null);
   const list = images.length ? images : [""];
   return (
@@ -502,11 +567,12 @@ function Gallery({ images, alt, store }: { images: string[]; alt: string; store:
         data-testid="gallery"
       >
         {list.map((src, i) => (
-          <div key={i} className="aspect-square w-full shrink-0 snap-center bg-white">
-            <SmartImage src={src || undefined} alt={`${alt} ${i + 1}`} className="size-full p-4" fallbackLabel={store} />
+          <div key={i} className="aspect-square w-full shrink-0 snap-center bg-white" onClick={() => src && setZoom(src)}>
+            <SmartImage src={src || undefined} alt={`${alt} ${i + 1}`} className="size-full cursor-zoom-in p-4" fallbackLabel={store} />
           </div>
         ))}
       </div>
+      {zoom && <ZoomView src={zoom} alt={alt} onClose={() => setZoom(null)} />}
       {list.length > 1 && (
         <div className="absolute inset-x-0 bottom-2 flex justify-center gap-1.5" aria-hidden>
           {list.map((_, i) => (
@@ -522,6 +588,7 @@ export function ProductView({ s, lang, country, go, back, onAsk, id, actions }: 
   const { data, loading, error } = useJson<ProductResponse>(`/api/product?id=${encodeURIComponent(id)}&country=${country}`);
   const [copied, setCopied] = useState(false);
   const [more, setMore] = useState(false);
+  const [comparing, setComparing] = useState(false);
   const o = data?.offer;
   const share = async () => {
     // The public product page (readable by search engines and link previews); it opens the app too.
@@ -562,7 +629,10 @@ export function ProductView({ s, lang, country, go, back, onAsk, id, actions }: 
         </div>
       ) : (
         <>
-          <Gallery images={data!.images} alt={o.title} store={store} />
+          {/* Opening a product: the photo grows into place (the tile → page feel). */}
+          <m.div initial={{ opacity: 0, scale: 0.92 }} animate={{ opacity: 1, scale: 1 }} transition={{ type: "spring", stiffness: 300, damping: 28 }}>
+            <Gallery images={data!.images} alt={o.title} store={store} />
+          </m.div>
           <div className="mt-3 flex flex-wrap items-center gap-1.5 text-[12px]">
             {LOGO_BY_NAME[store] && (
               // eslint-disable-next-line @next/next/no-img-element
@@ -626,7 +696,12 @@ export function ProductView({ s, lang, country, go, back, onAsk, id, actions }: 
 
           {!!data!.similar.length && (
             <section className="mt-6">
-              <h2 className="mb-2.5 text-[17px] font-bold tracking-tight">{s.similar}</h2>
+              <div className="mb-2.5 flex items-center justify-between gap-2">
+                <h2 className="text-[17px] font-bold tracking-tight">{s.similar}</h2>
+                <button onClick={() => setComparing(true)} className="shrink-0 rounded-full border border-line px-3 py-1 text-[12.5px] font-medium" data-testid="compare-similar">
+                  {s.compareSimilar}
+                </button>
+              </div>
               <div className="no-scrollbar -mx-4 flex snap-x gap-3 overflow-x-auto px-4 pb-1" data-testid="similar">
                 {data!.similar.map((x, i) => (
                   <ProductTile key={x.id} o={x} s={s} i={i} wide onOpen={(y) => (y.ref ? go({ v: "p", id: y.ref }) : undefined)} />
@@ -634,6 +709,9 @@ export function ProductView({ s, lang, country, go, back, onAsk, id, actions }: 
               </div>
             </section>
           )}
+          <BottomSheet open={comparing} title={s.compareSimilar} onClose={() => setComparing(false)}>
+            {comparing && <CompareTable offers={[data!.offer, ...data!.similar.slice(0, 2)]} s={s} lang={lang} />}
+          </BottomSheet>
         </>
       )}
     </div>
