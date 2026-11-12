@@ -2,7 +2,7 @@ import { z } from "zod";
 import { PiAuthError, verifyAccessToken } from "@/lib/server/pi";
 import { rateLimit } from "@/lib/server/ratelimit";
 import { devLoginAllowed, issueSession } from "@/lib/server/session";
-import { meState } from "@/lib/server/users";
+import { claimUsername, meState } from "@/lib/server/users";
 import type { Me } from "@/lib/types";
 
 export const runtime = "nodejs";
@@ -39,6 +39,8 @@ export async function POST(req: Request) {
       const u = await verifyAccessToken(body.accessToken);
       uid = u.uid;
       username = u.username;
+      // Mainnet app = new uid for the same Pi account: carry the Testnet account over.
+      await claimUsername(uid, username);
     }
     const { prefs, usage } = await meState(uid, username);
     const me: Me = { uid, username, usage, country: prefs.country, lang: prefs.lang, email: prefs.email };

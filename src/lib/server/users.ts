@@ -228,6 +228,16 @@ function stateToUsage(st: DbState): Usage {
 
 const isMissingFn = (e: { message?: string; code?: string } | null) => !!e && (e.code === "PGRST202" || /function .* does not exist|Could not find the function/i.test(e.message ?? ""));
 
+/**
+ * Verified Pi sign-in only (never dev): if another uid holds this username — the same person's
+ * account from the Testnet app, since Pi gives each app its own uid — move that account here.
+ */
+export async function claimUsername(uid: string, username?: string): Promise<void> {
+  if (!username || !supabaseEnabled) return;
+  const r = await supabase().rpc("claim_username", { p_uid: uid, p_username: username });
+  if (r.error && !isMissingFn(r.error)) throw new Error(`claim: ${r.error.message}`);
+}
+
 /** Page load / sign-in: user upsert + saved prefs + credit — one round trip with migration 0006. */
 export async function meState(uid: string, username?: string): Promise<{ prefs: { country: string | null; lang: Lang; email: string | null }; usage: Usage }> {
   if (supabaseEnabled) {
