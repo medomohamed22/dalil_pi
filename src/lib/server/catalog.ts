@@ -867,6 +867,11 @@ interface Indexed {
 let version = 0;
 let loaded: { at: number; checkedAt: number; key: string; rows: Indexed[]; states: Map<CatalogSource, SourceState>; twins: Map<string, Indexed[]> } | null = null;
 
+/** Start loading the index now (e.g. while the AI reads the request), so the first search is instant. */
+export function warmIndex(): void {
+  void index().catch(() => {});
+}
+
 /** The in-memory index; reloaded only when a store was refreshed (checked at most once a minute). */
 async function index(): Promise<NonNullable<typeof loaded>> {
   try {

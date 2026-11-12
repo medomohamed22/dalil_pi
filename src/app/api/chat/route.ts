@@ -3,7 +3,7 @@ import { BodyTooLarge, readJson } from "@/lib/server/body";
 import { z } from "zod";
 import { runAgent } from "@/lib/server/agent";
 import { boundHistory } from "@/lib/server/chat-bounds";
-import { refreshInBackground } from "@/lib/server/catalog";
+import { refreshInBackground, warmIndex } from "@/lib/server/catalog";
 import { countryName, currencyOf, geoFromRequest, isCountryCode } from "@/lib/server/geo";
 import { hostedConfig, hostedEnabled, hostedLimits, visitorId } from "@/lib/server/hosted";
 import { piUsdPrice } from "@/lib/server/price";
@@ -71,6 +71,9 @@ export async function POST(req: Request) {
   body.history = bounded;
   if (!hostedEnabled()) return Response.json({ error: "The AI is not configured (META_API_KEY).", code: "NO_API_KEY" }, { status: 503 });
 
+  // Started now, used after the credit checks (no waiting in a row).
+  const pricePromise = piUsdPrice().catch(() => null);
+  warmIndex();
   // Quota, rate limits and daily AI caps in one database call — no AI call when anything is over.
   let receipt: Awaited<ReturnType<typeof reserveSearch>>;
   try {
@@ -95,7 +98,7 @@ export async function POST(req: Request) {
     currency: currencyOf(country),
   };
   const knownOffers = ((body.offers ?? []) as unknown as Offer[]).filter((o) => verifyOffer(o) && !o.flags?.includes("price_unverified"));
-  const price = await piUsdPrice();
+  const price = await pricePromise;
 
   const stream = new ReadableStream<Uint8Array>({
     async start(controller) {
