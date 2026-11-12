@@ -140,6 +140,11 @@ export function stepLabel(tool: string, s: Strings, lang: Lang): string {
     browser_open: "بيفتح الصفحة في متصفح حقيقي",
     browser_action: "بيتعامل مع الصفحة",
     show_offers: "بيقارن ويرتّب العروض",
+    pick_offers: "بيختار الأنسب ويرتّب العروض",
+    search_dalil_index: "بيدوّر في فهرس دليل",
+    search_pi_chain_mall: "بيدوّر في Pi Chain Mall",
+    search_pi_marketplaces: "بيدوّر في أسواق باي",
+    salla_local: "بيدوّر في محلات سلة القريبة",
     deal_check: "بيكشف العروض الوهمية",
     identify_image: "بيتعرف على المنتج من الصورة",
   };
@@ -153,6 +158,11 @@ export function stepLabel(tool: string, s: Strings, lang: Lang): string {
     browser_open: "Opening in a real browser",
     browser_action: "Interacting with the page",
     show_offers: "Comparing & ranking offers",
+    pick_offers: "Picking the best matches",
+    search_dalil_index: "Searching Dalil Index",
+    search_pi_chain_mall: "Searching Pi Chain Mall",
+    search_pi_marketplaces: "Searching Pi marketplaces",
+    salla_local: "Searching nearby Salla shops",
     deal_check: "Checking for fake deals",
     identify_image: "Identifying product from photo",
   };

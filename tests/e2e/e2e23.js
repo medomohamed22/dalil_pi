@@ -36,9 +36,9 @@ async function ask(tok, history, settings = {}) {
   const a = await ask(tok, [{ role: 'user', text: 'INDEXFIRST headphones' }]);
   const t1 = (await chat()).lastTools;
   ok(a.status === 200 && a.offers.length >= 2, `index answer shows cards (${a.offers.length}: ${a.offers.map((o) => o.store).join(', ')})`);
-  ok(a.withTools === 3 && t1.length === 2 && t1.includes('search_dalil_index') && t1.includes('show_offers'), `3 AI rounds, each offered only search_dalil_index + show_offers (${t1.join(', ')})`);
+  ok(a.withTools === 2 && t1.length === 2 && t1.includes('search_dalil_index') && t1.includes('pick_offers'), `2 AI rounds (search, pick by ref + comment), offered only search_dalil_index + pick_offers (${t1.join(', ')})`);
   ok(/INDEXPICK/.test(a.text) && !/NO_INDEX_MATCH/.test(a.text), `the AI writes the recommendation: "${a.text.slice(0, 40)}"`);
-  ok(a.steps.includes('search_dalil_index') && !a.steps.includes('web_search'), `steps: ${[...new Set(a.steps)].join(', ')}`);
+  ok(a.steps.includes('search_dalil_index') && a.steps.includes('pick_offers') && !a.steps.includes('web_search'), `steps: ${[...new Set(a.steps)].join(', ')}`);
   ok(a.offers.every((o) => o.sig && o.url && o.currency === 'PI'), 'cards are signed, linked and priced in Pi');
   ok(!a.offers.some((o) => /evil/i.test(o.title)), 'bad links from a store never become cards');
   console.log('index answer took', a.ms, 'ms');

@@ -55,7 +55,7 @@ http.createServer((req, res) => {
       }
       chat.lastTools = (b.tools || []).map((t) => t.function.name);
       // Index-only step (Ask Dalil, plain product request): only search_dalil_index + show_offers offered.
-      if (chat.lastTools.length === 2 && chat.lastTools.includes('search_dalil_index') && chat.lastTools.includes('show_offers')) {
+      if (chat.lastTools.length === 2 && chat.lastTools.includes('search_dalil_index') && chat.lastTools.includes('pick_offers')) {
         chat.indexOnly++;
         const ut = JSON.stringify(b.messages.filter((m) => m.role === 'user').slice(-1));
         const tools = b.messages.filter((m) => m.role === 'tool');
@@ -65,9 +65,9 @@ http.createServer((req, res) => {
         if (tools.length === 1) {
           const out = JSON.parse(tools[0].content.replace(/\n\[time left.*$/s, ''));
           if ((out.results || []).length < 2) return sse(res, [{ content: 'NO_INDEX_MATCH' }]);
-          return sse(res, [call(0, 'show_offers', { offers: out.results.slice(0, 4).map((r) => ({ title: r.title, store: r.store, url: r.url, image: r.image, price: r.price, currency: 'PI', kind: r.kind, inStock: r.inStock, piEvidence: r.piEvidence, ...(r.shippingPi != null ? { shipping: r.shippingPi } : {}) })) })]);
+          return sse(res, [call(0, 'pick_offers', { ids: [...out.results.slice(0, 4).map((r) => r.ref), 'r999'], comment: 'INDEXPICK from the index.' })]);
         }
-        return sse(res, [{ content: 'INDEXPICK from the index.' }]);
+        return sse(res, [{ content: 'SHOULD NOT BE CALLED after pick_offers' }]);
       }
       if (dev && !b.messages.some((m) => m.role === 'tool' && m.tool_call_id !== 'call_quick_index')) prompts.push(dev.content);
       const toolMsgs = b.messages.filter((m) => m.role === 'tool' && m.tool_call_id !== 'call_quick_index').length;
