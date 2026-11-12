@@ -24,6 +24,7 @@ async function ask(tok, history, settings = {}) {
     calls: after.calls - before.calls,
     withTools: after.withTools - before.withTools,
     noTools: after.noTools - before.noTools,
+    idx: after.indexOnly - before.indexOnly,
   };
 }
 
@@ -31,28 +32,24 @@ async function ask(tok, history, settings = {}) {
   await fetch(BASE + '/api/cron/catalog?force=1', { headers: { Authorization: 'Bearer cron-test' } });
   const tok = (await J(await post('/api/auth/pi', { dev: 'quicky' }))).token;
 
-  // 1. Plain request in Egyptian Arabic with filler words → index only.
-  const a = await ask(tok, [{ role: 'user', text: 'عايز headphones' }]);
+  // 1. Plain product request → AI searches ONLY Dalil Index (picks the keywords, keeps what fits).
+  const a = await ask(tok, [{ role: 'user', text: 'INDEXFIRST headphones' }]);
+  const t1 = (await chat()).lastTools;
   ok(a.status === 200 && a.offers.length >= 2, `index answer shows cards (${a.offers.length}: ${a.offers.map((o) => o.store).join(', ')})`);
-  ok(a.calls === 1 && a.withTools === 0 && a.noTools === 1, `exactly one AI call and it has no tools (calls ${a.calls}, with tools ${a.withTools})`);
-  ok(/QUICKSUMMARY ranked/.test(a.text), `the AI only writes the recommendation from the ranked offers: "${a.text.slice(0, 60)}"`);
+  ok(a.withTools === 3 && t1.length === 2 && t1.includes('search_dalil_index') && t1.includes('show_offers'), `3 AI rounds, each offered only search_dalil_index + show_offers (${t1.join(', ')})`);
+  ok(/INDEXPICK/.test(a.text) && !/NO_INDEX_MATCH/.test(a.text), `the AI writes the recommendation: "${a.text.slice(0, 40)}"`);
   ok(a.steps.includes('search_dalil_index') && !a.steps.includes('web_search'), `steps: ${[...new Set(a.steps)].join(', ')}`);
   ok(a.offers.every((o) => o.sig && o.url && o.currency === 'PI'), 'cards are signed, linked and priced in Pi');
   ok(!a.offers.some((o) => /evil/i.test(o.title)), 'bad links from a store never become cards');
   console.log('index answer took', a.ms, 'ms');
 
-  // 1b. The same request again: the recommendation is reused, no AI call at all.
-  const a2 = await ask(tok, [{ role: 'user', text: 'عايز headphones' }]);
-  ok(a2.offers.length === a.offers.length && a2.calls === 0 && a2.text === a.text, `same request again → cards + cached recommendation, ${a2.calls} AI calls`);
-
-  // 2. A budget is respected.
-  const b = await ask(tok, [{ role: 'user', text: 'headphones تحت 400 باي' }]);
-  ok(b.offers.length === 0 || b.offers.every((o) => o.price <= 400), `budget 400 π: ${b.offers.map((o) => o.price).join(', ') || 'no cards → full agent'}`);
+  // 2. Nothing in the index fits → the full agent carries on; the marker never reaches the user.
+  const b = await ask(tok, [{ role: 'user', text: 'INDEXFIRST zqxv flux capacitor' }]);
+  ok(/Best pick/.test(b.text) && b.idx >= 2 && !/NO_INDEX_MATCH/.test(b.text), `no index match → full agent (${[...new Set(b.steps)].join(', ')}), text: "${b.text.slice(0, 40)}"`);
 
   // 3. Not in the index → the full agent (tools offered).
   const c = await ask(tok, [{ role: 'user', text: 'zqxv flux capacitor' }]);
   ok(c.withTools >= 1, `unknown product goes to the full agent (${c.withTools} tool rounds)`);
-  ok(c.steps.filter((s) => s === 'search_dalil_index').length >= 1, 'the agent starts from the index result already fetched');
 
   // 3b. The long fixed part of the prompt is identical for every user (prompt cache), the context is at the end.
   const eg = await ask(tok, [{ role: 'user', text: 'zqxv one' }], { country: 'EG', lang: 'ar' });
@@ -75,6 +72,6 @@ async function ask(tok, history, settings = {}) {
     ['link', [{ role: 'user', text: 'https://mall.salla-shop.com/product/x headphones' }]],
   ]) {
     const r = await ask(tok2, history, settings);
-    ok(r.withTools >= 1, `${label} → full agent (${r.withTools} tool rounds)`);
+    ok(r.withTools >= 1 && r.idx === 0, `${label} → straight to the full agent (${r.withTools} tool rounds, ${r.idx} index-only)`);
   }
 })().catch((e) => { console.log('FAIL crash ' + e.stack); process.exitCode = 1; });

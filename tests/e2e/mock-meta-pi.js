@@ -4,7 +4,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const prompts = [];
 let responsesCalls = 0;
 let enrichCalls = 0;
-const chat = { calls: 0, withTools: 0, noTools: 0, last: null };
+const chat = { calls: 0, withTools: 0, noTools: 0, last: null, lastTools: [], indexOnly: 0 };
 function sse(res, chunks) {
   res.writeHead(200, { 'content-type': 'text/event-stream' });
   for (const c of chunks) res.write(`data: ${JSON.stringify({ choices: [{ delta: c }] })}\n\n`);
@@ -52,6 +52,22 @@ http.createServer((req, res) => {
         chat.noTools++;
         await sleep(100);
         return sse(res, [{ content: 'QUICKSUMMARY ' + (/Ranked offers/.test(JSON.stringify(b.messages)) ? 'ranked' : 'none') }]);
+      }
+      chat.lastTools = (b.tools || []).map((t) => t.function.name);
+      // Index-only step (Ask Dalil, plain product request): only search_dalil_index + show_offers offered.
+      if (chat.lastTools.length === 2 && chat.lastTools.includes('search_dalil_index') && chat.lastTools.includes('show_offers')) {
+        chat.indexOnly++;
+        const ut = JSON.stringify(b.messages.filter((m) => m.role === 'user').slice(-1));
+        const tools = b.messages.filter((m) => m.role === 'tool');
+        if (!ut.includes('INDEXFIRST')) return sse(res, [{ content: 'NO_INDEX_MATCH' }]);
+        const q = (b.messages.filter((m) => m.role === 'user').slice(-1)[0].content || '').replace('INDEXFIRST', '').trim();
+        if (tools.length === 0) return sse(res, [call(0, 'search_dalil_index', { queries: [q] })]);
+        if (tools.length === 1) {
+          const out = JSON.parse(tools[0].content.replace(/\n\[time left.*$/s, ''));
+          if ((out.results || []).length < 2) return sse(res, [{ content: 'NO_INDEX_MATCH' }]);
+          return sse(res, [call(0, 'show_offers', { offers: out.results.slice(0, 4).map((r) => ({ title: r.title, store: r.store, url: r.url, image: r.image, price: r.price, currency: 'PI', kind: r.kind, inStock: r.inStock, piEvidence: r.piEvidence, ...(r.shippingPi != null ? { shipping: r.shippingPi } : {}) })) })]);
+        }
+        return sse(res, [{ content: 'INDEXPICK from the index.' }]);
       }
       if (dev && !b.messages.some((m) => m.role === 'tool' && m.tool_call_id !== 'call_quick_index')) prompts.push(dev.content);
       const toolMsgs = b.messages.filter((m) => m.role === 'tool' && m.tool_call_id !== 'call_quick_index').length;
