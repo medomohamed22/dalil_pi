@@ -18,7 +18,6 @@ export default function MessageView({
   city,
   onOrder,
   ordersLeft,
-  onFollowUp,
   onRetry,
   onWatch,
   onAsk,
@@ -34,7 +33,6 @@ export default function MessageView({
   onOrder?: (o: Offer) => void;
   ordersLeft?: number | null;
   /** Only on the latest finished answer: quick follow-up chips / retry. */
-  onFollowUp?: (text: string) => void;
   onRetry?: () => void;
   onWatch?: (o: Offer, target?: number | null) => Promise<boolean>;
   onAsk?: (text: string) => void;
@@ -74,7 +72,7 @@ export default function MessageView({
 
   const empty = msg.blocks.length === 0;
   return (
-    <m.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex gap-3">
+    <m.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex gap-3" data-answer={live ? "live" : "done"}>
       <div className="mt-0.5 shrink-0">
         <Logo size={28} spinning={live} />
       </div>
@@ -132,22 +130,6 @@ export default function MessageView({
               return null;
           }
         })}
-        {onFollowUp && !live && msg.blocks.some((b) => b.type === "products") && (
-          <div className="no-scrollbar flex gap-1.5 overflow-x-auto" data-testid="follow-ups">
-            {s.followUps.map((label, i) => (
-              <m.button
-                key={label}
-                initial={{ opacity: 0, y: 6 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: 0.1 + i * 0.05 }}
-                onClick={() => onFollowUp(s.followUpsPrompt[i])}
-                className="shrink-0 rounded-full border border-line px-3 py-1 text-[12px] font-medium text-fg-soft hover:bg-bg-soft"
-              >
-                {label}
-              </m.button>
-            ))}
-          </div>
-        )}
       </div>
     </m.div>
   );

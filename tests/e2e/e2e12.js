@@ -51,12 +51,12 @@ const ok = (c, m) => { console.log((c ? 'PASS ' : 'FAIL ') + m); if (!c) process
   ok(/Total/.test(ct) && /Trust/.test(ct) && /Soundcore/.test(ct) && /JBL|Soundcore Q30 headphones/.test(ct), 'compare table');
   await p.screenshot({ path: `${OUT}/20-compare.png` });
   await p.getByRole('dialog').getByRole('button', { name: 'Close' }).click();
-  // follow-ups
-  const fu = p.getByTestId('follow-ups');
-  ok((await fu.getByRole('button').count()) === 4, 'four follow-up chips');
-  await fu.getByRole('button', { name: 'Cheaper options' }).click();
+  // no follow-up chips under answers (each tap cost an AI credit); the user types the next question
+  ok((await p.getByTestId('follow-ups').count()) === 0, 'no follow-up chips');
+  await p.getByRole('textbox').first().fill('Show me cheaper options for this');
+  await p.keyboard.press('Enter');
   await p.getByText('Show me cheaper options for this').waitFor({ timeout: 10000 });
-  ok(true, 'follow-up sends the question');
+  ok(true, 'a typed follow-up sends the question');
   await p.getByText('Twin result').nth(1).waitFor({ timeout: 30000 });
   // offline
   await ctx.setOffline(true);

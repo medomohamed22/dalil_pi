@@ -152,8 +152,6 @@ const strings = {
     saved: "Saved",
     comparePicked: (n: number) => `${n} selected`,
     alsoAt: (store: string, price: string) => `Also at ${store} for ${price}`,
-    followUps: ["Cheaper options", "Higher rated", "Near me", "Other Pi stores"] as string[],
-    followUpsPrompt: ["Show me cheaper options for this", "Show me higher-rated options", "Find shops near me that sell this for Pi", "Look in other Pi stores too"] as string[],
     retry: "Try again",
     offline: "You're offline — results will come back when you reconnect.",
     tour: [
@@ -491,8 +489,6 @@ const strings = {
     saved: "اتحفظ",
     comparePicked: (n: number) => `اخترت ${n}`,
     alsoAt: (store: string, price: string) => `متاح كمان في ${store} بـ ${price}`,
-    followUps: ["أرخص", "تقييم أعلى", "قريب مني", "متاجر باي تانية"] as string[],
-    followUpsPrompt: ["وريني اختيارات أرخص من دي", "وريني اختيارات تقييمها أعلى", "دوّر على محلات قريبة مني بتبيع ده بالباي", "دوّر كمان في متاجر باي تانية"] as string[],
     retry: "جرّب تاني",
     offline: "مفيش نت دلوقتي — النتايج هترجع أول ما النت يرجع.",
     tour: [

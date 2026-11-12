@@ -550,18 +550,8 @@ export default function App() {
     void setKV("tour-done", true);
   };
 
-  /** Quick follow-up chips under the latest results ("Near me" also switches the scope and asks for GPS). */
-  const followUp = (text: string) => {
-    if (text === s.followUpsPrompt[2]) {
-      updateSettings({ scope: "local" });
-      navigator.geolocation?.getCurrentPosition(
-        (pos) => updateSettings({ coords: { lat: Math.round(pos.coords.latitude * 100) / 100, lon: Math.round(pos.coords.longitude * 100) / 100 } }),
-        () => {},
-        { timeout: 10_000, maximumAge: 10 * 60_000 },
-      );
-    }
-    void send({ text, images: [], links: [] });
-  };
+  /** A question asked from inside a result (e.g. "ask this shop"). */
+  const followUp = (text: string) => void send({ text, images: [], links: [] });
   /** Re-sends the last question after an error. */
   const retry = () => {
     const lastUser = [...messages].reverse().find((x) => x.role === "user");
@@ -864,7 +854,6 @@ export default function App() {
                       city={config?.geo.city}
                       onOrder={order}
                       ordersLeft={ordersLeft}
-                      onFollowUp={idx === messages.length - 1 && !busy ? followUp : undefined}
                       onRetry={idx === messages.length - 1 && !busy ? retry : undefined}
                       onWatch={watch}
                       onAsk={busy ? undefined : followUp}
