@@ -1,10 +1,9 @@
 "use client";
 
 import { AnimatePresence, m } from "framer-motion";
-import { useLiveQuery } from "dexie-react-hooks";
 import { Camera, Check, Globe2, House, Loader2, LogOut, MapPin, Menu, Moon, PanelLeft, Plus, Search, ShieldCheck, ShoppingCart, Sun, Trash2, UserRound, Wallet, X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { db, delKV, getKV, loadSettings, requestPersistence, saveSettings, setKV, uid } from "@/lib/db";
+import { delKV, getDb, getKV, loadSettings, requestPersistence, saveSettings, setKV, uid, useDbQuery } from "@/lib/db";
 import { countryLabel, flag, t, type Strings } from "@/lib/i18n";
 import { inPiBrowser, loadPi, PI_SANDBOX, piAuthenticate } from "@/lib/pi-client";
 import { DEFAULT_SETTINGS, type AgentEvent, type Block, type ChatMessage, type Lang, type Me, type Offer, type Scope, type Settings, type Step, type Usage, type WireMessage } from "@/lib/types";
@@ -289,9 +288,9 @@ export default function App() {
   };
 
   /* ---------- chats ---------- */
-  const conversations = useLiveQuery(() => db().conversations.orderBy("updatedAt").reverse().toArray(), []) ?? [];
-  const storedQ = useLiveQuery(
-    () => (convId ? db().messages.where("[conversationId+createdAt]").between([convId, 0], [convId, Infinity]).toArray() : Promise.resolve([] as ChatMessage[])),
+  const conversations = useDbQuery((d) => d.conversations.orderBy("updatedAt").reverse().toArray(), []) ?? [];
+  const storedQ = useDbQuery(
+    (d) => (convId ? d.messages.where("[conversationId+createdAt]").between([convId, 0], [convId, Infinity]).toArray() : Promise.resolve([] as ChatMessage[])),
     [convId],
   );
   const stored = useMemo(() => storedQ ?? [], [storedQ]);
@@ -313,18 +312,18 @@ export default function App() {
   };
 
   const deleteConversation = async (id: string) => {
-    await db().messages.where("conversationId").equals(id).delete();
-    await db().conversations.delete(id);
+    await (await getDb()).messages.where("conversationId").equals(id).delete();
+    await (await getDb()).conversations.delete(id);
     if (convId === id) setConvId(null);
   };
 
   const ensureConversation = async (title: string, icon?: "camera") => {
     if (convId) {
-      await db().conversations.update(convId, { updatedAt: Date.now() });
+      await (await getDb()).conversations.update(convId, { updatedAt: Date.now() });
       return convId;
     }
     const id = uid();
-    await db().conversations.put({ id, title: title.slice(0, 60) || "…", ...(icon ? { icon } : {}), createdAt: Date.now(), updatedAt: Date.now() });
+    await (await getDb()).conversations.put({ id, title: title.slice(0, 60) || "…", ...(icon ? { icon } : {}), createdAt: Date.now(), updatedAt: Date.now() });
     setConvId(id);
     return id;
   };
@@ -353,9 +352,9 @@ export default function App() {
         ...p.links.map((preview) => ({ type: "link" as const, preview })),
         ...(p.text ? [{ type: "text" as const, text: p.text }] : []),
       ];
-      await db().messages.put({ id: uid(), conversationId: cid, role: "user", blocks: userBlocks, createdAt: now });
+      await (await getDb()).messages.put({ id: uid(), conversationId: cid, role: "user", blocks: userBlocks, createdAt: now });
 
-      const convMsgs = await db().messages.where("conversationId").equals(cid).sortBy("createdAt");
+      const convMsgs = await (await getDb()).messages.where("conversationId").equals(cid).sortBy("createdAt");
       const history = toWire(convMsgs);
       const knownOffers = convMsgs
         .flatMap((m) => m.blocks.flatMap((b) => (b.type === "products" ? b.offers : [])))
@@ -370,7 +369,7 @@ export default function App() {
       const persist = async (force = false) => {
         if (!force && Date.now() - lastSave < 500) return;
         lastSave = Date.now();
-        await db().messages.put(assistant);
+        await (await getDb()).messages.put(assistant);
       };
 
       try {
@@ -438,7 +437,7 @@ export default function App() {
             ),
         };
         await persist(true);
-        await db().conversations.update(cid, { updatedAt: Date.now() });
+        await (await getDb()).conversations.update(cid, { updatedAt: Date.now() });
         setLive(null);
         abortRef.current = null;
       }
