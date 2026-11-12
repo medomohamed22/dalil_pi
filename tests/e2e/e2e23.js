@@ -64,6 +64,8 @@ async function ask(tok, history, settings = {}) {
   ok(p1.slice(ctx1).includes('Egypt') && p2.slice(ctx1).includes('United States'), 'country and language live in the Context block');
   ok(eg.status === 200 && us.status === 200, 'both answered');
 
+  // A second user: 10 AI questions an hour per user.
+  const tok2 = (await J(await post('/api/auth/pi', { dev: 'quicky2' }))).token;
   // 4. Local / services / follow-ups / photos / links → full agent.
   for (const [label, history, settings] of [
     ['near me', [{ role: 'user', text: 'headphones near me' }]],
@@ -72,7 +74,7 @@ async function ask(tok, history, settings = {}) {
     ['question', [{ role: 'user', text: 'هل headphones دي كويسة؟' }]],
     ['link', [{ role: 'user', text: 'https://mall.salla-shop.com/product/x headphones' }]],
   ]) {
-    const r = await ask(tok, history, settings);
+    const r = await ask(tok2, history, settings);
     ok(r.withTools >= 1, `${label} → full agent (${r.withTools} tool rounds)`);
   }
 })().catch((e) => { console.log('FAIL crash ' + e.stack); process.exitCode = 1; });
