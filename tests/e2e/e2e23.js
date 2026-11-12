@@ -41,6 +41,10 @@ async function ask(tok, history, settings = {}) {
   ok(!a.offers.some((o) => /evil/i.test(o.title)), 'bad links from a store never become cards');
   console.log('index answer took', a.ms, 'ms');
 
+  // 1b. The same request again: the recommendation is reused, no AI call at all.
+  const a2 = await ask(tok, [{ role: 'user', text: 'عايز headphones' }]);
+  ok(a2.offers.length === a.offers.length && a2.calls === 0 && a2.text === a.text, `same request again → cards + cached recommendation, ${a2.calls} AI calls`);
+
   // 2. A budget is respected.
   const b = await ask(tok, [{ role: 'user', text: 'headphones تحت 400 باي' }]);
   ok(b.offers.length === 0 || b.offers.every((o) => o.price <= 400), `budget 400 π: ${b.offers.map((o) => o.price).join(', ') || 'no cards → full agent'}`);
@@ -48,6 +52,17 @@ async function ask(tok, history, settings = {}) {
   // 3. Not in the index → the full agent (tools offered).
   const c = await ask(tok, [{ role: 'user', text: 'zqxv flux capacitor' }]);
   ok(c.withTools >= 1, `unknown product goes to the full agent (${c.withTools} tool rounds)`);
+  ok(c.steps.filter((s) => s === 'search_dalil_index').length >= 1, 'the agent starts from the index result already fetched');
+
+  // 3b. The long fixed part of the prompt is identical for every user (prompt cache), the context is at the end.
+  const eg = await ask(tok, [{ role: 'user', text: 'zqxv one' }], { country: 'EG', lang: 'ar' });
+  const us = await ask(tok, [{ role: 'user', text: 'zqxv two' }], { country: 'US', lang: 'en', scope: 'online' });
+  const pr = await J(await fetch(META + '/__prompts'));
+  const [p1, p2] = pr.slice(-2);
+  const ctx1 = p1.indexOf('\nContext:\n');
+  ok(ctx1 > 3000 && p1.slice(0, ctx1) === p2.slice(0, p2.indexOf('\nContext:\n')), `fixed prompt part (${ctx1} chars) is the same for EG/ar and US/en/online`);
+  ok(p1.slice(ctx1).includes('Egypt') && p2.slice(ctx1).includes('United States'), 'country and language live in the Context block');
+  ok(eg.status === 200 && us.status === 200, 'both answered');
 
   // 4. Local / services / follow-ups / photos / links → full agent.
   for (const [label, history, settings] of [

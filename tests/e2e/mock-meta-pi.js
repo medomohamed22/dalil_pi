@@ -51,14 +51,14 @@ http.createServer((req, res) => {
         await sleep(100);
         return sse(res, [{ content: 'QUICKSUMMARY ' + (/Ranked offers/.test(JSON.stringify(b.messages)) ? 'ranked' : 'none') }]);
       }
-      if (dev && !b.messages.some((m) => m.role === 'tool')) prompts.push(dev.content);
-      const toolMsgs = b.messages.filter((m) => m.role === 'tool').length;
+      if (dev && !b.messages.some((m) => m.role === 'tool' && m.tool_call_id !== 'call_quick_index')) prompts.push(dev.content);
+      const toolMsgs = b.messages.filter((m) => m.role === 'tool' && m.tool_call_id !== 'call_quick_index').length;
       await sleep(300);
       const userText = JSON.stringify(b.messages.filter((m) => m.role === 'user').slice(-1));
       if (userText.includes('MERCH')) {
         if (toolMsgs === 0) return sse(res, [call(0, 'dalil_merchants', { query: 'coffee' })]);
         if (toolMsgs === 1) {
-          const out = JSON.parse(b.messages.filter((m) => m.role === 'tool')[0].content.replace(/\n\[time left.*$/s, ''));
+          const out = JSON.parse(b.messages.filter((m) => m.role === 'tool' && m.tool_call_id !== 'call_quick_index')[0].content.replace(/\n\[time left.*$/s, ''));
           const offers = (out.merchants || []).map((mm) => ({ merchantId: mm.merchant_id, title: mm.items[0].title, store: mm.store, url: mm.url, price: mm.items[0].price, currency: 'PI', kind: mm.kind, address: mm.address, lat: mm.lat, lon: mm.lon, phone: mm.phone, piEvidence: mm.piEvidence }));
           if (!offers.length) return sse(res, [{ content: 'No merchants.' }]);
           return sse(res, [call(0, 'show_offers', { offers })]);
@@ -67,7 +67,7 @@ http.createServer((req, res) => {
       }
       if (userText.includes('SALLA1')) {
         if (toolMsgs === 0) return sse(res, [call(0, 'search_salla', { queries: ['سماعة لاسلكية'] })]);
-        const tool = (b.messages.filter((m) => m.role === 'tool')[0] || {}).content || '';
+        const tool = (b.messages.filter((m) => m.role === 'tool' && m.tool_call_id !== 'call_quick_index')[0] || {}).content || '';
         return sse(res, [{ content: `Salla one done. english-match=${tool.includes('Anker Wireless Headphones Q20') ? 'yes' : 'no'}` }]);
       }
       if (userText.includes('FAILME')) { res.writeHead(500); return res.end('{"error":"boom"}'); }
@@ -83,7 +83,7 @@ http.createServer((req, res) => {
       if (userText.includes('IDX')) {
         const q = userText.includes('honey') ? 'عسل' : userText.includes('nothing') ? 'zzqqxx' : 'سماعة';
         if (toolMsgs === 0) return sse(res, [call(0, 'search_dalil_index', { queries: [q] })]);
-        const out = JSON.parse(b.messages.filter((m) => m.role === 'tool')[0].content.replace(/\n\[time left.*$/s, ''));
+        const out = JSON.parse(b.messages.filter((m) => m.role === 'tool' && m.tool_call_id !== 'call_quick_index')[0].content.replace(/\n\[time left.*$/s, ''));
         if (toolMsgs === 1 && out.results.length) {
           const offers = out.results.map((x) => ({ title: x.title, store: x.store, url: x.url, image: x.image, price: x.price, currency: 'PI', listPrice: x.listPrice, inStock: x.inStock, kind: x.kind, piEvidence: x.piEvidence }));
           return sse(res, [call(0, 'show_offers', { offers })]);
@@ -92,13 +92,13 @@ http.createServer((req, res) => {
       }
       if (userText.includes('GTPSKIP')) {
         if (toolMsgs === 0) return sse(res, [call(0, 'browse_url', { url: 'https://zynmart.pages.dev/' })]);
-        const t = b.messages.filter((m) => m.role === 'tool')[0].content;
+        const t = b.messages.filter((m) => m.role === 'tool' && m.tool_call_id !== 'call_quick_index')[0].content;
         return sse(res, [{ content: 'SKIPRESULT ' + t.slice(0, 160) }]);
       }
       if (userText.includes('GTP')) {
         if (toolMsgs === 0) return sse(res, [call(0, 'search_pi_marketplaces', { queries: ['router'] })]);
         if (toolMsgs === 1) {
-          const out = JSON.parse(b.messages.filter((m) => m.role === 'tool')[0].content.replace(/\n\[time left.*$/s, ''));
+          const out = JSON.parse(b.messages.filter((m) => m.role === 'tool' && m.tool_call_id !== 'call_quick_index')[0].content.replace(/\n\[time left.*$/s, ''));
           const offers = (Array.isArray(out) ? out : []).map((x) => ({ title: x.title, store: x.store, url: x.url, image: x.image, price: x.price, currency: 'PI', kind: x.kind, piEvidence: x.piEvidence }));
           return sse(res, [call(0, 'show_offers', { offers })]);
         }
@@ -106,18 +106,18 @@ http.createServer((req, res) => {
       }
       if (userText.includes('SLOCAL')) {
         if (toolMsgs === 0) return sse(res, [call(0, 'salla_local', { query: userText.includes('pizza') ? 'pizza' : 'كافيه' })]);
-        const t = b.messages.filter((m) => m.role === 'tool')[0].content;
+        const t = b.messages.filter((m) => m.role === 'tool' && m.tool_call_id !== 'call_quick_index')[0].content;
         return sse(res, [{ content: 'SLRESULT ' + (t.includes('matched_query":true') ? 'matched' : 'nearest') }]);
       }
       if (userText.includes('PCMBROWSE')) {
         if (toolMsgs === 0) return sse(res, [call(0, 'browse_url', { url: 'https://pipcm.com/#/index' })]);
-        const t = b.messages.filter((m) => m.role === 'tool')[0].content;
+        const t = b.messages.filter((m) => m.role === 'tool' && m.tool_call_id !== 'call_quick_index')[0].content;
         return sse(res, [{ content: 'PCMRESULT ' + t.slice(0, 200) }]);
       }
       if (userText.includes('PCM')) {
         if (toolMsgs === 0) return sse(res, [call(0, 'search_pi_chain_mall', { queries: ['shoes'] })]);
         if (toolMsgs === 1) {
-          const out = JSON.parse(b.messages.filter((m) => m.role === 'tool')[0].content.replace(/\n\[time left.*$/s, ''));
+          const out = JSON.parse(b.messages.filter((m) => m.role === 'tool' && m.tool_call_id !== 'call_quick_index')[0].content.replace(/\n\[time left.*$/s, ''));
           const offers = (Array.isArray(out) ? out : []).map((x) => ({ title: x.title, store: x.store, url: x.url, image: x.image, price: x.price, currency: 'PI', kind: 'online', piEvidence: x.piEvidence }));
           offers.push({ title: 'Running shoes', store: 'Piketplace', url: 'https://piketplace.com/item/shoes', price: 250, currency: 'PI', kind: 'online', piEvidence: 'Listed in Pi on Piketplace' });
           return sse(res, [call(0, 'show_offers', { offers })]);
@@ -126,13 +126,13 @@ http.createServer((req, res) => {
       }
       if (userText.includes('MOPBROWSE')) {
         if (toolMsgs === 0) return sse(res, [call(0, 'browse_url', { url: 'https://mapofpi.com/' })]);
-        const t = b.messages.filter((m) => m.role === 'tool')[0].content;
+        const t = b.messages.filter((m) => m.role === 'tool' && m.tool_call_id !== 'call_quick_index')[0].content;
         return sse(res, [{ content: 'RESULT ' + t.slice(0, 200) }]);
       }
       if (userText.includes('MOP')) {
         if (toolMsgs === 0) return sse(res, [call(0, 'map_of_pi', { query: 'coffee' })]);
         if (toolMsgs === 1) {
-          const out = JSON.parse(b.messages.filter((m) => m.role === 'tool')[0].content.replace(/\n\[time left.*$/s, ''));
+          const out = JSON.parse(b.messages.filter((m) => m.role === 'tool' && m.tool_call_id !== 'call_quick_index')[0].content.replace(/\n\[time left.*$/s, ''));
           if (!out.shops) return sse(res, [{ content: 'NO SHOPS ' + JSON.stringify(out).slice(0, 200) }]);
           globalThis.lastLocatedBy = out.located_by;
           const offers = out.shops.map((sh) => ({ title: sh.items[0].title, store: sh.store, url: sh.url, image: sh.items[0].image, price: sh.items[0].price, currency: 'PI', kind: 'local', address: sh.address, lat: sh.lat, lon: sh.lon, distanceKm: sh.distanceKm, rating: sh.rating, piEvidence: sh.piEvidence }));
@@ -159,7 +159,7 @@ http.createServer((req, res) => {
       if (userText.includes('SALLA')) {
         if (toolMsgs === 0) return sse(res, [call(0, 'search_salla', { queries: ['headphones', 'سماعة'] })]);
         if (toolMsgs === 1) {
-          const out = JSON.parse(b.messages.filter((m) => m.role === 'tool')[0].content.replace(/\n\[time left.*$/s, ''));
+          const out = JSON.parse(b.messages.filter((m) => m.role === 'tool' && m.tool_call_id !== 'call_quick_index')[0].content.replace(/\n\[time left.*$/s, ''));
           const offers = (Array.isArray(out) ? out : []).slice(0, 4).map((x) => ({ title: x.title, store: x.store, url: x.url, image: 'https://mall.salla-shop.com/og-salla.jpg', price: x.price, currency: 'PI', kind: 'online', piEvidence: x.piEvidence }));
           return sse(res, [call(0, 'show_offers', { offers })]);
         }
