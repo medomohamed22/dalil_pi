@@ -653,6 +653,12 @@ const FLAG_TEXT: Record<string, { ar: string; en: string }> = {
   many_complaints: { ar: "مشترين كتير اشتكوا من المتجر ده", en: "Many buyers reported problems with this store" },
 };
 
+/** "Pi price from X's catalog (Dalil Index, 18 min old)" → a short line in the user's language. */
+function evidenceText(e: string, s: { fromCatalog: (store: string) => string }): string {
+  const m = e.match(/^Pi price from (.+?)'s catalog \(Dalil Index/);
+  return m ? s.fromCatalog(m[1]) : e;
+}
+
 export function ProductCards({
   offers,
   s,
@@ -855,7 +861,7 @@ export function ProductCards({
                 )}
                 {o.piEvidence && (
                   <div className="line-clamp-2 text-[11px] text-fg-muted" dir="auto" title={o.piEvidence}>
-                    π {o.piEvidence}
+                    π {evidenceText(o.piEvidence, s)}
                   </div>
                 )}
                 <div className="mt-auto flex flex-col gap-1.5 pt-2">
@@ -1138,7 +1144,7 @@ export function OfferDetail({
           <AlertTriangle className="mt-px size-3.5 shrink-0" /> {FLAG_TEXT[f][lang]}
         </div>
       ))}
-      {o.piEvidence && <p className="text-[12px] text-fg-muted" dir="auto">π {o.piEvidence}</p>}
+      {o.piEvidence && <p className="text-[12px] text-fg-muted" dir="auto">π {evidenceText(o.piEvidence, s)}</p>}
       {o.address && (
         <a href={mapsUrl(o, city, true)} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1.5 text-[12px] underline underline-offset-2">
           <Navigation className="size-3.5" /> {o.address}

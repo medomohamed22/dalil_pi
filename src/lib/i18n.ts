@@ -154,6 +154,13 @@ const strings = {
     alsoAt: (store: string, price: string) => `Also at ${store} for ${price}`,
     retry: "Try again",
     offline: "You're offline — results will come back when you reconnect.",
+    errorCodes: {
+      AI_TIMEOUT: "Dalil took too long to answer — your AI credit was returned. Try again.",
+      BAD_IMAGE: "That photo couldn't be read. Send a JPEG, PNG or WebP photo.",
+      RATE_LIMITED: "Too many questions in a short time — wait a minute and try again.",
+      NETWORK: "Connection lost — check your internet and try again.",
+    } as Record<string, string>,
+    fromCatalog: (store: string) => `Pi price from ${store}'s catalog`,
     tour: [
       { t: "Ask for anything", d: "Type or speak what you need. Dalil Pi searches only stores that take Pi in your country." },
       { t: "Check the trust score", d: "Every store gets 0–100. Tap the shield to see why. Under 40 we won't order from it." },
@@ -491,6 +498,13 @@ const strings = {
     alsoAt: (store: string, price: string) => `متاح كمان في ${store} بـ ${price}`,
     retry: "جرّب تاني",
     offline: "مفيش نت دلوقتي — النتايج هترجع أول ما النت يرجع.",
+    errorCodes: {
+      AI_TIMEOUT: "دليل اتأخر في الرد — رجّعنالك رصيد السؤال. جرّب تاني.",
+      BAD_IMAGE: "الصورة دي مش مقروءة. ابعت صورة JPEG أو PNG أو WebP.",
+      RATE_LIMITED: "أسئلة كتير في وقت قصير — استنى دقيقة وجرّب تاني.",
+      NETWORK: "النت فصل — اتأكد من الاتصال وجرّب تاني.",
+    } as Record<string, string>,
+    fromCatalog: (store: string) => `السعر بالباي من كتالوج ${store}`,
     tour: [
       { t: "اطلب أي حاجة", d: "اكتب أو قول اللي محتاجه، ودليل باي يدوّر بس في المتاجر اللي بتقبل باي في بلدك." },
       { t: "شوف رقم الثقة", d: "كل متجر ليه رقم من 0 لـ 100. دوس على الدرع تعرف ليه. أقل من 40 مش بنطلب منه." },

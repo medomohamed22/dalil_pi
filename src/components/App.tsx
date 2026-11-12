@@ -338,6 +338,8 @@ export default function App() {
     if (code === "NO_API_KEY") return s.needKey;
     if (code === "SIGN_IN_REQUIRED") return s.signInRequired;
     if (fallback === "HOSTED_LIMIT") return s.hostedLimit;
+    if (code && s.errorCodes[code]) return s.errorCodes[code];
+    if (/failed to fetch|load failed|networkerror|network error/i.test(fallback)) return s.errorCodes.NETWORK;
     return fallback;
   };
 
@@ -420,7 +422,7 @@ export default function App() {
       } catch (err) {
         if (!ctrl.signal.aborted) {
           const e = err as Error & { code?: string };
-          assistant = { ...assistant, blocks: applyEvent(assistant.blocks, { type: "error", message: e.message ?? String(err), code: e.code }) };
+          assistant = { ...assistant, blocks: applyEvent(assistant.blocks, { type: "error", message: errorText(e.code, e.message ?? String(err)), code: e.code }) };
         }
       } finally {
         assistant = {

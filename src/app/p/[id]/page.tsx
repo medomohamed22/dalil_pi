@@ -4,6 +4,7 @@ import { notFound } from "next/navigation";
 import { cache } from "react";
 import { productHomeCountry } from "@/lib/server/catalog";
 import { productPage } from "@/lib/server/shop";
+import { piUsdPrice } from "@/lib/server/price";
 
 /**
  * Public product page (/p/<id>): plain HTML a search engine or a link preview can read, for every
@@ -50,6 +51,8 @@ export default async function ProductSeoPage({ params }: { params: Promise<{ id:
   if (!r) notFound();
   const { page, id } = r;
   const o = page.offer;
+  const rate = (await piUsdPrice().catch(() => null))?.usd;
+  const usd = (n: number) => (rate ? `≈ $${(n * rate).toLocaleString("en-US", { maximumFractionDigits: n * rate < 100 ? 2 : 0 })}` : "");
   const appUrl = `/?v=p&id=${encodeURIComponent(id)}`;
   // Not schema.org "Product": Google requires it to carry offers with an ISO 4217 currency (Pi has
   // none) or real product reviews, which we don't have. An item page + breadcrumb is valid and honest.
@@ -77,7 +80,7 @@ export default async function ProductSeoPage({ params }: { params: Promise<{ id:
     },
   ];
   return (
-    <main className="mx-auto min-h-dvh max-w-3xl bg-bg px-4 pb-16 pt-4 text-fg" data-testid="seo-product">
+    <main className="mx-auto min-h-dvh max-w-3xl bg-bg px-4 pb-28 pt-4 text-fg sm:pb-16" data-testid="seo-product">
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd).replace(/</g, "\\u003c") }} />
       <nav className="mb-4 flex items-center gap-2 text-[13px] text-fg-muted">
         <Link href="/" className="flex items-center gap-1.5 font-semibold text-fg">
@@ -112,6 +115,7 @@ export default async function ProductSeoPage({ params }: { params: Promise<{ id:
             <span className="text-[26px] font-bold tabular-nums">{pi(o.total)}</span>
             {o.listPrice && o.listPrice > o.price && <span className="text-[15px] text-fg-muted line-through tabular-nums">{pi(o.listPrice)}</span>}
           </div>
+          {rate && <p className="text-[13px] text-fg-muted tabular-nums" data-testid="seo-usd">{usd(o.total)}</p>}
           <p className="mt-1 text-[13px] text-fg-muted">
             {o.store}
             {o.trustScore != null && <> · Trust {o.trustScore}/100</>}
@@ -170,6 +174,14 @@ export default async function ProductSeoPage({ params }: { params: Promise<{ id:
           </ul>
         </section>
       )}
+
+      {/* Phones: the way into the app stays one tap away while reading. */}
+      <div className="fixed inset-x-0 bottom-0 z-10 border-t border-line bg-bg/95 px-4 py-3 backdrop-blur sm:hidden" style={{ paddingBottom: "max(0.75rem, env(safe-area-inset-bottom))" }}>
+        <Link href={appUrl} className="flex items-center justify-between rounded-full bg-inv-bg px-4 py-2.5 text-[15px] font-semibold text-inv-fg" data-testid="seo-sticky-open">
+          <span>Open in Dalil Pi · افتح في دليل باي</span>
+          <span className="tabular-nums">{pi(o.total)}</span>
+        </Link>
+      </div>
 
       <p className="mt-10 text-[12px] text-fg-muted">
         Dalil Pi lists products from stores that accept Pi and checks each store&apos;s trust. You order and pay on the store&apos;s own site. Prices are copied from the store&apos;s catalog and may change.

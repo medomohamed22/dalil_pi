@@ -128,7 +128,7 @@ export async function POST(req: Request) {
       } catch (err) {
         // Our failure (not the user leaving): give the credit back.
         if (!req.signal.aborted) await refundSearch(session.uid, spent.source);
-        emit({ type: "error", message: err instanceof Error ? err.message : String(err) });
+        emit({ type: "error", message: err instanceof Error ? err.message : String(err), code: (err as { code?: string })?.code });
       } finally {
         emit({ type: "done" });
         controller.close();

@@ -118,7 +118,7 @@ export default function MessageView({
               return (
                 <div key={i} className="flex items-start gap-2 rounded-2xl border border-danger/30 px-3 py-2.5 text-sm text-danger">
                   <AlertCircle className="mt-0.5 size-4 shrink-0" />
-                  <span className="flex-1 break-words">{b.text}</span>
+                  <span className="flex-1 break-words">{(b.code && s.errorCodes[b.code]) || b.text}</span>
                   {onRetry && (
                     <button onClick={onRetry} className="shrink-0 rounded-full border border-danger/40 px-2.5 py-0.5 text-[12px] font-medium" data-testid="retry">
                       {s.retry}
