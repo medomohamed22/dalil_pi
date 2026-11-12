@@ -9,8 +9,12 @@ import type { MetaConfig } from "./meta";
  */
 const META_BASE = (!process.env.VERCEL && process.env.DALIL_TEST_MODEL_BASE) /* tests only */ || "https://api.meta.ai/v1";
 
-/** The one model the app runs on (fixed for cost and predictable behaviour). */
-export const HOSTED_MODEL = "muse-spark-1.3-contributor";
+/**
+ * The model the app runs on: Muse Ember 1.0 (Meta's small, fast model — tools and photos supported).
+ * META_MODEL (optional, plain value) switches it without a code change, e.g. back to
+ * "muse-spark-1.3-contributor". Only Meta model ids are accepted.
+ */
+export const HOSTED_MODEL = /^muse-[a-z0-9.-]{1,40}$/.test(process.env.META_MODEL ?? "") ? process.env.META_MODEL! : "muse-ember-1.0";
 
 export function hostedEnabled(): boolean {
   return !!process.env.META_API_KEY;

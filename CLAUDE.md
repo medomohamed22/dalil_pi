@@ -11,7 +11,7 @@
 - Pushing to `main` is allowed. Run the tests before pushing.
 - Secrets live only in Vercel env vars. Never commit real values, and never ask for them in chat.
 - Use only documented/authorized partner APIs (e.g. Salla's partner catalog in `docs/salla-partner/partner-catalog.md`).
-- AI is used only in "Ask Dalil" (no AI enrichment of products); AI needs paid credit.
+- AI is used only in "Ask Dalil" (no AI enrichment of products); AI needs paid credit. Model: `muse-ember-1.0` (Meta Model API); optional env `META_MODEL` overrides it.
 - Ask Dalil is index-first: a plain product request at the start of a chat (`quick.ts` decides) first runs the AI with only `search_dalil_index` + `pick_offers` and a short prompt: 2 AI rounds — keywords, then the refs of the items of the asked kind plus the comment (no re-typing offers). If nothing fits it answers `NO_INDEX_MATCH` (never shown) and the full agent carries on. Photos, links, barcodes, local/services, questions and follow-ups go straight to the full agent.
 
 ## After a domain change
